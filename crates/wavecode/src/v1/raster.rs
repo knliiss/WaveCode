@@ -219,15 +219,14 @@ fn pair_components(components: &[Component], angle: f64) -> Result<Vec<Pair>, Er
 
     let middle = FRAME_BARS / 2;
     let middle_t = middle as f64 / (FRAME_BARS - 1) as f64;
-    let curvature = (centers[middle] - (first + middle_t * (last - first)))
-        / (middle_t * (1.0 - middle_t));
+    let curvature =
+        (centers[middle] - (first + middle_t * (last - first))) / (middle_t * (1.0 - middle_t));
 
     let position = |t: f64| first + (last - first) * t + curvature * t * (1.0 - t);
     for (index, pair) in pairs.iter().enumerate() {
         let t = index as f64 / (FRAME_BARS - 1) as f64;
         let previous = position((index.saturating_sub(1)) as f64 / (FRAME_BARS - 1) as f64);
-        let next = position(((index + 1).min(FRAME_BARS - 1)) as f64
-            / (FRAME_BARS - 1) as f64);
+        let next = position(((index + 1).min(FRAME_BARS - 1)) as f64 / (FRAME_BARS - 1) as f64);
         let local_pitch = if index == 0 || index + 1 == FRAME_BARS {
             (next - previous).abs()
         } else {
