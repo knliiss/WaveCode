@@ -2,7 +2,7 @@
 
 use std::io::Cursor;
 
-use image::imageops::{resize, FilterType};
+use image::imageops::{resize, rotate180, rotate90, FilterType};
 use image::{DynamicImage, GrayImage, ImageOutputFormat, Luma};
 use wavecode::v1::{self, RenderProfile};
 use wavecode::{MusicCode, Orientation};
@@ -119,6 +119,16 @@ fn reads_small_skewed_images() {
     for angle in [-0.07, 0.06] {
         let rotated = rotated(&raster, angle);
         assert_eq!(v1::scan_gray(&rotated).unwrap().decoded.code, original);
+    }
+}
+
+#[test]
+fn reads_right_angle_rotations_without_external_orientation_hints() {
+    let original = MusicCode::from_url(URL).unwrap();
+    let picture = rasterize(&original, RenderProfile::new(900.0, 240.0));
+    for rotated in [rotate180(&picture), rotate90(&picture)] {
+        let result = v1::scan_gray(&rotated).unwrap();
+        assert_eq!(result.decoded.code, original);
     }
 }
 
