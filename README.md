@@ -84,8 +84,9 @@ reimplementation of Reed–Solomon, CRC or optical scanning.
 | C / C++ | [Versioned C ABI](include/wavecode.h) · `.so`, `.dylib`, `.dll` | Available |
 | Python | [`wavecode-native`](bindings/python) · ctypes wrapper | Available (native binary required) |
 | C# / .NET | [`WaveCode.Native`](bindings/dotnet) · .NET 8 | Available (native binary required) |
+| Java / Kotlin (JVM) | [`wavecode-jvm`](bindings/jvm) · Java 17 / JNA | Available (native binary required) |
 | JavaScript / TypeScript | [`wavecode-wasm`](crates/wavecode-wasm) · browser/Node via wasm-pack | Available (build from source) |
-| Swift, Java/Kotlin, Go, Dart and other native runtimes | C ABI / FFI | Supported at the ABI level; dedicated bindings not yet bundled |
+| Swift, Go, Dart and other native runtimes | C ABI / FFI | Supported at the ABI level; dedicated bindings not yet bundled |
 
 The SDK exposes URL encoding, V1 symbol decoding, SVG/PNG rendering, single-image scanning, and multi-code detection. Input images and output codes can stay entirely on-device.
 
