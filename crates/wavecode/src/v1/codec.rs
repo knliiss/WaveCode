@@ -52,11 +52,7 @@ pub struct SoftObservation {
     pub candidates: Vec<SymbolHypothesis>,
 }
 
-fn try_soft(
-    symbols: &[u8],
-    fixed_erasures: &[usize],
-    confidences: &[u8],
-) -> Option<Decoded> {
+fn try_soft(symbols: &[u8], fixed_erasures: &[usize], confidences: &[u8]) -> Option<Decoded> {
     if let Ok(decoded) = decode_with_erasures(symbols, fixed_erasures) {
         return Some(decoded);
     }
@@ -85,12 +81,7 @@ struct SoftSearch<'a> {
 }
 
 impl SoftSearch<'_> {
-    fn search(
-        &mut self,
-        symbols: &mut [u8],
-        depth: usize,
-        changed: bool,
-    ) -> Option<Decoded> {
+    fn search(&mut self, symbols: &mut [u8], depth: usize, changed: bool) -> Option<Decoded> {
         if self.attempts >= 512 {
             return None;
         }
@@ -133,7 +124,9 @@ pub fn decode_soft(observations: &[SoftObservation]) -> Result<Decoded, Error> {
         if observation.candidates.len() > 3 {
             return Err(Error::InvalidObservation);
         }
-        observation.candidates.sort_by_key(|item| std::cmp::Reverse(item.confidence));
+        observation
+            .candidates
+            .sort_by_key(|item| std::cmp::Reverse(item.confidence));
         for (index, item) in observation.candidates.iter().enumerate() {
             if item.symbol >= 64
                 || observation.candidates[..index]
@@ -166,7 +159,10 @@ pub fn decode_soft(observations: &[SoftObservation]) -> Result<Decoded, Error> {
         .collect();
     uncertain.sort_by_key(|&position| {
         let choices = &hypotheses[position].candidates;
-        (choices[0].confidence.saturating_sub(choices[1].confidence), position)
+        (
+            choices[0].confidence.saturating_sub(choices[1].confidence),
+            position,
+        )
     });
     uncertain.truncate(8);
 
@@ -177,7 +173,9 @@ pub fn decode_soft(observations: &[SoftObservation]) -> Result<Decoded, Error> {
         uncertain: &uncertain,
         attempts: 0,
     };
-    search.search(&mut symbols, 0, false).ok_or(Error::Uncorrectable)
+    search
+        .search(&mut symbols, 0, false)
+        .ok_or(Error::Uncorrectable)
 }
 
 const MESSAGE_BYTES: usize = 19;
