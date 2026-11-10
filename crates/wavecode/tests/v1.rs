@@ -1,7 +1,7 @@
 use std::process::Command;
 
 use wavecode::v1::{self, Bar, FRAME_BARS, SYMBOL_COUNT};
-use wavecode::{Error, MusicCode, Orientation, Track};
+use wavecode::{MusicCode, Orientation, Track};
 
 const LINK: &str = "https://music.youtube.com/watch?v=WYYkdveJyn8&si=n7qJQ2K-00AiN4Fw&drli=1&t=187";
 const NORMALIZED: &str = "https://music.youtube.com/watch?v=WYYkdveJyn8&t=187";
@@ -91,14 +91,14 @@ fn repairs_six_known_erasures() {
 }
 
 #[test]
-fn guards_are_part_of_frame_integrity() {
+fn a_corrupted_guard_does_not_discard_valid_data() {
     let original = MusicCode::from_url(LINK).unwrap();
     let mut frame = v1::frame_from_symbols(&v1::encode(&original).unwrap()).unwrap();
     frame[0] = Bar {
         upper_level: 0,
         lower_level: 0,
     };
-    assert_eq!(v1::decode_frame(&frame), Err(Error::InvalidFrame));
+    assert_eq!(v1::decode_frame(&frame).unwrap().decoded.code, original);
 }
 
 #[test]
