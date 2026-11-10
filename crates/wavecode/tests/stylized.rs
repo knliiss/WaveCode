@@ -1,6 +1,8 @@
 #![cfg(feature = "raster")]
 
-use image::{GrayImage, Luma};
+use std::io::Cursor;
+
+use image::{DynamicImage, GrayImage, ImageOutputFormat, Luma, Rgb, RgbImage};
 use wavecode::v1::{self, RenderProfile};
 use wavecode::MusicCode;
 
@@ -60,6 +62,60 @@ fn scans_variable_contrast_rails_with_different_caps() {
         *pixel = Luma([ink_value.round() as u8]);
     }
     verify(&image);
+}
+
+
+#[test]
+fn scans_colored_rails_with_nearly_identical_grayscale_luminance() {
+    let original = reference(RenderProfile::new(1100.0, 270.0));
+    let mut colored = RgbImage::new(original.width(), original.height());
+
+    for (x, y, pixel) in colored.enumerate_pixels_mut() {
+        let ink = 1.0 - f64::from(original.get_pixel(x, y).0[0]) / 255.0;
+        let background = [120.0, 120.0, 120.0];
+        let stroke = [0.0, 204.0, 0.0];
+        let blended = std::array::from_fn(|index| {
+            (background[index] * (1.0 - ink) + stroke[index] * ink).round() as u8
+        });
+        *pixel = Rgb(blended);
+    }
+
+    // Most bars have the same luminance as the background, so grayscale-only
+    // recognition cannot reliably separate them from their surroundings.
+    let mut encoded = Cursor::new(Vec::new());
+    DynamicImage::ImageRgb8(colored)
+        .write_to(&mut encoded, ImageOutputFormat::Png)
+        .unwrap();
+    assert_eq!(
+        v1::scan_image(encoded.get_ref()).unwrap().decoded.code,
+        MusicCode::from_url(URL).unwrap(),
+    );
+}
+
+#[test]
+fn scans_multicolored_rails_on_white() {
+    let original = reference(RenderProfile::new(1100.0, 270.0));
+    let mut colored = RgbImage::new(original.width(), original.height());
+    for (x, y, pixel) in colored.enumerate_pixels_mut() {
+        let coverage = 1.0 - f64::from(original.get_pixel(x, y).0[0]) / 255.0;
+        let paint = if x % 57 < 29 {
+            [228.0, 206.0, 0.0]
+        } else {
+            [40.0, 164.0, 245.0]
+        };
+        *pixel = Rgb(std::array::from_fn(|index| {
+            (255.0 * (1.0 - coverage) + paint[index] * coverage).round() as u8
+        }));
+    }
+
+    let mut encoded = Cursor::new(Vec::new());
+    DynamicImage::ImageRgb8(colored)
+        .write_to(&mut encoded, ImageOutputFormat::Png)
+        .unwrap();
+    assert_eq!(
+        v1::scan_image(encoded.get_ref()).unwrap().decoded.code,
+        MusicCode::from_url(URL).unwrap(),
+    );
 }
 
 #[test]
