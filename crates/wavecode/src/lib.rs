@@ -2,8 +2,8 @@ mod identity;
 mod rank;
 mod reed_solomon;
 mod scrambling;
-mod visual;
 pub mod v1;
+mod visual;
 
 use rank::Rank;
 use reed_solomon::PARITY_SYMBOLS;
