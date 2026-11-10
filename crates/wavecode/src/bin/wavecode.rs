@@ -31,6 +31,8 @@ fn run() -> Result<(), Box<dyn Error>> {
             let mut timestamp = None;
             let mut svg_path = None;
             let mut legacy = false;
+            let mut profile = v1::RenderProfile::default();
+            let mut custom_geometry = false;
 
             while let Some(option) = args.next() {
                 match option.as_str() {
@@ -50,10 +52,30 @@ fn run() -> Result<(), Box<dyn Error>> {
                     "--legacy" => {
                         legacy = true;
                     }
+                    "--width" => {
+                        profile.width = args.next().ok_or_else(usage_error)?.parse()?;
+                        custom_geometry = true;
+                    }
+                    "--height" => {
+                        profile.height = args.next().ok_or_else(usage_error)?.parse()?;
+                        custom_geometry = true;
+                    }
+                    "--gap-ratio" => {
+                        profile.center_gap_fraction =
+                            args.next().ok_or_else(usage_error)?.parse()?;
+                        custom_geometry = true;
+                    }
+                    "--fill-ratio" => {
+                        profile.bar_fill_fraction = args.next().ok_or_else(usage_error)?.parse()?;
+                        custom_geometry = true;
+                    }
                     _ => return Err(Box::new(usage_error())),
                 }
             }
 
+            if legacy && custom_geometry {
+                return Err(Box::new(usage_error()));
+            }
             let mut code = MusicCode::from_url(&url)?;
             if let Some(seconds) = timestamp {
                 code.moment_seconds = Some(seconds);
@@ -83,7 +105,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                 let image = if legacy {
                     render_svg(&bars_from_symbols(&symbols))?
                 } else {
-                    v1::render_svg(&symbols)?
+                    v1::render_svg_with_profile(&symbols, profile)?
                 };
                 fs::write(&path, image)?;
                 println!("SVG: {path}");
@@ -131,7 +153,7 @@ fn run() -> Result<(), Box<dyn Error>> {
 fn usage_error() -> io::Error {
     io::Error::new(
         ErrorKind::InvalidInput,
-        "usage:\n  wavecode encode '<music URL>' [--time SECONDS] [--svg FILE.svg] [--legacy]\n  wavecode decode <HEX>\n  wavecode decode-svg <FILE.svg>",
+        "usage:\n  wavecode encode '<music URL>' [--time SECONDS] [--svg FILE.svg] [--width PX] [--height PX] [--gap-ratio R] [--fill-ratio R] [--legacy]\n  wavecode decode <HEX>\n  wavecode decode-svg <FILE.svg>",
     )
 }
 

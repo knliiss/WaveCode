@@ -41,6 +41,143 @@ pub fn decode_observations(observations: &[Observation]) -> Result<Decoded, Erro
     Err(Error::Uncorrectable)
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SymbolHypothesis {
+    pub symbol: u8,
+    pub confidence: u8,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SoftObservation {
+    pub candidates: Vec<SymbolHypothesis>,
+}
+
+fn try_soft(symbols: &[u8], fixed_erasures: &[usize], confidences: &[u8]) -> Option<Decoded> {
+    if let Ok(decoded) = decode_with_erasures(symbols, fixed_erasures) {
+        return Some(decoded);
+    }
+
+    let mut ranking: Vec<usize> = (0..SYMBOL_COUNT)
+        .filter(|index| !fixed_erasures.contains(index))
+        .collect();
+    ranking.sort_by_key(|&index| (confidences[index], index));
+
+    for extra in 1..=CORRECTION_SYMBOLS - fixed_erasures.len() {
+        let mut erasures = fixed_erasures.to_vec();
+        erasures.extend_from_slice(&ranking[..extra]);
+        if let Ok(decoded) = decode_with_erasures(symbols, &erasures) {
+            return Some(decoded);
+        }
+    }
+    None
+}
+
+struct SoftSearch<'a> {
+    observations: &'a [SoftObservation],
+    fixed_erasures: &'a [usize],
+    confidences: &'a [u8],
+    uncertain: &'a [usize],
+    attempts: usize,
+}
+
+impl SoftSearch<'_> {
+    fn search(&mut self, symbols: &mut [u8], depth: usize, changed: bool) -> Option<Decoded> {
+        if self.attempts >= 512 {
+            return None;
+        }
+        if depth == self.uncertain.len() {
+            if !changed {
+                return None;
+            }
+            self.attempts += 1;
+            return try_soft(symbols, self.fixed_erasures, self.confidences);
+        }
+
+        let index = self.uncertain[depth];
+        let original = symbols[index];
+        for candidate in &self.observations[index].candidates {
+            if candidate.symbol == original {
+                continue;
+            }
+            symbols[index] = candidate.symbol;
+            if let Some(result) = self.search(symbols, depth + 1, true) {
+                symbols[index] = original;
+                return Some(result);
+            }
+        }
+        symbols[index] = original;
+        self.search(symbols, depth + 1, changed)
+    }
+}
+
+pub fn decode_soft(observations: &[SoftObservation]) -> Result<Decoded, Error> {
+    if observations.len() != SYMBOL_COUNT {
+        return Err(Error::InvalidLength);
+    }
+
+    let mut symbols = Vec::with_capacity(SYMBOL_COUNT);
+    let mut confidences = Vec::with_capacity(SYMBOL_COUNT);
+    let mut fixed_erasures = Vec::new();
+    let mut hypotheses = observations.to_vec();
+
+    for (position, observation) in hypotheses.iter_mut().enumerate() {
+        if observation.candidates.len() > 3 {
+            return Err(Error::InvalidObservation);
+        }
+        observation
+            .candidates
+            .sort_by_key(|item| std::cmp::Reverse(item.confidence));
+        for (index, item) in observation.candidates.iter().enumerate() {
+            if item.symbol >= 64
+                || observation.candidates[..index]
+                    .iter()
+                    .any(|other| other.symbol == item.symbol)
+            {
+                return Err(Error::InvalidObservation);
+            }
+        }
+
+        if let Some(best) = observation.candidates.first() {
+            symbols.push(best.symbol);
+            confidences.push(best.confidence);
+        } else {
+            symbols.push(0);
+            confidences.push(0);
+            fixed_erasures.push(position);
+        }
+    }
+
+    if fixed_erasures.len() > CORRECTION_SYMBOLS {
+        return Err(Error::Uncorrectable);
+    }
+    if let Some(decoded) = try_soft(&symbols, &fixed_erasures, &confidences) {
+        return Ok(decoded);
+    }
+
+    let mut uncertain: Vec<usize> = (0..SYMBOL_COUNT)
+        .filter(|&position| hypotheses[position].candidates.len() > 1)
+        .collect();
+    uncertain.sort_by_key(|&position| {
+        let choices = &hypotheses[position].candidates;
+        (
+            choices[0].confidence.saturating_sub(choices[1].confidence),
+            position,
+        )
+    });
+    uncertain.truncate(8);
+
+    let mut search = SoftSearch {
+        observations: &hypotheses,
+        fixed_erasures: &fixed_erasures,
+        confidences: &confidences,
+        uncertain: &uncertain,
+        attempts: 0,
+    };
+    search
+        .search(&mut symbols, 0, false)
+        .ok_or(Error::Uncorrectable)
+}
+
 const MESSAGE_BYTES: usize = 19;
 const PACKED_BYTES: usize = 21;
 const VERSION_SHIFT: u8 = 5;
