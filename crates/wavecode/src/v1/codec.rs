@@ -19,7 +19,10 @@ pub fn decode_observations(observations: &[Observation]) -> Result<Decoded, Erro
     if observations.len() != SYMBOL_COUNT {
         return Err(Error::InvalidLength);
     }
-    if observations.iter().any(|observation| observation.symbol >= 64) {
+    if observations
+        .iter()
+        .any(|observation| observation.symbol >= 64)
+    {
         return Err(Error::InvalidCodeword);
     }
 
@@ -37,7 +40,6 @@ pub fn decode_observations(observations: &[Observation]) -> Result<Decoded, Erro
 
     Err(Error::Uncorrectable)
 }
-
 
 const MESSAGE_BYTES: usize = 19;
 const PACKED_BYTES: usize = 21;
