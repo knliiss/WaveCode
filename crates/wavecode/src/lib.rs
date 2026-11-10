@@ -166,10 +166,7 @@ pub fn decode_symbols(symbols: &[u8]) -> Result<Decoded, Error> {
     decode_symbols_with_erasures(symbols, &[])
 }
 
-pub fn decode_symbols_with_erasures(
-    symbols: &[u8],
-    erasures: &[usize],
-) -> Result<Decoded, Error> {
+pub fn decode_symbols_with_erasures(symbols: &[u8], erasures: &[usize]) -> Result<Decoded, Error> {
     let data_length = match symbols.len() {
         TRACK_SYMBOLS | SHORT_MOMENT_SYMBOLS | LONG_MOMENT_SYMBOLS => {
             symbols.len() - PARITY_SYMBOLS
