@@ -129,7 +129,7 @@ fn hex_encode(bytes: &[u8]) -> String {
 }
 
 fn hex_decode(encoded: &str) -> Result<Vec<u8>, Box<dyn Error>> {
-    if !encoded.len().is_multiple_of(2) {
+    if encoded.len() & 1 != 0 {
         return Err(Box::new(io::Error::new(
             ErrorKind::InvalidInput,
             "hex data must have an even number of digits",
@@ -222,7 +222,14 @@ mod tests {
 
     #[test]
     fn svg_geometry_round_trip_for_all_lengths() {
-        for timestamp in [None, Some(0), Some(123), Some(4095), Some(4096), Some(65535)] {
+        for timestamp in [
+            None,
+            Some(0),
+            Some(123),
+            Some(4095),
+            Some(4096),
+            Some(65535),
+        ] {
             let code = MusicCode {
                 track: Track::YouTubeMusic("rhEo43MClyU".to_owned()),
                 moment_seconds: timestamp,
