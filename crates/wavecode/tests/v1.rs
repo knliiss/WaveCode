@@ -102,6 +102,33 @@ fn guards_are_part_of_frame_integrity() {
 }
 
 #[test]
+fn confidence_decoder_recovers_four_bad_observations() {
+    let original = MusicCode::from_url(LINK).unwrap();
+    let symbols = v1::encode(&original).unwrap();
+    let mut observations: Vec<v1::Observation> = symbols
+        .iter()
+        .map(|&symbol| v1::Observation {
+            symbol,
+            confidence: 255,
+        })
+        .collect();
+
+    for (position, difference, confidence) in [
+        (1, 3, 1),
+        (9, 7, 2),
+        (15, 13, 3),
+        (31, 24, 4),
+    ] {
+        observations[position].symbol ^= difference;
+        observations[position].confidence = confidence;
+    }
+
+    let result = v1::decode_observations(&observations).unwrap();
+    assert_eq!(result.code, original);
+    assert_eq!(result.corrected_symbols, 4);
+}
+
+#[test]
 fn cli_defaults_to_v1_and_decodes_the_full_svg() {
     let binary = env!("CARGO_BIN_EXE_wavecode");
     let file = std::env::temp_dir().join(format!(
