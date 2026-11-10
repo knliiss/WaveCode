@@ -94,7 +94,9 @@ impl Rank {
         let mut number = Self::zero();
         for byte in text.bytes() {
             let digit = alphabet.iter().position(|candidate| *candidate == byte)? as u64;
-            number = number.mul_small(alphabet.len() as u64).add(Self::from_u64(digit));
+            number = number
+                .mul_small(alphabet.len() as u64)
+                .add(Self::from_u64(digit));
         }
         Some(number)
     }
