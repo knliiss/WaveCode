@@ -71,7 +71,7 @@ impl RenderProfile {
             center_gap_fraction: 0.060,
             vertical_margin_fraction: 0.10,
             minimum_height_steps: 2.5,
-            corner_radius_fraction: 0.15,
+            corner_radius_fraction: 0.5,
         }
     }
 
