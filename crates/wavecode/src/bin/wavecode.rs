@@ -66,8 +66,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                         custom_geometry = true;
                     }
                     "--fill-ratio" => {
-                        profile.bar_fill_fraction =
-                            args.next().ok_or_else(usage_error)?.parse()?;
+                        profile.bar_fill_fraction = args.next().ok_or_else(usage_error)?.parse()?;
                         custom_geometry = true;
                     }
                     _ => return Err(Box::new(usage_error())),
