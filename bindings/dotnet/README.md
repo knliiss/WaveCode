@@ -14,10 +14,10 @@ For macOS use `libwavecode_ffi.dylib`; for Windows use `wavecode_ffi.dll`. The `
 ```csharp
 using WaveCode.Native;
 
-var symbols = WaveCode.Encode("https://music.youtube.com/watch?v=p-LBiCtzXu0&t=59");
-var svg = WaveCode.RenderSvg(symbols, 960, 240);
-var png = WaveCode.RenderPng(symbols, 960, 240);
-Console.WriteLine(WaveCode.Scan(png));
+var symbols = WaveCodeApi.Encode("https://music.youtube.com/watch?v=p-LBiCtzXu0&t=59");
+var svg = WaveCodeApi.RenderSvg(symbols, 960, 240);
+var png = WaveCodeApi.RenderPng(symbols, 960, 240);
+Console.WriteLine(WaveCodeApi.Scan(png));
 ```
 
 Native binaries are not embedded in this library; package the correct target-specific binary with your application.
