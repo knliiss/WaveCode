@@ -526,6 +526,50 @@ mod tests {
         assert_eq!(restored.decoded.code, code);
     }
 
+    fn distort_rect(svg: &mut String, category: &str, index: usize, delta: f64) {
+        let marker = format!("<rect class=\"{category}\"");
+        let mut start = 0;
+        for _ in 0..=index {
+            start += svg[start..].find(&marker).unwrap();
+            if index > 0 {
+                // No file-dependent offsets; each match is found from the previous marker.
+            }
+            start += marker.len();
+        }
+        let tag_start = start - marker.len();
+        let tag_end = tag_start + svg[tag_start..].find("/>").unwrap() + 2;
+        let original = svg[tag_start..tag_end].to_owned();
+        let height = super::attribute(&original, "height").unwrap();
+        let mut modified = original.replace(
+            &format!("height=\"{height:.6}\""),
+            &format!("height=\"{:.6}\"", height + delta),
+        );
+        if category.ends_with("-upper") {
+            let y = super::attribute(&original, "y").unwrap();
+            modified = modified.replace(
+                &format!("y=\"{y:.6}\""),
+                &format!("y=\"{:.6}\"", y - delta),
+            );
+        }
+        svg.replace_range(tag_start..tag_end, &modified);
+    }
+
+    #[test]
+    fn svg_recovers_from_sublevel_distortion_and_a_damaged_guard() {
+        let code = example();
+        let symbols = encode(&code).unwrap();
+        let profile = RenderProfile::new(900.0, 220.0);
+        let step = profile.geometry().unwrap().level_step;
+        let mut svg = render_svg_with_profile(&symbols, profile).unwrap();
+
+        distort_rect(&mut svg, "wavecode-upper", 4, 0.23 * step);
+        distort_rect(&mut svg, "wavecode-lower", 9, -0.20 * step);
+        distort_rect(&mut svg, "wavecode-upper", 19, -0.18 * step);
+        distort_rect(&mut svg, "wavecode-guard-upper", 0, 1.1 * step);
+
+        assert_eq!(decode_svg(&svg).unwrap().decoded.code, code);
+    }
+
     #[test]
     fn invalid_render_profiles_are_rejected() {
         let symbols = encode(&example()).unwrap();
