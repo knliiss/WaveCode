@@ -64,7 +64,6 @@ fn scans_variable_contrast_rails_with_different_caps() {
     verify(&image);
 }
 
-
 #[test]
 fn scans_colored_rails_with_nearly_identical_grayscale_luminance() {
     let original = reference(RenderProfile::new(1100.0, 270.0));
