@@ -540,12 +540,7 @@ fn candidate_groups(shapes: &[Component]) -> Vec<Vec<usize>> {
     candidates
 }
 
-fn scan_rails(shapes: &[Component]) -> Result<OrientedDecoded, Error> {
-    if shapes.len() != EXPECTED_COMPONENTS {
-        return Err(Error::InvalidFrame);
-    }
-    let angle = estimated_angle(shapes);
-    let pairs = pair_components(shapes, angle)?;
+fn decode_pairs(pairs: &[Pair]) -> Result<OrientedDecoded, Error> {
     let mut result: Option<OrientedDecoded> = None;
 
     for orientation in [Orientation::Upright, Orientation::UpsideDown] {
@@ -567,6 +562,15 @@ fn scan_rails(shapes: &[Component]) -> Result<OrientedDecoded, Error> {
     result.ok_or(Error::InvalidFrame)
 }
 
+fn scan_rails(shapes: &[Component]) -> Result<OrientedDecoded, Error> {
+    if shapes.len() != EXPECTED_COMPONENTS {
+        return Err(Error::InvalidFrame);
+    }
+    let angle = estimated_angle(shapes);
+    let pairs = pair_components(shapes, angle)?;
+    decode_pairs(&pairs)
+}
+
 fn bounds(group: &[Component]) -> ScanBounds {
     let left = group.iter().map(|c| c.left).min().unwrap_or(0);
     let top = group.iter().map(|c| c.top).min().unwrap_or(0);
@@ -578,6 +582,138 @@ fn bounds(group: &[Component]) -> ScanBounds {
         width: right - left + 1,
         height: bottom - top + 1,
     }
+}
+
+/// Secondary detector for fragmented or textured rails.
+///
+/// Uses horizontal ink occupancy to infer the 36 column locations, then
+/// measures each rail's occupied upper/lower envelope. Individual rails may
+/// contain multiple disconnected strokes, as long as their extremities remain
+/// visible. The current fallback expects a roughly horizontal isolated mark.
+fn scan_projected(
+    image: &GrayImage,
+    threshold: u8,
+    light_ink: bool,
+) -> Result<LocatedCode, Error> {
+    let (width, height) = image.dimensions();
+    if width < FRAME_BARS as u32 * 3 || height < 25 {
+        return Err(Error::InvalidFrame);
+    }
+
+    let is_ink = |value: u8| {
+        if light_ink {
+            value >= threshold
+        } else {
+            value <= threshold
+        }
+    };
+    let mut ink_columns = vec![0_u32; width as usize];
+    for (x, _, pixel) in image.enumerate_pixels() {
+        if is_ink(pixel.0[0]) {
+            ink_columns[x as usize] += 1;
+        }
+    }
+
+    let mut intervals = Vec::new();
+    let mut start = None;
+    for x in 0..=width {
+        let active = x < width && ink_columns[x as usize] >= 3;
+        match (start, active) {
+            (None, true) => start = Some(x),
+            (Some(left), false) => {
+                intervals.push((left, x));
+                start = None;
+            }
+            _ => {}
+        }
+    }
+
+    if intervals.len() != FRAME_BARS {
+        return Err(Error::InvalidFrame);
+    }
+    let centers: Vec<f64> = intervals
+        .iter()
+        .map(|&(left, right)| (f64::from(left) + f64::from(right - 1)) / 2.0)
+        .collect();
+    let first = centers[0];
+    let last = centers[FRAME_BARS - 1];
+    let pitch = (last - first) / (FRAME_BARS - 1) as f64;
+    if pitch <= 2.0 {
+        return Err(Error::InvalidFrame);
+    }
+    for (index, (&(left, right), &center)) in intervals.iter().zip(&centers).enumerate() {
+        let expected = first + index as f64 * pitch;
+        if (center - expected).abs() > pitch * 0.34
+            || f64::from(right - left) >= pitch
+        {
+            return Err(Error::InvalidFrame);
+        }
+    }
+
+    let mut top = height;
+    let mut bottom = 0_u32;
+    for &(left, right) in &intervals {
+        for x in left..right {
+            for y in 0..height {
+                if is_ink(image.get_pixel(x, y).0[0]) {
+                    top = top.min(y);
+                    bottom = bottom.max(y);
+                }
+            }
+        }
+    }
+    if top >= bottom || bottom - top < 20 {
+        return Err(Error::InvalidFrame);
+    }
+    let midpoint = (top + bottom) / 2;
+
+    let mut pairs = Vec::with_capacity(FRAME_BARS);
+    for (&(left, right), &center) in intervals.iter().zip(&centers) {
+        let mut upper_top = height;
+        let mut upper_bottom = 0;
+        let mut lower_top = height;
+        let mut lower_bottom = 0;
+
+        for x in left..right {
+            for y in top..=bottom {
+                if !is_ink(image.get_pixel(x, y).0[0]) {
+                    continue;
+                }
+                if y < midpoint {
+                    upper_top = upper_top.min(y);
+                    upper_bottom = upper_bottom.max(y);
+                } else {
+                    lower_top = lower_top.min(y);
+                    lower_bottom = lower_bottom.max(y);
+                }
+            }
+        }
+
+        if upper_top == height || lower_top == height {
+            return Err(Error::InvalidFrame);
+        }
+        let envelope = |height: f64| Projected {
+            center_long: center,
+            center_cross: f64::from(midpoint),
+            height,
+            width: f64::from(right - left),
+        };
+        pairs.push(Pair {
+            upper: envelope(f64::from(upper_bottom - upper_top + 1)),
+            lower: envelope(f64::from(lower_bottom - lower_top + 1)),
+        });
+    }
+
+    let result = decode_pairs(&pairs)?;
+    Ok(LocatedCode {
+        result,
+        bounds: ScanBounds {
+            left: intervals[0].0,
+            top,
+            width: intervals[FRAME_BARS - 1].1 - intervals[0].0,
+            height: bottom - top + 1,
+        },
+    })
 }
 
 fn otsu_threshold(image: &GrayImage) -> u8 {
@@ -676,20 +812,24 @@ fn merge_detections(results: &mut Vec<LocatedCode>, candidate: LocatedCode) -> R
 pub fn scan_gray_all(image: &GrayImage) -> Result<Vec<LocatedCode>, Error> {
     let mut decoded = Vec::new();
     for (threshold, light_ink) in segmentations(image) {
-        let Ok(shapes) = components(image, threshold, light_ink) else {
-            continue;
-        };
-        for indexes in candidate_groups(&shapes) {
-            let rails: Vec<Component> =
-                indexes.iter().map(|&index| shapes[index].clone()).collect();
-            if let Ok(result) = scan_rails(&rails) {
-                merge_detections(
-                    &mut decoded,
-                    LocatedCode {
-                        result,
-                        bounds: bounds(&rails),
-                    },
-                )?;
+        if let Ok(shapes) = components(image, threshold, light_ink) {
+            for indexes in candidate_groups(&shapes) {
+                let rails: Vec<Component> =
+                    indexes.iter().map(|&index| shapes[index].clone()).collect();
+                if let Ok(result) = scan_rails(&rails) {
+                    merge_detections(
+                        &mut decoded,
+                        LocatedCode {
+                            result,
+                            bounds: bounds(&rails),
+                        },
+                    )?;
+                }
+            }
+        }
+        if decoded.is_empty() {
+            if let Ok(candidate) = scan_projected(image, threshold, light_ink) {
+                merge_detections(&mut decoded, candidate)?;
             }
         }
         if !decoded.is_empty() {
