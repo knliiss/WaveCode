@@ -15,10 +15,14 @@ fn dimensions(width: u32, height: u32) -> Result<v1::RenderProfile, JsValue> {
 }
 
 #[wasm_bindgen]
-pub fn abi_version() -> u32 { 1 }
+pub fn abi_version() -> u32 {
+    1
+}
 
 #[wasm_bindgen]
-pub fn format_version() -> u32 { u32::from(v1::FORMAT_VERSION) }
+pub fn format_version() -> u32 {
+    u32::from(v1::FORMAT_VERSION)
+}
 
 #[wasm_bindgen]
 pub fn encode_url(url: &str, moment_override: Option<u16>) -> Result<Vec<u8>, JsValue> {
@@ -34,7 +38,11 @@ pub fn encode_url(url: &str, moment_override: Option<u16>) -> Result<Vec<u8>, Js
 
 #[wasm_bindgen]
 pub fn decode_symbols(symbols: &[u8]) -> Result<String, JsValue> {
-    v1::decode(symbols).map_err(js_error)?.code.to_url().map_err(js_error)
+    v1::decode(symbols)
+        .map_err(js_error)?
+        .code
+        .to_url()
+        .map_err(js_error)
 }
 
 #[wasm_bindgen]
@@ -52,7 +60,12 @@ pub fn scan_image(image: &[u8]) -> Result<String, JsValue> {
     if image.len() > 16 * 1024 * 1024 {
         return Err(js_error("image is too large"));
     }
-    v1::scan_image(image).map_err(js_error)?.decoded.code.to_url().map_err(js_error)
+    v1::scan_image(image)
+        .map_err(js_error)?
+        .decoded
+        .code
+        .to_url()
+        .map_err(js_error)
 }
 
 #[wasm_bindgen]
