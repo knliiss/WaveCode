@@ -3,6 +3,7 @@ use crate::{Error, Track};
 
 const YOUTUBE_ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 const SPOTIFY_ALPHABET: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+const AMAZON_ALPHABET: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
 fn youtube_space() -> Rank {
     Rank::pow(64, 11)
@@ -16,8 +17,32 @@ fn spotify_space() -> Rank {
     Rank::pow(62, 22)
 }
 
-pub(crate) fn capacity() -> Rank {
+fn legacy_capacity() -> Rank {
     youtube_space().add(apple_space()).add(spotify_space())
+}
+
+fn numeric_space() -> Rank {
+    Rank::from_limbs(0, 1)
+}
+
+fn tidal_start() -> Rank {
+    legacy_capacity().add(numeric_space())
+}
+
+fn qobuz_start() -> Rank {
+    tidal_start().add(numeric_space())
+}
+
+fn amazon_start() -> Rank {
+    qobuz_start().add(numeric_space())
+}
+
+fn amazon_space() -> Rank {
+    Rank::pow(36, 10)
+}
+
+pub(crate) fn capacity() -> Rank {
+    amazon_start().add(amazon_space())
 }
 
 fn storefront_rank(storefront: &str) -> Result<u64, Error> {
@@ -48,6 +73,17 @@ pub(crate) fn encode(track: &Track) -> Result<Rank, Error> {
             let value = Rank::from_limbs(*id, storefront);
             Ok(youtube_space().add(value))
         }
+        Track::Deezer(id) => Ok(legacy_capacity().add(Rank::from_u64(*id))),
+        Track::Tidal(id) => Ok(tidal_start().add(Rank::from_u64(*id))),
+        Track::Qobuz(id) => Ok(qobuz_start().add(Rank::from_u64(*id))),
+        Track::AmazonMusic(asin) => {
+            if asin.len() != 10 {
+                return Err(Error::InvalidIdentifier);
+            }
+            let number =
+                Rank::from_digits(asin, AMAZON_ALPHABET).ok_or(Error::InvalidIdentifier)?;
+            Ok(amazon_start().add(number))
+        }
     }
 }
 
@@ -77,14 +113,31 @@ pub(crate) fn decode(number: Rank) -> Result<Track, Error> {
         });
     }
 
+    if number < legacy_capacity() {
+        let spotify = number
+            .sub(apple_end)
+            .to_digits(SPOTIFY_ALPHABET, 22)
+            .ok_or(Error::InvalidCodeword)?;
+        return Ok(Track::Spotify(spotify));
+    }
+
+    if number < tidal_start() {
+        return Ok(Track::Deezer(number.sub(legacy_capacity()).low_u64()));
+    }
+    if number < qobuz_start() {
+        return Ok(Track::Tidal(number.sub(tidal_start()).low_u64()));
+    }
+    if number < amazon_start() {
+        return Ok(Track::Qobuz(number.sub(qobuz_start()).low_u64()));
+    }
     if number >= capacity() {
         return Err(Error::InvalidCodeword);
     }
-    let spotify = number
-        .sub(apple_end)
-        .to_digits(SPOTIFY_ALPHABET, 22)
+    let asin = number
+        .sub(amazon_start())
+        .to_digits(AMAZON_ALPHABET, 10)
         .ok_or(Error::InvalidCodeword)?;
-    Ok(Track::Spotify(spotify))
+    Ok(Track::AmazonMusic(asin))
 }
 
 #[cfg(test)]
@@ -107,6 +160,14 @@ mod tests {
                 id: u64::MAX,
                 storefront: "zz".into(),
             },
+            Track::Deezer(0),
+            Track::Deezer(u64::MAX),
+            Track::Tidal(0),
+            Track::Tidal(u64::MAX),
+            Track::Qobuz(0),
+            Track::Qobuz(u64::MAX),
+            Track::AmazonMusic("0000000000".into()),
+            Track::AmazonMusic("ZZZZZZZZZZ".into()),
         ] {
             assert_eq!(decode(encode(&track).unwrap()).unwrap(), track);
         }
