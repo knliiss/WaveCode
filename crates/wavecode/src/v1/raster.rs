@@ -590,11 +590,7 @@ fn bounds(group: &[Component]) -> ScanBounds {
 /// measures each rail's occupied upper/lower envelope. Individual rails may
 /// contain multiple disconnected strokes, as long as their extremities remain
 /// visible. The current fallback expects a roughly horizontal isolated mark.
-fn scan_projected(
-    image: &GrayImage,
-    threshold: u8,
-    light_ink: bool,
-) -> Result<LocatedCode, Error> {
+fn scan_projected(image: &GrayImage, threshold: u8, light_ink: bool) -> Result<LocatedCode, Error> {
     let (width, height) = image.dimensions();
     if width < FRAME_BARS as u32 * 3 || height < 25 {
         return Err(Error::InvalidFrame);
@@ -643,9 +639,7 @@ fn scan_projected(
     }
     for (index, (&(left, right), &center)) in intervals.iter().zip(&centers).enumerate() {
         let expected = first + index as f64 * pitch;
-        if (center - expected).abs() > pitch * 0.34
-            || f64::from(right - left) >= pitch
-        {
+        if (center - expected).abs() > pitch * 0.34 || f64::from(right - left) >= pitch {
             return Err(Error::InvalidFrame);
         }
     }
