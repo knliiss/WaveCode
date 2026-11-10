@@ -32,6 +32,10 @@ pub enum Track {
     YouTubeMusic(String),
     Spotify(String),
     AppleMusic { id: u64, storefront: String },
+    Deezer(u64),
+    Tidal(u64),
+    Qobuz(u64),
+    AmazonMusic(String),
 }
 
 impl Track {
@@ -64,6 +68,46 @@ impl Track {
                 identity::encode(&track)?;
                 Ok(track)
             }
+            "www.deezer.com" | "deezer.com"
+                if segments.len() == 2 && segments[0] == "track" =>
+            {
+                let id = segments[1].parse::<u64>().map_err(|_| Error::InvalidIdentifier)?;
+                Ok(Self::Deezer(id))
+            }
+            "tidal.com" | "www.tidal.com" | "listen.tidal.com"
+                if (segments.len() == 2 && segments[0] == "track")
+                    || (segments.len() == 3
+                        && segments[0] == "browse"
+                        && segments[1] == "track") =>
+            {
+                let id = segments
+                    .last()
+                    .ok_or(Error::InvalidIdentifier)?
+                    .parse::<u64>()
+                    .map_err(|_| Error::InvalidIdentifier)?;
+                Ok(Self::Tidal(id))
+            }
+            "open.qobuz.com" | "play.qobuz.com"
+                if segments.len() == 2 && segments[0] == "track" =>
+            {
+                let id = segments[1].parse::<u64>().map_err(|_| Error::InvalidIdentifier)?;
+                Ok(Self::Qobuz(id))
+            }
+            "music.amazon.com"
+                if (segments.len() == 2 && segments[0] == "tracks")
+                    || (segments.len() == 2
+                        && segments[0] == "albums"
+                        && parameter(query, "trackAsin").is_some()) =>
+            {
+                let asin = if segments[0] == "tracks" {
+                    segments[1]
+                } else {
+                    parameter(query, "trackAsin").ok_or(Error::InvalidIdentifier)?
+                };
+                let track = Self::AmazonMusic(asin.to_owned());
+                identity::encode(&track)?;
+                Ok(track)
+            }
             "music.apple.com" if segments.len() >= 3 => {
                 let storefront = segments[0].to_owned();
                 let song_id = match segments[1] {
@@ -90,6 +134,10 @@ impl Track {
             Self::AppleMusic { id, storefront } => {
                 format!("https://music.apple.com/{storefront}/song/{id}")
             }
+            Self::Deezer(id) => format!("https://www.deezer.com/track/{id}"),
+            Self::Tidal(id) => format!("https://tidal.com/browse/track/{id}"),
+            Self::Qobuz(id) => format!("https://open.qobuz.com/track/{id}"),
+            Self::AmazonMusic(asin) => format!("https://music.amazon.com/tracks/{asin}"),
         })
     }
 }
