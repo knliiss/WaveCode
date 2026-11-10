@@ -114,7 +114,7 @@ fn components(image: &GrayImage) -> Result<Vec<Component>, Error> {
     let mut visited = vec![false; width * height];
     let mut components = Vec::new();
     let minimum_area = (width * height / 2_000_000).max(4);
-    let mut dark_pixels = 0usize;
+    let mut discarded_backgrounds = 0usize;
 
     for y in 0..height {
         for x in 0..width {
@@ -127,9 +127,17 @@ fn components(image: &GrayImage) -> Result<Vec<Component>, Error> {
             visited[start] = true;
             let mut points = Vec::new();
             let mut point_count = 0_usize;
+            let mut min_x = width;
+            let mut min_y = height;
+            let mut max_x = 0_usize;
+            let mut max_y = 0_usize;
 
             while let Some((cx, cy)) = pending.pop() {
                 point_count += 1;
+                min_x = min_x.min(cx);
+                min_y = min_y.min(cy);
+                max_x = max_x.max(cx);
+                max_y = max_y.max(cy);
                 if points.len() < MAX_COMPONENT_AREA {
                     points.push((cx as u32, cy as u32));
                 }
@@ -156,7 +164,16 @@ fn components(image: &GrayImage) -> Result<Vec<Component>, Error> {
                     }
                 }
             }
-            dark_pixels += point_count;
+            let spans_both_horizontal_edges = min_x == 0 && max_x + 1 == width;
+            let spans_both_vertical_edges = min_y == 0 && max_y + 1 == height;
+            let is_surrounding_background = point_count > width * height / 10
+                && (spans_both_horizontal_edges || spans_both_vertical_edges);
+
+            if is_surrounding_background {
+                discarded_backgrounds += 1;
+                continue;
+            }
+
             if point_count >= minimum_area && point_count <= MAX_COMPONENT_AREA {
                 components.push(Component::new(points));
                 if components.len() > MAX_COMPONENTS {
@@ -165,7 +182,7 @@ fn components(image: &GrayImage) -> Result<Vec<Component>, Error> {
             }
         }
     }
-    if dark_pixels > width * height / 2 {
+    if discarded_backgrounds > 1 {
         return Err(Error::InvalidFrame);
     }
     Ok(components)
