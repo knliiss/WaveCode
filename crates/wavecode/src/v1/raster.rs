@@ -1,9 +1,11 @@
-use image::GrayImage;
+use std::io::Cursor;
+
+use image::{DynamicImage, GrayImage, ImageOutputFormat, Luma};
 
 use crate::{Error, Orientation, OrientedDecoded};
 
 use super::codec::{self, Observation, SoftObservation, SymbolHypothesis, SYMBOL_COUNT};
-use super::visual::FRAME_BARS;
+use super::visual::{self, RenderProfile, FRAME_BARS};
 
 const EXPECTED_COMPONENTS: usize = FRAME_BARS * 2;
 const MAX_PIXELS: u64 = 20_000_000;
@@ -286,6 +288,87 @@ fn trial(pairs: &[Pair], orientation: Orientation, anchor: usize) -> Option<Orie
         decoded,
         orientation,
     })
+}
+
+fn fill_rounded_rectangle(
+    image: &mut GrayImage,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    radius: f64,
+) {
+    let radius = radius.min(width / 2.0).min(height / 2.0);
+    let left = x.floor().max(0.0) as u32;
+    let top = y.floor().max(0.0) as u32;
+    let right = (x + width).ceil().min(f64::from(image.width())) as u32;
+    let bottom = (y + height).ceil().min(f64::from(image.height())) as u32;
+    let center_x = x + width / 2.0;
+    let center_y = y + height / 2.0;
+
+    for row in top..bottom {
+        for column in left..right {
+            let mut coverage = 0_u8;
+            for dy in [0.25, 0.75] {
+                for dx in [0.25, 0.75] {
+                    let px = f64::from(column) + dx;
+                    let py = f64::from(row) + dy;
+                    let horizontal = (px - center_x).abs() - (width / 2.0 - radius);
+                    let vertical = (py - center_y).abs() - (height / 2.0 - radius);
+                    let outside = horizontal.max(0.0).powi(2) + vertical.max(0.0).powi(2);
+                    if horizontal <= 0.0 && vertical <= 0.0 || outside <= radius * radius {
+                        coverage += 1;
+                    }
+                }
+            }
+            let shade = 255 - u16::from(coverage) * 255 / 4;
+            if shade < u16::from(image.get_pixel(column, row).0[0]) {
+                image.put_pixel(column, row, Luma([shade as u8]));
+            }
+        }
+    }
+}
+
+/// Renders a WaveCode V1 PNG with the same scale-independent geometry as SVG.
+pub fn render_png(symbols: &[u8], profile: RenderProfile) -> Result<Vec<u8>, Error> {
+    let frame = visual::frame_from_symbols(symbols)?;
+    let geometry = profile.geometry()?;
+    let width = profile.width.ceil();
+    let height = profile.height.ceil();
+
+    if width > u32::MAX as f64 || height > u32::MAX as f64 || width * height > MAX_PIXELS as f64 {
+        return Err(Error::InvalidGeometry);
+    }
+
+    let mut image = GrayImage::from_pixel(width as u32, height as u32, Luma([255]));
+    for (index, bar) in frame.iter().enumerate() {
+        let x = geometry.quiet + (index as f64 + 0.5) * geometry.pitch - geometry.bar_width / 2.0;
+        let upper_height = geometry.height(bar.upper_level);
+        let lower_height = geometry.height(bar.lower_level);
+
+        fill_rounded_rectangle(
+            &mut image,
+            x,
+            geometry.baseline - geometry.gap / 2.0 - upper_height,
+            geometry.bar_width,
+            upper_height,
+            geometry.radius,
+        );
+        fill_rounded_rectangle(
+            &mut image,
+            x,
+            geometry.baseline + geometry.gap / 2.0,
+            geometry.bar_width,
+            lower_height,
+            geometry.radius,
+        );
+    }
+
+    let mut bytes = Cursor::new(Vec::new());
+    DynamicImage::ImageLuma8(image)
+        .write_to(&mut bytes, ImageOutputFormat::Png)
+        .map_err(|_| Error::InvalidGeometry)?;
+    Ok(bytes.into_inner())
 }
 
 /// Scans an isolated high-contrast WaveCode V1 image, in PNG or JPEG form.
