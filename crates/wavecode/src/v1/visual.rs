@@ -1,11 +1,17 @@
-use crate::{Error, Orientation, OrientedDecoded};
 use super::codec::{self, SYMBOL_COUNT};
+use crate::{Error, Orientation, OrientedDecoded};
 
 pub const FRAME_BARS: usize = SYMBOL_COUNT + 2;
 pub const LEVELS_PER_RAIL: u8 = 8;
 
-const START: Bar = Bar { upper_level: 9, lower_level: 2 };
-const END: Bar = Bar { upper_level: 2, lower_level: 10 };
+const START: Bar = Bar {
+    upper_level: 9,
+    lower_level: 2,
+};
+const END: Bar = Bar {
+    upper_level: 2,
+    lower_level: 10,
+};
 const MAX_GUARD_LEVEL: f64 = 10.0;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -71,11 +77,20 @@ impl RenderProfile {
 
     fn geometry(self) -> Result<Geometry, Error> {
         let valid = [
-            self.width, self.height, self.quiet_zone_fraction, self.bar_fill_fraction,
-            self.center_gap_fraction, self.vertical_margin_fraction,
-            self.minimum_height_steps, self.corner_radius_fraction,
-        ].iter().all(|number| number.is_finite());
-        if !valid || self.width <= 0.0 || self.height <= 0.0
+            self.width,
+            self.height,
+            self.quiet_zone_fraction,
+            self.bar_fill_fraction,
+            self.center_gap_fraction,
+            self.vertical_margin_fraction,
+            self.minimum_height_steps,
+            self.corner_radius_fraction,
+        ]
+        .iter()
+        .all(|number| number.is_finite());
+        if !valid
+            || self.width <= 0.0
+            || self.height <= 0.0
             || !(0.0..0.25).contains(&self.quiet_zone_fraction)
             || !(0.1..=0.95).contains(&self.bar_fill_fraction)
             || !(0.0..0.3).contains(&self.center_gap_fraction)
@@ -160,10 +175,7 @@ pub fn decode_frame(frame: &[Bar]) -> Result<OrientedDecoded, Error> {
     decode_frame_with_erasures(frame, &[])
 }
 
-fn decode_frame_with_erasures(
-    frame: &[Bar],
-    erasures: &[usize],
-) -> Result<OrientedDecoded, Error> {
+fn decode_frame_with_erasures(frame: &[Bar], erasures: &[usize]) -> Result<OrientedDecoded, Error> {
     if frame.len() != FRAME_BARS {
         return Err(Error::InvalidLength);
     }
@@ -182,7 +194,10 @@ fn decode_frame_with_erasures(
                 if found.is_some() {
                     return Err(Error::AmbiguousOrientation);
                 }
-                found = Some(OrientedDecoded { decoded, orientation });
+                found = Some(OrientedDecoded {
+                    decoded,
+                    orientation,
+                });
             }
         }
     }
@@ -194,10 +209,7 @@ pub fn render_svg(symbols: &[u8]) -> Result<String, Error> {
     render_svg_with_profile(symbols, RenderProfile::default())
 }
 
-pub fn render_svg_with_profile(
-    symbols: &[u8],
-    profile: RenderProfile,
-) -> Result<String, Error> {
+pub fn render_svg_with_profile(symbols: &[u8], profile: RenderProfile) -> Result<String, Error> {
     let frame = frame_from_symbols(symbols)?;
     let geo = profile.geometry()?;
     let mut svg = format!(
@@ -333,9 +345,8 @@ fn optical_frame(svg: &str) -> Result<Vec<OpticalBar>, Error> {
     let upper_baseline = bars[0].upper.y + bars[0].upper.height;
     let lower_baseline = bars[0].lower.y;
     let guard_difference = (bars[0].upper.height - bars[0].lower.height).abs();
-    let other_difference = (bars[FRAME_BARS - 1].upper.height
-        - bars[FRAME_BARS - 1].lower.height)
-        .abs();
+    let other_difference =
+        (bars[FRAME_BARS - 1].upper.height - bars[FRAME_BARS - 1].lower.height).abs();
     let nominal_step = (guard_difference / 7.0).max(other_difference / 8.0);
     if nominal_step <= 0.0 || lower_baseline <= upper_baseline {
         return Err(Error::InvalidFrame);
@@ -363,9 +374,8 @@ fn optical_frame(svg: &str) -> Result<Vec<OpticalBar>, Error> {
 fn quantize(height: f64, base: f64, step: f64, max: u8) -> (u8, bool) {
     let estimate = (height - base) / step;
     let rounded = estimate.round();
-    let reliable = rounded >= 0.0
-        && rounded <= f64::from(max)
-        && (estimate - rounded).abs() <= 0.40;
+    let reliable =
+        rounded >= 0.0 && rounded <= f64::from(max) && (estimate - rounded).abs() <= 0.40;
     (rounded.clamp(0.0, f64::from(max)) as u8, reliable)
 }
 
@@ -397,10 +407,8 @@ fn decode_with_calibration(
         } else {
             7
         };
-        let (up, confident_up) =
-            quantize(measured_bar.upper.height, base, step, maximum);
-        let (down, confident_down) =
-            quantize(measured_bar.lower.height, base, step, maximum);
+        let (up, confident_up) = quantize(measured_bar.upper.height, base, step, maximum);
+        let (down, confident_down) = quantize(measured_bar.lower.height, base, step, maximum);
         if index > 0 && index < FRAME_BARS - 1 && (!confident_up || !confident_down) {
             erasures.push(index - 1);
         }
@@ -429,8 +437,9 @@ pub fn decode_svg(svg: &str) -> Result<OrientedDecoded, Error> {
         for anchor in [0, FRAME_BARS - 1] {
             if let Ok(candidate) = decode_with_calibration(&frame, orientation, anchor) {
                 match &result {
-                    Some(previous) if previous.decoded.code != candidate.decoded.code
-                        || previous.orientation != candidate.orientation =>
+                    Some(previous)
+                        if previous.decoded.code != candidate.decoded.code
+                            || previous.orientation != candidate.orientation =>
                     {
                         return Err(Error::AmbiguousOrientation);
                     }
@@ -447,8 +456,8 @@ pub fn decode_svg(svg: &str) -> Result<OrientedDecoded, Error> {
 #[cfg(test)]
 mod tests {
     use super::{
-        decode_frame, decode_svg, frame_from_symbols, render_svg, render_svg_with_profile,
-        Bar, RenderProfile, FRAME_BARS,
+        decode_frame, decode_svg, frame_from_symbols, render_svg, render_svg_with_profile, Bar,
+        RenderProfile, FRAME_BARS,
     };
     use crate::v1::encode;
     use crate::{Error, MusicCode, Orientation, Track};
