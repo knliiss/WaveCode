@@ -34,11 +34,7 @@ fn keystone(input: &GrayImage, strength: f64) -> GrayImage {
             if (0..i64::from(input.width())).contains(&source_x)
                 && (0..i64::from(input.height())).contains(&source_y)
             {
-                output.put_pixel(
-                    x,
-                    y,
-                    *input.get_pixel(source_x as u32, source_y as u32),
-                );
+                output.put_pixel(x, y, *input.get_pixel(source_x as u32, source_y as u32));
             }
         }
     }
