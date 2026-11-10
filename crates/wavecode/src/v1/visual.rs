@@ -539,7 +539,14 @@ mod tests {
 
     #[test]
     fn malformed_bars_do_not_pass_as_valid_code() {
-        assert_eq!(decode_frame(&[Bar { upper_level: 0, lower_level: 0 }; FRAME_BARS]),
-            Err(Error::InvalidFrame));
+        assert_eq!(
+            decode_frame(
+                &[Bar {
+                    upper_level: 0,
+                    lower_level: 0
+                }; FRAME_BARS]
+            ),
+            Err(Error::InvalidFrame)
+        );
     }
 }
