@@ -51,9 +51,9 @@ fn syndromes(symbols: &[u8]) -> [u8; PARITY_SYMBOLS] {
     let mut result = [0_u8; PARITY_SYMBOLS];
     for (degree, syndrome) in result.iter_mut().enumerate() {
         let root = power(2, degree as u16);
-        *syndrome = symbols.iter().fold(0_u8, |acc, symbol| {
-            multiply(acc, root) ^ *symbol
-        });
+        *syndrome = symbols
+            .iter()
+            .fold(0_u8, |acc, symbol| multiply(acc, root) ^ *symbol);
     }
     result
 }
