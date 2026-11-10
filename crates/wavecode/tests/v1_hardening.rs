@@ -41,7 +41,10 @@ fn v1_binary_vectors_never_change() {
 
     for (track, expected) in vectors {
         let symbols = v1::encode(&track).unwrap();
-        let actual: String = symbols.iter().map(|symbol| format!("{symbol:02x}")).collect();
+        let actual: String = symbols
+            .iter()
+            .map(|symbol| format!("{symbol:02x}"))
+            .collect();
         assert_eq!(actual, expected);
         assert_eq!(v1::decode(&symbols).unwrap().code, track);
     }
@@ -114,14 +117,22 @@ fn invalid_candidate_sets_are_rejected() {
         })
         .collect();
 
-    observations[0].candidates.push(observations[0].candidates[0]);
-    assert_eq!(v1::decode_soft(&observations), Err(Error::InvalidObservation));
+    observations[0]
+        .candidates
+        .push(observations[0].candidates[0]);
+    assert_eq!(
+        v1::decode_soft(&observations),
+        Err(Error::InvalidObservation)
+    );
 
     observations[0].candidates = vec![SymbolHypothesis {
         symbol: 64,
         confidence: 250,
     }];
-    assert_eq!(v1::decode_soft(&observations), Err(Error::InvalidObservation));
+    assert_eq!(
+        v1::decode_soft(&observations),
+        Err(Error::InvalidObservation)
+    );
 }
 
 #[test]
@@ -177,7 +188,10 @@ fn cli_scales_from_canvas_dimensions_and_decodes_without_profile() {
     let svg = std::fs::read_to_string(&file).unwrap();
     assert!(svg.contains("viewBox=\"0 0 940.000000 140.000000\""));
 
-    let decoded = Command::new(binary).args(["decode-svg", filename]).output().unwrap();
+    let decoded = Command::new(binary)
+        .args(["decode-svg", filename])
+        .output()
+        .unwrap();
     std::fs::remove_file(&file).unwrap();
     assert!(
         decoded.status.success(),
