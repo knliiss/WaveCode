@@ -1,0 +1,344 @@
+use image::{GrayImage, Luma};
+
+use crate::{Error, Orientation, OrientedDecoded};
+
+use super::codec::{self, Observation, SoftObservation, SymbolHypothesis, SYMBOL_COUNT};
+use super::visual::FRAME_BARS;
+
+const EXPECTED_COMPONENTS: usize = FRAME_BARS * 2;
+const MAX_PIXELS: u64 = 20_000_000;
+const MAX_BYTES: usize = 16 * 1024 * 1024;
+const DARK_THRESHOLD: u8 = 150;
+
+#[derive(Clone, Debug)]
+struct Component {
+    points: Vec<(u32, u32)>,
+    center_x: f64,
+    center_y: f64,
+}
+
+impl Component {
+    fn new(points: Vec<(u32, u32)>) -> Self {
+        let count = points.len() as f64;
+        let (sum_x, sum_y) = points.iter().fold((0.0, 0.0), |(x, y), (px, py)| {
+            (x + f64::from(*px), y + f64::from(*py))
+        });
+        Self {
+            points,
+            center_x: sum_x / count,
+            center_y: sum_y / count,
+        }
+    }
+
+    fn project(&self, sine: f64, cosine: f64) -> Projected {
+        let mut min_long = f64::INFINITY;
+        let mut max_long = f64::NEG_INFINITY;
+        let mut min_cross = f64::INFINITY;
+        let mut max_cross = f64::NEG_INFINITY;
+        for &(x, y) in &self.points {
+            let x = f64::from(x);
+            let y = f64::from(y);
+            let longitudinal = x * cosine + y * sine;
+            let transverse = y * cosine - x * sine;
+            min_long = min_long.min(longitudinal);
+            max_long = max_long.max(longitudinal);
+            min_cross = min_cross.min(transverse);
+            max_cross = max_cross.max(transverse);
+        }
+        Projected {
+            center_long: self.center_x * cosine + self.center_y * sine,
+            center_cross: self.center_y * cosine - self.center_x * sine,
+            height: max_cross - min_cross + 1.0,
+            width: max_long - min_long + 1.0,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct Projected {
+    center_long: f64,
+    center_cross: f64,
+    height: f64,
+    width: f64,
+}
+
+#[derive(Clone, Copy)]
+struct Pair {
+    upper: Projected,
+    lower: Projected,
+}
+
+fn components(image: &GrayImage) -> Result<Vec<Component>, Error> {
+    let (width, height) = image.dimensions();
+    let pixels = u64::from(width) * u64::from(height);
+    if pixels == 0 || pixels > MAX_PIXELS {
+        return Err(Error::InvalidFrame);
+    }
+
+    let width = width as usize;
+    let height = height as usize;
+    let mut visited = vec![false; width * height];
+    let mut components = Vec::new();
+    let minimum_area = (width * height / 50_000).max(4);
+    let mut dark_pixels = 0usize;
+
+    for y in 0..height {
+        for x in 0..width {
+            let start = y * width + x;
+            if visited[start] || image.get_pixel(x as u32, y as u32).0[0] > DARK_THRESHOLD {
+                continue;
+            }
+
+            let mut pending = vec![(x, y)];
+            visited[start] = true;
+            let mut points = Vec::new();
+
+            while let Some((cx, cy)) = pending.pop() {
+                points.push((cx as u32, cy as u32));
+                for dy in -1isize..=1 {
+                    for dx in -1isize..=1 {
+                        if dx == 0 && dy == 0 {
+                            continue;
+                        }
+                        let nx = cx as isize + dx;
+                        let ny = cy as isize + dy;
+                        if nx < 0 || ny < 0 || nx >= width as isize || ny >= height as isize {
+                            continue;
+                        }
+                        let nx = nx as usize;
+                        let ny = ny as usize;
+                        let index = ny * width + nx;
+                        if visited[index] {
+                            continue;
+                        }
+                        if image.get_pixel(nx as u32, ny as u32).0[0] <= DARK_THRESHOLD {
+                            visited[index] = true;
+                            pending.push((nx, ny));
+                        }
+                    }
+                }
+            }
+            dark_pixels += points.len();
+            if points.len() >= minimum_area {
+                components.push(Component::new(points));
+            }
+        }
+    }
+    if dark_pixels > width * height / 2 {
+        return Err(Error::InvalidFrame);
+    }
+    if components.len() != EXPECTED_COMPONENTS {
+        return Err(Error::InvalidFrame);
+    }
+    Ok(components)
+}
+
+fn estimated_angle(components: &[Component]) -> f64 {
+    let count = components.len() as f64;
+    let mean_x = components.iter().map(|c| c.center_x).sum::<f64>() / count;
+    let mean_y = components.iter().map(|c| c.center_y).sum::<f64>() / count;
+    let mut xx = 0.0;
+    let mut yy = 0.0;
+    let mut xy = 0.0;
+    for component in components {
+        let dx = component.center_x - mean_x;
+        let dy = component.center_y - mean_y;
+        xx += dx * dx;
+        yy += dy * dy;
+        xy += dx * dy;
+    }
+    0.5 * (2.0 * xy).atan2(xx - yy)
+}
+
+fn pair_components(components: &[Component], angle: f64) -> Result<Vec<Pair>, Error> {
+    let (sine, cosine) = angle.sin_cos();
+    let mut projected: Vec<Projected> = components
+        .iter()
+        .map(|component| component.project(sine, cosine))
+        .collect();
+    projected.sort_by(|a, b| a.center_long.total_cmp(&b.center_long));
+
+    let mut pairs = Vec::with_capacity(FRAME_BARS);
+    for column in projected.chunks_exact(2) {
+        let (upper, lower) = if column[0].center_cross < column[1].center_cross {
+            (column[0], column[1])
+        } else {
+            (column[1], column[0])
+        };
+        pairs.push(Pair { upper, lower });
+    }
+
+    let first = (pairs[0].upper.center_long + pairs[0].lower.center_long) / 2.0;
+    let last = (pairs[FRAME_BARS - 1].upper.center_long
+        + pairs[FRAME_BARS - 1].lower.center_long)
+        / 2.0;
+    let pitch = (last - first) / (FRAME_BARS - 1) as f64;
+    if pitch <= 2.0 {
+        return Err(Error::InvalidFrame);
+    }
+    for (index, pair) in pairs.iter().enumerate() {
+        let center = (pair.upper.center_long + pair.lower.center_long) / 2.0;
+        if (pair.upper.center_long - pair.lower.center_long).abs() > pitch * 0.55
+            || (center - (first + index as f64 * pitch)).abs() > pitch * 0.37
+            || pair.upper.width > pitch * 0.99
+            || pair.lower.width > pitch * 0.99
+        {
+            return Err(Error::InvalidFrame);
+        }
+    }
+    Ok(pairs)
+}
+
+#[derive(Clone, Copy)]
+struct Calibration {
+    base: f64,
+    step: f64,
+}
+
+fn calibration(pair: Pair, upper_level: u8, lower_level: u8) -> Option<Calibration> {
+    let difference = f64::from(upper_level) - f64::from(lower_level);
+    let step = (pair.upper.height - pair.lower.height) / difference;
+    let base = pair.upper.height - f64::from(upper_level) * step;
+    if step < 0.6 || base <= 0.0 || !step.is_finite() || !base.is_finite() {
+        None
+    } else {
+        Some(Calibration { base, step })
+    }
+}
+
+fn measure_level(height: f64, scale: Calibration) -> (u8, u8, Option<u8>) {
+    let estimate = (height - scale.base) / scale.step;
+    let nearest = estimate.round().clamp(0.0, 7.0) as u8;
+    let discrepancy = (estimate - f64::from(nearest)).abs();
+    let confidence = ((1.0 - discrepancy.min(1.0)) * 255.0).round() as u8;
+    let alternative = if discrepancy > 0.2 {
+        let candidate = if estimate > f64::from(nearest) {
+            nearest.saturating_add(1)
+        } else {
+            nearest.saturating_sub(1)
+        };
+        (candidate != nearest && candidate < 8).then_some(candidate)
+    } else {
+        None
+    };
+    (nearest, confidence, alternative)
+}
+
+fn trial(
+    pairs: &[Pair],
+    orientation: Orientation,
+    anchor: usize,
+) -> Option<OrientedDecoded> {
+    let (start_upper, start_lower) = match (orientation, anchor) {
+        (Orientation::Upright, 0) => (9, 2),
+        (Orientation::Upright, _) => (2, 10),
+        (Orientation::UpsideDown, 0) => (10, 2),
+        (Orientation::UpsideDown, _) => (2, 9),
+    };
+    let scale = calibration(pairs[anchor], start_upper, start_lower)?;
+    let mut observations = Vec::with_capacity(SYMBOL_COUNT);
+    let mut soft = Vec::with_capacity(SYMBOL_COUNT);
+
+    for index in 0..SYMBOL_COUNT {
+        let pair = pairs[index + 1];
+        let (up, up_confidence, up_alt) = measure_level(pair.upper.height, scale);
+        let (down, down_confidence, down_alt) = measure_level(pair.lower.height, scale);
+        let (upper, lower) = match orientation {
+            Orientation::Upright => (up, down),
+            Orientation::UpsideDown => (down, up),
+        };
+        let symbol = upper * 8 + lower;
+        let confidence = up_confidence.min(down_confidence);
+        let mut candidates = vec![SymbolHypothesis { symbol, confidence }];
+
+        if let Some(other) = up_alt {
+            let symbol = match orientation {
+                Orientation::Upright => other * 8 + down,
+                Orientation::UpsideDown => down * 8 + other,
+            };
+            if symbol != candidates[0].symbol {
+                candidates.push(SymbolHypothesis {
+                    symbol,
+                    confidence: up_confidence.saturating_sub(32),
+                });
+            }
+        }
+        if let Some(other) = down_alt {
+            let symbol = match orientation {
+                Orientation::Upright => up * 8 + other,
+                Orientation::UpsideDown => other * 8 + up,
+            };
+            if symbol != candidates[0].symbol {
+                candidates.push(SymbolHypothesis {
+                    symbol,
+                    confidence: down_confidence.saturating_sub(32),
+                });
+            }
+        }
+        observations.push(Observation { symbol, confidence });
+        soft.push(SoftObservation { candidates });
+    }
+
+    if orientation == Orientation::UpsideDown {
+        observations.reverse();
+        soft.reverse();
+    }
+
+    let decoded = codec::decode_observations(&observations)
+        .or_else(|_| codec::decode_soft(&soft))
+        .ok()?;
+    Some(OrientedDecoded { decoded, orientation })
+}
+
+/// Scans an isolated high-contrast WaveCode V1 image, in PNG or JPEG form.
+///
+/// This first raster scanner assumes 72 separated ink components (36 upper and
+/// 36 lower rails). Arbitrary photographic backgrounds, occlusion and strong
+/// perspective warping require a separate localization stage.
+pub fn scan_image(bytes: &[u8]) -> Result<OrientedDecoded, Error> {
+    if bytes.len() > MAX_BYTES {
+        return Err(Error::InvalidFrame);
+    }
+    let image = image::load_from_memory(bytes).map_err(|_| Error::InvalidFrame)?;
+    scan_gray(&image.to_luma8())
+}
+
+/// Scans an already-decoded grayscale raster image.
+pub fn scan_gray(image: &GrayImage) -> Result<OrientedDecoded, Error> {
+    let shapes = components(image)?;
+    let angle = estimated_angle(&shapes);
+    let pairs = pair_components(&shapes, angle)?;
+    let mut result: Option<OrientedDecoded> = None;
+
+    for orientation in [Orientation::Upright, Orientation::UpsideDown] {
+        for anchor in [0, FRAME_BARS - 1] {
+            if let Some(candidate) = trial(&pairs, orientation, anchor) {
+                match &result {
+                    Some(previous)
+                        if previous.decoded.code != candidate.decoded.code
+                            || previous.orientation != candidate.orientation =>
+                    {
+                        return Err(Error::AmbiguousOrientation);
+                    }
+                    Some(_) => {}
+                    None => result = Some(candidate),
+                }
+            }
+        }
+    }
+    result.ok_or(Error::InvalidFrame)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::scan_gray;
+    use image::{GrayImage, Luma};
+
+    #[test]
+    fn rejects_empty_or_all_black_images() {
+        let empty = GrayImage::from_pixel(80, 80, Luma([255]));
+        let black = GrayImage::from_pixel(80, 80, Luma([0]));
+        assert!(scan_gray(&empty).is_err());
+        assert!(scan_gray(&black).is_err());
+    }
+}
