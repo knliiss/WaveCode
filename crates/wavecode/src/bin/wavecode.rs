@@ -30,6 +30,8 @@ fn run() -> Result<(), Box<dyn Error>> {
             let url = args.next().ok_or_else(usage_error)?;
             let mut timestamp = None;
             let mut svg_path = None;
+            #[cfg(feature = "raster")]
+            let mut png_path = None;
             let mut legacy = false;
             let mut profile = v1::RenderProfile::default();
             let mut custom_geometry = false;
@@ -48,6 +50,13 @@ fn run() -> Result<(), Box<dyn Error>> {
                             return Err(Box::new(usage_error()));
                         }
                         svg_path = Some(args.next().ok_or_else(usage_error)?);
+                    }
+                    #[cfg(feature = "raster")]
+                    "--png" => {
+                        if png_path.is_some() {
+                            return Err(Box::new(usage_error()));
+                        }
+                        png_path = Some(args.next().ok_or_else(usage_error)?);
                     }
                     "--legacy" => {
                         legacy = true;
@@ -74,6 +83,10 @@ fn run() -> Result<(), Box<dyn Error>> {
             }
 
             if legacy && custom_geometry {
+                return Err(Box::new(usage_error()));
+            }
+            #[cfg(feature = "raster")]
+            if legacy && png_path.is_some() {
                 return Err(Box::new(usage_error()));
             }
             let mut code = MusicCode::from_url(&url)?;
@@ -109,6 +122,11 @@ fn run() -> Result<(), Box<dyn Error>> {
                 };
                 fs::write(&path, image)?;
                 println!("SVG: {path}");
+            }
+            #[cfg(feature = "raster")]
+            if let Some(path) = png_path {
+                fs::write(&path, v1::render_png(&symbols, profile)?)?;
+                println!("PNG: {path}");
             }
         }
         Some("decode") => {
@@ -164,7 +182,7 @@ fn run() -> Result<(), Box<dyn Error>> {
 fn usage_error() -> io::Error {
     io::Error::new(
         ErrorKind::InvalidInput,
-        "usage:\n  wavecode encode '<music URL>' [--time SECONDS] [--svg FILE.svg] [--width PX] [--height PX] [--gap-ratio R] [--fill-ratio R] [--legacy]\n  wavecode decode <HEX>\n  wavecode decode-svg <FILE.svg>\n  wavecode scan <IMAGE.png|IMAGE.jpg>",
+        "usage:\n  wavecode encode '<music URL>' [--time SECONDS] [--svg FILE.svg] [--png FILE.png] [--width PX] [--height PX] [--gap-ratio R] [--fill-ratio R] [--legacy]\n  wavecode decode <HEX>\n  wavecode decode-svg <FILE.svg>\n  wavecode scan <IMAGE.png|IMAGE.jpg>",
     )
 }
 
