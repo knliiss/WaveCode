@@ -692,6 +692,9 @@ pub fn scan_gray_all(image: &GrayImage) -> Result<Vec<LocatedCode>, Error> {
                 )?;
             }
         }
+        if !decoded.is_empty() {
+            break;
+        }
     }
     if decoded.is_empty() {
         Err(Error::InvalidFrame)
