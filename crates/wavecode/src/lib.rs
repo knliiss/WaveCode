@@ -68,10 +68,10 @@ impl Track {
                 identity::encode(&track)?;
                 Ok(track)
             }
-            "www.deezer.com" | "deezer.com"
-                if segments.len() == 2 && segments[0] == "track" =>
-            {
-                let id = segments[1].parse::<u64>().map_err(|_| Error::InvalidIdentifier)?;
+            "www.deezer.com" | "deezer.com" if segments.len() == 2 && segments[0] == "track" => {
+                let id = segments[1]
+                    .parse::<u64>()
+                    .map_err(|_| Error::InvalidIdentifier)?;
                 Ok(Self::Deezer(id))
             }
             "tidal.com" | "www.tidal.com" | "listen.tidal.com"
@@ -90,7 +90,9 @@ impl Track {
             "open.qobuz.com" | "play.qobuz.com"
                 if segments.len() == 2 && segments[0] == "track" =>
             {
-                let id = segments[1].parse::<u64>().map_err(|_| Error::InvalidIdentifier)?;
+                let id = segments[1]
+                    .parse::<u64>()
+                    .map_err(|_| Error::InvalidIdentifier)?;
                 Ok(Self::Qobuz(id))
             }
             "music.amazon.com"
