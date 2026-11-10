@@ -31,7 +31,7 @@ public record ScanResult(
 /// Managed .NET interface to the single Rust WaveCode V1 implementation.
 /// Native library is resolved by the OS loader, or WAVECODE_LIBRARY.
 /// </summary>
-public static class WaveCode
+public static class WaveCodeApi
 {
     [StructLayout(LayoutKind.Sequential)]
     private struct Buffer
@@ -81,9 +81,9 @@ public static class WaveCode
             byte[] image, nuint imageLength, out Buffer output);
     }
 
-    static WaveCode()
+    static WaveCodeApi()
     {
-        NativeLibrary.SetDllImportResolver(typeof(WaveCode).Assembly, (name, _, _) =>
+        NativeLibrary.SetDllImportResolver(typeof(WaveCodeApi).Assembly, (name, _, _) =>
         {
             if (name != "wavecode_ffi")
                 return nint.Zero;
