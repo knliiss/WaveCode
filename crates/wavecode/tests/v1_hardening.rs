@@ -117,9 +117,8 @@ fn invalid_candidate_sets_are_rejected() {
         })
         .collect();
 
-    observations[0]
-        .candidates
-        .push(observations[0].candidates[0]);
+    let repeated = observations[0].candidates[0];
+    observations[0].candidates.push(repeated);
     assert_eq!(
         v1::decode_soft(&observations),
         Err(Error::InvalidObservation)
