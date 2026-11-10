@@ -187,7 +187,14 @@ mod tests {
         ];
 
         for track in tracks {
-            for moment_seconds in [None, Some(0), Some(187), Some(4095), Some(4096), Some(65535)] {
+            for moment_seconds in [
+                None,
+                Some(0),
+                Some(187),
+                Some(4095),
+                Some(4096),
+                Some(65535),
+            ] {
                 let code = MusicCode {
                     track: track.clone(),
                     moment_seconds,
