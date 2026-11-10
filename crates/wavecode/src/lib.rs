@@ -166,6 +166,8 @@ pub enum Error {
     ChecksumMismatch,
     UnsupportedVersion,
     InvalidFrame,
+    InvalidGeometry,
+    InvalidObservation,
 }
 
 impl std::fmt::Display for Error {
@@ -184,6 +186,8 @@ impl std::fmt::Display for Error {
             Self::ChecksumMismatch => "WaveCode checksum mismatch",
             Self::UnsupportedVersion => "unsupported WaveCode version",
             Self::InvalidFrame => "invalid WaveCode optical frame",
+            Self::InvalidGeometry => "invalid WaveCode render dimensions or relative geometry",
+            Self::InvalidObservation => "invalid or duplicate symbol hypothesis",
         };
         formatter.write_str(message)
     }
