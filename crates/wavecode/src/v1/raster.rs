@@ -169,9 +169,8 @@ fn pair_components(components: &[Component], angle: f64) -> Result<Vec<Pair>, Er
     }
 
     let first = (pairs[0].upper.center_long + pairs[0].lower.center_long) / 2.0;
-    let last = (pairs[FRAME_BARS - 1].upper.center_long
-        + pairs[FRAME_BARS - 1].lower.center_long)
-        / 2.0;
+    let last =
+        (pairs[FRAME_BARS - 1].upper.center_long + pairs[FRAME_BARS - 1].lower.center_long) / 2.0;
     let pitch = (last - first) / (FRAME_BARS - 1) as f64;
     if pitch <= 2.0 {
         return Err(Error::InvalidFrame);
@@ -224,11 +223,7 @@ fn measure_level(height: f64, scale: Calibration) -> (u8, u8, Option<u8>) {
     (nearest, confidence, alternative)
 }
 
-fn trial(
-    pairs: &[Pair],
-    orientation: Orientation,
-    anchor: usize,
-) -> Option<OrientedDecoded> {
+fn trial(pairs: &[Pair], orientation: Orientation, anchor: usize) -> Option<OrientedDecoded> {
     let (start_upper, start_lower) = match (orientation, anchor) {
         (Orientation::Upright, 0) => (9, 2),
         (Orientation::Upright, _) => (2, 10),
@@ -287,7 +282,10 @@ fn trial(
     let decoded = codec::decode_observations(&observations)
         .or_else(|_| codec::decode_soft(&soft))
         .ok()?;
-    Some(OrientedDecoded { decoded, orientation })
+    Some(OrientedDecoded {
+        decoded,
+        orientation,
+    })
 }
 
 /// Scans an isolated high-contrast WaveCode V1 image, in PNG or JPEG form.
