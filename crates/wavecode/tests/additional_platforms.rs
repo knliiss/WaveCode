@@ -1,7 +1,7 @@
 use std::process::Command;
 
-use wavecode::{decode_symbols, encode_symbols, Error, MusicCode, Track};
 use wavecode::v1;
+use wavecode::{decode_symbols, encode_symbols, Error, MusicCode, Track};
 
 const PLATFORMS: [(&str, &str, u64); 7] = [
     (
@@ -45,7 +45,14 @@ const PLATFORMS: [(&str, &str, u64); 7] = [
 fn parses_and_canonicalizes_new_music_links() {
     for (url, canonical, moment) in PLATFORMS {
         let code = MusicCode::from_url(url).unwrap();
-        assert_eq!(code.moment_seconds, if moment > 0 { Some(moment as u16) } else { None });
+        assert_eq!(
+            code.moment_seconds,
+            if moment > 0 {
+                Some(moment as u16)
+            } else {
+                None
+            }
+        );
         assert_eq!(code.to_url().unwrap(), canonical);
         assert_eq!(MusicCode::from_url(canonical).unwrap(), code);
     }
@@ -120,7 +127,10 @@ fn v1_layout_keeps_existing_three_platforms_unchanged() {
     ];
     for (url, expected) in originals {
         let symbols = v1::encode(&MusicCode::from_url(url).unwrap()).unwrap();
-        let actual: String = symbols.iter().map(|symbol| format!("{symbol:02x}")).collect();
+        let actual: String = symbols
+            .iter()
+            .map(|symbol| format!("{symbol:02x}"))
+            .collect();
         assert_eq!(actual, expected);
     }
 }
@@ -133,9 +143,14 @@ fn cli_can_encode_and_decode_new_platform_links() {
         assert!(output.status.success(), "{url}");
         let text = String::from_utf8(output.stdout).unwrap();
         assert!(text.contains(&format!("Track: {canonical}")));
-        let hex = text.lines().find_map(|line| line.strip_prefix("Symbols: ")).unwrap();
+        let hex = text
+            .lines()
+            .find_map(|line| line.strip_prefix("Symbols: "))
+            .unwrap();
         let decoded = Command::new(binary).args(["decode", hex]).output().unwrap();
         assert!(decoded.status.success(), "{url}");
-        assert!(String::from_utf8(decoded.stdout).unwrap().contains(canonical));
+        assert!(String::from_utf8(decoded.stdout)
+            .unwrap()
+            .contains(canonical));
     }
 }
