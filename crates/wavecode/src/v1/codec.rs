@@ -9,6 +9,36 @@ pub const SYMBOL_COUNT: usize = rs::TOTAL_SYMBOLS;
 pub const DATA_COUNT: usize = DATA_SYMBOLS;
 pub const CORRECTION_SYMBOLS: usize = rs::PARITY_SYMBOLS;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Observation {
+    pub symbol: u8,
+    pub confidence: u8,
+}
+
+pub fn decode_observations(observations: &[Observation]) -> Result<Decoded, Error> {
+    if observations.len() != SYMBOL_COUNT {
+        return Err(Error::InvalidLength);
+    }
+    if observations.iter().any(|observation| observation.symbol >= 64) {
+        return Err(Error::InvalidCodeword);
+    }
+
+    let symbols: Vec<u8> = observations.iter().map(|item| item.symbol).collect();
+    let mut priorities: Vec<usize> = (0..SYMBOL_COUNT).collect();
+    priorities.sort_by_key(|&index| (observations[index].confidence, index));
+
+    for count in 0..=CORRECTION_SYMBOLS {
+        match decode_with_erasures(&symbols, &priorities[..count]) {
+            Ok(decoded) => return Ok(decoded),
+            Err(Error::ChecksumMismatch | Error::Uncorrectable | Error::InvalidCodeword) => {}
+            Err(error) => return Err(error),
+        }
+    }
+
+    Err(Error::Uncorrectable)
+}
+
+
 const MESSAGE_BYTES: usize = 19;
 const PACKED_BYTES: usize = 21;
 const VERSION_SHIFT: u8 = 5;
