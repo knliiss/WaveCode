@@ -1,0 +1,32 @@
+name: Prune merged branches
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete unchanged heads of merged pull requests
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Never delete main, unmerged branches or branches changed since merge.
+          gh api --paginate "repos/$GH_REPO/pulls?state=closed&per_page=100" \
+            --jq '.[] | select(.merged_at != null and .head.repo != null and .head.repo.full_name == .base.repo.full_name and .head.ref != "main") | [.head.ref, .head.sha] | @tsv' |
+          while IFS=$'\t' read -r branch merged_head; do
+            current=$(gh api "repos/$GH_REPO/git/ref/heads/$branch" --jq '.object.sha' 2>/dev/null || true)
+            if [[ -n "$current" && "$current" == "$merged_head" ]]; then
+              echo "Pruning merged branch: $branch"
+              gh api -X DELETE "repos/$GH_REPO/git/refs/heads/$branch" --silent
+            fi
+          done
