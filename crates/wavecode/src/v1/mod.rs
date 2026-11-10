@@ -3,7 +3,8 @@ mod rs;
 mod visual;
 
 pub use codec::{
-    decode, decode_with_erasures, encode, CORRECTION_SYMBOLS, DATA_COUNT, FORMAT_VERSION,
+    decode, decode_observations, decode_with_erasures, encode, Observation, CORRECTION_SYMBOLS,
+    DATA_COUNT, FORMAT_VERSION,
     SYMBOL_COUNT,
 };
 pub use visual::{
