@@ -3,6 +3,7 @@ use std::error::Error;
 use std::fs;
 use std::io::{self, ErrorKind};
 
+use wavecode::v1;
 use wavecode::{
     bars_from_symbols, decode_oriented, decode_symbols, encode_symbols, Bar, Decoded, MusicCode,
     Orientation,
@@ -29,6 +30,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             let url = args.next().ok_or_else(usage_error)?;
             let mut timestamp = None;
             let mut svg_path = None;
+            let mut legacy = false;
 
             while let Some(option) = args.next() {
                 match option.as_str() {
@@ -45,6 +47,9 @@ fn run() -> Result<(), Box<dyn Error>> {
                         }
                         svg_path = Some(args.next().ok_or_else(usage_error)?);
                     }
+                    "--legacy" => {
+                        legacy = true;
+                    }
                     _ => return Err(Box::new(usage_error())),
                 }
             }
@@ -53,18 +58,34 @@ fn run() -> Result<(), Box<dyn Error>> {
             if let Some(seconds) = timestamp {
                 code.moment_seconds = Some(seconds);
             }
-            let symbols = encode_symbols(&code)?;
-            let bars = bars_from_symbols(&symbols);
+            let symbols = if legacy {
+                encode_symbols(&code)?
+            } else {
+                v1::encode(&code)?
+            };
 
             println!("Track: {}", code.to_url()?);
             if let Some(seconds) = code.moment_seconds {
                 println!("Moment: {seconds} s");
             }
-            println!("Bars: {}", bars.len());
+            println!("Format: {}", if legacy { "legacy" } else { "v1" });
+            println!(
+                "Bars: {}",
+                if legacy {
+                    symbols.len()
+                } else {
+                    v1::FRAME_BARS
+                }
+            );
             println!("Symbols: {}", hex_encode(&symbols));
 
             if let Some(path) = svg_path {
-                fs::write(&path, render_svg(&bars)?)?;
+                let image = if legacy {
+                    render_svg(&bars_from_symbols(&symbols))?
+                } else {
+                    v1::render_svg(&symbols)?
+                };
+                fs::write(&path, image)?;
                 println!("SVG: {path}");
             }
         }
@@ -74,7 +95,11 @@ fn run() -> Result<(), Box<dyn Error>> {
                 return Err(Box::new(usage_error()));
             }
             let symbols = hex_decode(&hex)?;
-            let decoded = decode_symbols(&symbols)?;
+            let decoded = if symbols.len() == v1::SYMBOL_COUNT {
+                v1::decode(&symbols)?
+            } else {
+                decode_symbols(&symbols)?
+            };
             display_decoded(&decoded)?;
         }
         Some("decode-svg") => {
@@ -83,8 +108,12 @@ fn run() -> Result<(), Box<dyn Error>> {
                 return Err(Box::new(usage_error()));
             }
             let svg = fs::read_to_string(file)?;
-            let bars = parse_svg(&svg)?;
-            let result = decode_oriented(&bars)?;
+            let result = if svg.contains("class=\"wavecode-upper\"") {
+                v1::decode_svg(&svg)?
+            } else {
+                let bars = parse_svg(&svg)?;
+                decode_oriented(&bars)?
+            };
             display_decoded(&result.decoded)?;
             println!(
                 "Orientation: {}",
@@ -102,7 +131,7 @@ fn run() -> Result<(), Box<dyn Error>> {
 fn usage_error() -> io::Error {
     io::Error::new(
         ErrorKind::InvalidInput,
-        "usage:\n  wavecode encode '<music URL>' [--time SECONDS] [--svg FILE.svg]\n  wavecode decode <HEX>\n  wavecode decode-svg <FILE.svg>",
+        "usage:\n  wavecode encode '<music URL>' [--time SECONDS] [--svg FILE.svg] [--legacy]\n  wavecode decode <HEX>\n  wavecode decode-svg <FILE.svg>",
     )
 }
 

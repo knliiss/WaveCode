@@ -2,6 +2,7 @@ mod identity;
 mod rank;
 mod reed_solomon;
 mod scrambling;
+pub mod v1;
 mod visual;
 
 use rank::Rank;
@@ -162,6 +163,9 @@ pub enum Error {
     InvalidErasure,
     AmbiguousOrientation,
     InvalidTimestamp,
+    ChecksumMismatch,
+    UnsupportedVersion,
+    InvalidFrame,
 }
 
 impl std::fmt::Display for Error {
@@ -177,6 +181,9 @@ impl std::fmt::Display for Error {
             Self::InvalidErasure => "invalid or repeated erasure position",
             Self::AmbiguousOrientation => "ambiguous WaveCode orientation",
             Self::InvalidTimestamp => "invalid timestamp, expected 0..65535 seconds",
+            Self::ChecksumMismatch => "WaveCode checksum mismatch",
+            Self::UnsupportedVersion => "unsupported WaveCode version",
+            Self::InvalidFrame => "invalid WaveCode optical frame",
         };
         formatter.write_str(message)
     }
