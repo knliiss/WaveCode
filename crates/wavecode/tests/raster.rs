@@ -133,6 +133,52 @@ fn reads_right_angle_rotations_without_external_orientation_hints() {
 }
 
 #[test]
+fn built_in_png_round_trip_for_multiple_proportions() {
+    let code = MusicCode::from_url(URL).unwrap();
+    let symbols = v1::encode(&code).unwrap();
+    for (width, height) in [
+        (648.0, 180.0),
+        (900.0, 160.0),
+        (1200.0, 280.0),
+    ] {
+        let bytes = v1::render_png(&symbols, RenderProfile::new(width, height)).unwrap();
+        assert!(bytes.starts_with(b"\x89PNG\r\n\x1a\n"));
+        let decoded = v1::scan_image(&bytes).unwrap();
+        assert_eq!(decoded.decoded.code, code);
+    }
+}
+
+#[test]
+fn cli_supports_url_to_png_to_url_without_external_converter() {
+    use std::process::Command;
+
+    let binary = env!("CARGO_BIN_EXE_wavecode");
+    let filename = std::env::temp_dir().join(format!(
+        "wavecode-native-png-{}-{}.png",
+        std::process::id(),
+        std::thread::current().name().unwrap_or("case"),
+    ));
+    let path = filename.to_str().unwrap();
+    let output = Command::new(binary)
+        .args([
+            "encode", URL,
+            "--png", path,
+            "--width", "1100",
+            "--height", "240",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+
+    let scanned = Command::new(binary).args(["scan", path]).output().unwrap();
+    std::fs::remove_file(&filename).unwrap();
+    assert!(scanned.status.success(), "{}", String::from_utf8_lossy(&scanned.stderr));
+    let printed = String::from_utf8(scanned.stdout).unwrap();
+    assert!(printed.contains(URL));
+    assert!(printed.contains("Corrected symbols: 0"));
+}
+
+#[test]
 fn rejects_non_wavecode_and_damage() {
     let blank = GrayImage::from_pixel(800, 230, Luma([255]));
     assert!(v1::scan_gray(&blank).is_err());
