@@ -3,8 +3,7 @@ use std::process::Command;
 use wavecode::v1::{self, Bar, FRAME_BARS, SYMBOL_COUNT};
 use wavecode::{Error, MusicCode, Orientation, Track};
 
-const LINK: &str =
-    "https://music.youtube.com/watch?v=WYYkdveJyn8&si=n7qJQ2K-00AiN4Fw&drli=1&t=187";
+const LINK: &str = "https://music.youtube.com/watch?v=WYYkdveJyn8&si=n7qJQ2K-00AiN4Fw&drli=1&t=187";
 const NORMALIZED: &str = "https://music.youtube.com/watch?v=WYYkdveJyn8&t=187";
 
 #[test]
@@ -34,7 +33,10 @@ fn preserved_legacy_code_still_decodes() {
     let original = MusicCode::from_url(LINK).unwrap();
     let old_symbols = wavecode::encode_symbols(&original).unwrap();
     assert_eq!(old_symbols.len(), 22);
-    assert_eq!(wavecode::decode_symbols(&old_symbols).unwrap().code, original);
+    assert_eq!(
+        wavecode::decode_symbols(&old_symbols).unwrap().code,
+        original
+    );
 }
 
 #[test]
@@ -113,7 +115,11 @@ fn cli_defaults_to_v1_and_decodes_the_full_svg() {
         .args(["encode", LINK, "--svg", file_name])
         .output()
         .unwrap();
-    assert!(encoded.status.success(), "{}", String::from_utf8_lossy(&encoded.stderr));
+    assert!(
+        encoded.status.success(),
+        "{}",
+        String::from_utf8_lossy(&encoded.stderr)
+    );
     let printed = String::from_utf8(encoded.stdout).unwrap();
     assert!(printed.contains("Format: v1"));
     assert!(printed.contains("Bars: 36"));
@@ -124,8 +130,14 @@ fn cli_defaults_to_v1_and_decodes_the_full_svg() {
         .output()
         .unwrap();
     std::fs::remove_file(&file).unwrap();
-    assert!(decoded.status.success(), "{}", String::from_utf8_lossy(&decoded.stderr));
-    assert!(String::from_utf8(decoded.stdout).unwrap().contains(NORMALIZED));
+    assert!(
+        decoded.status.success(),
+        "{}",
+        String::from_utf8_lossy(&decoded.stderr)
+    );
+    assert!(String::from_utf8(decoded.stdout)
+        .unwrap()
+        .contains(NORMALIZED));
 }
 
 #[test]
