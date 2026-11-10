@@ -36,6 +36,7 @@ public final class WaveCode {
 
         @Structure.FieldOrder({"ptr", "len"})
         public static class ByValue extends Buffer implements Structure.ByValue {
+            public ByValue() {}
             public ByValue(Buffer other) {
                 this.ptr = other.ptr;
                 this.len = other.len;
