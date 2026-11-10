@@ -148,17 +148,20 @@ fn correct_at_positions(
         let pivot = (column..size).find(|&row| matrix[row][column] != 0)?;
         matrix.swap(column, pivot);
         let inverse = divide(1, matrix[column][column]);
-        for index in column..=size {
-            matrix[column][index] = multiply(matrix[column][index], inverse);
+        for value in &mut matrix[column][column..=size] {
+            *value = multiply(*value, inverse);
         }
-        for row in 0..size {
-            if row == column {
+        let pivot_row = matrix[column];
+        for (row_index, row_values) in matrix.iter_mut().enumerate().take(size) {
+            if row_index == column {
                 continue;
             }
-            let factor = matrix[row][column];
-            for index in column..=size {
-                let source = matrix[column][index];
-                matrix[row][index] ^= multiply(factor, source);
+            let factor = row_values[column];
+            for (value, source) in row_values[column..=size]
+                .iter_mut()
+                .zip(pivot_row[column..=size].iter())
+            {
+                *value ^= multiply(factor, *source);
             }
         }
     }
