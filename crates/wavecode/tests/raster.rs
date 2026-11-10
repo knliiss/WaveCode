@@ -136,11 +136,7 @@ fn reads_right_angle_rotations_without_external_orientation_hints() {
 fn built_in_png_round_trip_for_multiple_proportions() {
     let code = MusicCode::from_url(URL).unwrap();
     let symbols = v1::encode(&code).unwrap();
-    for (width, height) in [
-        (648.0, 180.0),
-        (900.0, 160.0),
-        (1200.0, 280.0),
-    ] {
+    for (width, height) in [(648.0, 180.0), (900.0, 160.0), (1200.0, 280.0)] {
         let bytes = v1::render_png(&symbols, RenderProfile::new(width, height)).unwrap();
         assert!(bytes.starts_with(b"\x89PNG\r\n\x1a\n"));
         let decoded = v1::scan_image(&bytes).unwrap();
@@ -161,18 +157,23 @@ fn cli_supports_url_to_png_to_url_without_external_converter() {
     let path = filename.to_str().unwrap();
     let output = Command::new(binary)
         .args([
-            "encode", URL,
-            "--png", path,
-            "--width", "1100",
-            "--height", "240",
+            "encode", URL, "--png", path, "--width", "1100", "--height", "240",
         ])
         .output()
         .unwrap();
-    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     let scanned = Command::new(binary).args(["scan", path]).output().unwrap();
     std::fs::remove_file(&filename).unwrap();
-    assert!(scanned.status.success(), "{}", String::from_utf8_lossy(&scanned.stderr));
+    assert!(
+        scanned.status.success(),
+        "{}",
+        String::from_utf8_lossy(&scanned.stderr)
+    );
     let printed = String::from_utf8(scanned.stdout).unwrap();
     assert!(printed.contains(URL));
     assert!(printed.contains("Corrected symbols: 0"));
