@@ -125,9 +125,122 @@ pub(crate) fn decode(symbols: &[u8]) -> Result<(Vec<u8>, usize), Error> {
     Err(Error::Uncorrectable)
 }
 
+fn correct_at_positions(
+    symbols: &[u8],
+    observed: &[u8; PARITY_SYMBOLS],
+    positions: &[usize],
+    locators: &[u8],
+) -> Option<(Vec<u8>, usize)> {
+    let size = positions.len();
+    if size == 0 || size > PARITY_SYMBOLS {
+        return None;
+    }
+
+    let mut matrix = [[0_u8; PARITY_SYMBOLS + 1]; PARITY_SYMBOLS];
+    for row in 0..size {
+        for (column, &position) in positions.iter().enumerate() {
+            matrix[row][column] = power(locators[position], row as u16);
+        }
+        matrix[row][size] = observed[row];
+    }
+
+    for column in 0..size {
+        let pivot = (column..size).find(|&row| matrix[row][column] != 0)?;
+        matrix.swap(column, pivot);
+        let inverse = divide(1, matrix[column][column]);
+        for index in column..=size {
+            matrix[column][index] = multiply(matrix[column][index], inverse);
+        }
+        for row in 0..size {
+            if row == column {
+                continue;
+            }
+            let factor = matrix[row][column];
+            for index in column..=size {
+                let source = matrix[column][index];
+                matrix[row][index] ^= multiply(factor, source);
+            }
+        }
+    }
+
+    let mut expected = [0_u8; PARITY_SYMBOLS];
+    for (index, &position) in positions.iter().enumerate() {
+        let magnitude = matrix[index][size];
+        let mut factor = 1_u8;
+        for syndrome in &mut expected {
+            *syndrome ^= multiply(magnitude, factor);
+            factor = multiply(factor, locators[position]);
+        }
+    }
+    if expected != *observed {
+        return None;
+    }
+
+    let mut repaired = symbols.to_vec();
+    let mut count = 0;
+    for (index, &position) in positions.iter().enumerate() {
+        let magnitude = matrix[index][size];
+        if magnitude != 0 {
+            repaired[position] ^= magnitude;
+            count += 1;
+        }
+    }
+    Some((repaired, count))
+}
+
+pub(crate) fn decode_with_erasures(
+    symbols: &[u8],
+    erasures: &[usize],
+) -> Result<(Vec<u8>, usize), Error> {
+    if symbols.len() <= PARITY_SYMBOLS || symbols.len() > 255 {
+        return Err(Error::InvalidLength);
+    }
+    if erasures.len() > PARITY_SYMBOLS
+        || erasures.iter().any(|&position| position >= symbols.len())
+        || erasures
+            .iter()
+            .enumerate()
+            .any(|(index, position)| erasures[..index].contains(position))
+    {
+        return Err(Error::InvalidErasure);
+    }
+    if erasures.is_empty() {
+        return decode(symbols);
+    }
+
+    let observed = syndromes(symbols);
+    if observed == [0; PARITY_SYMBOLS] {
+        return Ok((symbols.to_vec(), 0));
+    }
+
+    let locators: Vec<u8> = (0..symbols.len())
+        .map(|position| power(2, (symbols.len() - 1 - position) as u16))
+        .collect();
+    if let Some(result) = correct_at_positions(symbols, &observed, erasures, &locators) {
+        return Ok(result);
+    }
+
+    if erasures.len() + 2 <= PARITY_SYMBOLS {
+        let mut positions = erasures.to_vec();
+        for position in 0..symbols.len() {
+            if erasures.contains(&position) {
+                continue;
+            }
+            positions.push(position);
+            if let Some(result) = correct_at_positions(symbols, &observed, &positions, &locators) {
+                return Ok(result);
+            }
+            positions.pop();
+        }
+    }
+
+    Err(Error::Uncorrectable)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{decode, encode, generator, is_valid};
+    use super::{decode, decode_with_erasures, encode, generator, is_valid};
+    use crate::Error;
 
     #[test]
     fn generator_has_four_distinct_roots() {
@@ -151,6 +264,51 @@ mod tests {
                 assert_eq!(repaired, encoded);
             }
         }
+    }
+
+    #[test]
+    fn corrects_four_erased_symbols() {
+        let data: Vec<u8> = (0..17).map(|index| index * 11).collect();
+        let expected = encode(&data);
+        let locations = [0, 3, 12, 20];
+        let mut damaged = expected.clone();
+        for &position in &locations {
+            damaged[position] ^= 0xe3;
+        }
+        assert_eq!(
+            decode_with_erasures(&damaged, &locations).unwrap(),
+            (expected, 4)
+        );
+    }
+
+    #[test]
+    fn combines_two_erasures_with_one_unknown_error() {
+        let expected = encode(&[17; 17]);
+        let mut damaged = expected.clone();
+        for (position, change) in [(1, 0x3a), (8, 0x92), (18, 0xb4)] {
+            damaged[position] ^= change;
+        }
+        assert_eq!(
+            decode_with_erasures(&damaged, &[1, 18]).unwrap(),
+            (expected, 3)
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_erasure_indexes() {
+        let encoded = encode(&[0; 17]);
+        assert_eq!(
+            decode_with_erasures(&encoded, &[3, 3]),
+            Err(Error::InvalidErasure)
+        );
+        assert_eq!(
+            decode_with_erasures(&encoded, &[21]),
+            Err(Error::InvalidErasure)
+        );
+        assert_eq!(
+            decode_with_erasures(&encoded, &[0, 1, 2, 3, 4]),
+            Err(Error::InvalidErasure)
+        );
     }
 
     #[test]
