@@ -80,8 +80,8 @@ pub(crate) fn encode(track: &Track) -> Result<Rank, Error> {
             if asin.len() != 10 {
                 return Err(Error::InvalidIdentifier);
             }
-            let number = Rank::from_digits(asin, AMAZON_ALPHABET)
-                .ok_or(Error::InvalidIdentifier)?;
+            let number =
+                Rank::from_digits(asin, AMAZON_ALPHABET).ok_or(Error::InvalidIdentifier)?;
             Ok(amazon_start().add(number))
         }
     }
