@@ -1,6 +1,7 @@
 use wavecode::{
-    bars_from_symbols, decode, decode_symbols, encode, encode_symbols, symbols_from_bars, Bar,
-    Error, MusicCode, Track, LONG_MOMENT_SYMBOLS, SHORT_MOMENT_SYMBOLS, TRACK_SYMBOLS,
+    bars_from_symbols, decode, decode_oriented, decode_symbols, decode_symbols_with_erasures,
+    decode_with_erasures, encode, encode_symbols, symbols_from_bars, Bar, Error, MusicCode,
+    Orientation, Track, LONG_MOMENT_SYMBOLS, SHORT_MOMENT_SYMBOLS, TRACK_SYMBOLS,
 };
 
 fn examples() -> [Track; 6] {
@@ -137,14 +138,14 @@ fn encoded_vectors_are_stable() {
                 track: Track::YouTubeMusic("dQw4w9WgXcQ".into()),
                 moment_seconds: None,
             },
-            "000000000000000001d430e30f56817710852b3126",
+            "5b03533406b46d377d619bee335179e885da4d8ed1",
         ),
         (
             MusicCode {
                 track: Track::Spotify("6rqhFgbbKwnb9MLmUQDhG6".into()),
                 moment_seconds: None,
             },
-            "00e1adcb40564b6c35ba08526f01f1b78a9b24136d",
+            "5be2feff46e2265b490fa35f530609281fc442ac9a",
         ),
         (
             MusicCode {
@@ -154,21 +155,21 @@ fn encoded_vectors_are_stable() {
                 },
                 moment_seconds: None,
             },
-            "00000000000000020c00000000499602d2364e1960",
+            "5b03533406b46d3570b5ab0d3c4e6e9d476928a697",
         ),
         (
             MusicCode {
                 track: Track::YouTubeMusic("dQw4w9WgXcQ".into()),
                 moment_seconds: Some(123),
             },
-            "00000000000000001d430e30f5681771007b32e57641",
+            "5b03533406b46d3761f6a53dc96fefee951912d08bba",
         ),
         (
             MusicCode {
                 track: Track::Spotify("6rqhFgbbKwnb9MLmUQDhG6".into()),
                 moment_seconds: Some(4200),
             },
-            "00e1adcb40564b6c35ba08526f01f1b78a1068fdaaa54b",
+            "5be2feff46e2265b490fa35f530609281f729365e45f8f",
         ),
         (
             MusicCode {
@@ -178,7 +179,7 @@ fn encoded_vectors_are_stable() {
                 },
                 moment_seconds: Some(65535),
             },
-            "00000000000000020c00000000499602d2ffffa6e41556",
+            "5b03533406b46d3570b5ab0d3c4e6e9d479d043eaaef92",
         ),
     ];
     for (code, expected) in vectors {
@@ -189,5 +190,64 @@ fn encoded_vectors_are_stable() {
             .collect();
         assert_eq!(hex, expected);
         assert_eq!(decode_symbols(&symbols).unwrap().code, code);
+    }
+}
+
+#[test]
+fn whitening_breaks_long_zero_prefixes() {
+    let code = MusicCode {
+        track: Track::YouTubeMusic("AAAAAAAAAAA".into()),
+        moment_seconds: None,
+    };
+    let symbols = encode_symbols(&code).unwrap();
+    let unique: std::collections::HashSet<u8> = symbols[..8].iter().copied().collect();
+    assert!(unique.len() >= 6);
+}
+
+#[test]
+fn restores_codes_in_both_orientations() {
+    for track in examples() {
+        let code = MusicCode {
+            track,
+            moment_seconds: Some(123),
+        };
+        let bars = encode(&code).unwrap();
+        let normal = decode_oriented(&bars).unwrap();
+        assert_eq!(normal.orientation, Orientation::Upright);
+        assert_eq!(normal.decoded.code, code);
+
+        let rotated: Vec<Bar> = bars
+            .iter()
+            .rev()
+            .map(|bar| Bar {
+                upper_level: bar.lower_level,
+                lower_level: bar.upper_level,
+            })
+            .collect();
+        let result = decode_oriented(&rotated).unwrap();
+        assert_eq!(result.orientation, Orientation::UpsideDown);
+        assert_eq!(result.decoded.code, code);
+    }
+}
+
+#[test]
+fn handles_known_erasures_from_symbol_and_bar_decoders() {
+    for track in examples() {
+        let code = MusicCode {
+            track,
+            moment_seconds: Some(4096),
+        };
+        let mut symbols = encode_symbols(&code).unwrap();
+        for position in [1, 6, 10, 17] {
+            symbols[position] ^= 0xa7;
+        }
+        let restored = decode_symbols_with_erasures(&symbols, &[1, 6, 10, 17]).unwrap();
+        assert_eq!(restored.code, code);
+        assert_eq!(restored.corrected_symbols, 4);
+        let bars = bars_from_symbols(&symbols);
+        assert_eq!(
+            decode_with_erasures(&bars, &[1, 6, 10, 17]).unwrap(),
+            restored
+        );
     }
 }

@@ -1,6 +1,7 @@
 mod identity;
 mod rank;
 mod reed_solomon;
+mod scrambling;
 mod visual;
 
 use rank::Rank;
@@ -12,6 +13,18 @@ pub const TRACK_SYMBOLS: usize = 21;
 pub const SHORT_MOMENT_SYMBOLS: usize = 22;
 pub const LONG_MOMENT_SYMBOLS: usize = 23;
 pub const MAX_MOMENT_SECONDS: u16 = u16::MAX;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Orientation {
+    Upright,
+    UpsideDown,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OrientedDecoded {
+    pub decoded: Decoded,
+    pub orientation: Orientation,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Track {
@@ -108,6 +121,8 @@ pub enum Error {
     InvalidBar,
     InvalidCodeword,
     Uncorrectable,
+    InvalidErasure,
+    AmbiguousOrientation,
 }
 
 impl std::fmt::Display for Error {
@@ -120,6 +135,8 @@ impl std::fmt::Display for Error {
             Self::InvalidBar => "bar level must be between 0 and 15",
             Self::InvalidCodeword => "reserved or invalid WaveCode payload",
             Self::Uncorrectable => "unable to correct WaveCode errors",
+            Self::InvalidErasure => "invalid or repeated erasure position",
+            Self::AmbiguousOrientation => "ambiguous WaveCode orientation",
         };
         formatter.write_str(message)
     }
@@ -140,19 +157,26 @@ pub fn encode_symbols(code: &MusicCode) -> Result<Vec<u8>, Error> {
             LONG_MOMENT_SYMBOLS - PARITY_SYMBOLS
         }
     };
-    let data = value.to_bytes(data_length).ok_or(Error::InvalidCodeword)?;
+    let mut data = value.to_bytes(data_length).ok_or(Error::InvalidCodeword)?;
+    scrambling::apply(&mut data);
     Ok(reed_solomon::encode(&data))
 }
 
 pub fn decode_symbols(symbols: &[u8]) -> Result<Decoded, Error> {
+    decode_symbols_with_erasures(symbols, &[])
+}
+
+pub fn decode_symbols_with_erasures(symbols: &[u8], erasures: &[usize]) -> Result<Decoded, Error> {
     let data_length = match symbols.len() {
         TRACK_SYMBOLS | SHORT_MOMENT_SYMBOLS | LONG_MOMENT_SYMBOLS => {
             symbols.len() - PARITY_SYMBOLS
         }
         _ => return Err(Error::InvalidLength),
     };
-    let (corrected, corrected_symbols) = reed_solomon::decode(symbols)?;
-    let value = Rank::from_bytes(&corrected[..data_length]);
+    let (corrected, corrected_symbols) = reed_solomon::decode_with_erasures(symbols, erasures)?;
+    let mut payload = corrected[..data_length].to_vec();
+    scrambling::apply(&mut payload);
+    let value = Rank::from_bytes(&payload);
     let (identity, moment_seconds) = match symbols.len() {
         TRACK_SYMBOLS => (value, None),
         SHORT_MOMENT_SYMBOLS => {
@@ -187,6 +211,34 @@ pub fn encode(code: &MusicCode) -> Result<Vec<Bar>, Error> {
 
 pub fn decode(bars: &[Bar]) -> Result<Decoded, Error> {
     decode_symbols(&symbols_from_bars(bars)?)
+}
+
+pub fn decode_with_erasures(bars: &[Bar], erasures: &[usize]) -> Result<Decoded, Error> {
+    decode_symbols_with_erasures(&symbols_from_bars(bars)?, erasures)
+}
+
+pub fn decode_oriented(bars: &[Bar]) -> Result<OrientedDecoded, Error> {
+    let rotated: Vec<Bar> = bars
+        .iter()
+        .rev()
+        .map(|bar| Bar {
+            upper_level: bar.lower_level,
+            lower_level: bar.upper_level,
+        })
+        .collect();
+
+    match (decode(bars), decode(&rotated)) {
+        (Ok(decoded), Err(_)) => Ok(OrientedDecoded {
+            decoded,
+            orientation: Orientation::Upright,
+        }),
+        (Err(_), Ok(decoded)) => Ok(OrientedDecoded {
+            decoded,
+            orientation: Orientation::UpsideDown,
+        }),
+        (Ok(_), Ok(_)) => Err(Error::AmbiguousOrientation),
+        (Err(error), Err(_)) => Err(error),
+    }
 }
 
 #[cfg(test)]
