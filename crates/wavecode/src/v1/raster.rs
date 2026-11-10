@@ -206,19 +206,39 @@ fn pair_components(components: &[Component], angle: f64) -> Result<Vec<Pair>, Er
         pairs.push(Pair { upper, lower });
     }
 
-    let first = (pairs[0].upper.center_long + pairs[0].lower.center_long) / 2.0;
-    let last =
-        (pairs[FRAME_BARS - 1].upper.center_long + pairs[FRAME_BARS - 1].lower.center_long) / 2.0;
+    let centers: Vec<f64> = pairs
+        .iter()
+        .map(|pair| (pair.upper.center_long + pair.lower.center_long) / 2.0)
+        .collect();
+    let first = centers[0];
+    let last = centers[FRAME_BARS - 1];
     let pitch = (last - first) / (FRAME_BARS - 1) as f64;
     if pitch <= 2.0 {
         return Err(Error::InvalidFrame);
     }
+
+    let middle = FRAME_BARS / 2;
+    let middle_t = middle as f64 / (FRAME_BARS - 1) as f64;
+    let curvature = (centers[middle] - (first + middle_t * (last - first)))
+        / (middle_t * (1.0 - middle_t));
+
+    let position = |t: f64| first + (last - first) * t + curvature * t * (1.0 - t);
     for (index, pair) in pairs.iter().enumerate() {
-        let center = (pair.upper.center_long + pair.lower.center_long) / 2.0;
-        if (pair.upper.center_long - pair.lower.center_long).abs() > pitch * 0.55
-            || (center - (first + index as f64 * pitch)).abs() > pitch * 0.37
-            || pair.upper.width > pitch * 0.99
-            || pair.lower.width > pitch * 0.99
+        let t = index as f64 / (FRAME_BARS - 1) as f64;
+        let previous = position((index.saturating_sub(1)) as f64 / (FRAME_BARS - 1) as f64);
+        let next = position(((index + 1).min(FRAME_BARS - 1)) as f64
+            / (FRAME_BARS - 1) as f64);
+        let local_pitch = if index == 0 || index + 1 == FRAME_BARS {
+            (next - previous).abs()
+        } else {
+            (next - previous).abs() / 2.0
+        };
+        if local_pitch <= 1.5
+            || local_pitch > pitch * 2.0
+            || (pair.upper.center_long - pair.lower.center_long).abs() > local_pitch * 0.55
+            || (centers[index] - position(t)).abs() > pitch * 0.43
+            || pair.upper.width > local_pitch * 0.99
+            || pair.lower.width > local_pitch * 0.99
         {
             return Err(Error::InvalidFrame);
         }
@@ -261,19 +281,45 @@ fn measure_level(height: f64, scale: Calibration) -> (u8, u8, Option<u8>) {
     (nearest, confidence, alternative)
 }
 
-fn trial(pairs: &[Pair], orientation: Orientation, anchor: usize) -> Option<OrientedDecoded> {
-    let (start_upper, start_lower) = match (orientation, anchor) {
+fn guard_levels(orientation: Orientation, anchor: usize) -> (u8, u8) {
+    match (orientation, anchor) {
         (Orientation::Upright, 0) => (9, 2),
         (Orientation::Upright, _) => (2, 10),
         (Orientation::UpsideDown, 0) => (10, 2),
         (Orientation::UpsideDown, _) => (2, 9),
+    }
+}
+
+fn trial(
+    pairs: &[Pair],
+    orientation: Orientation,
+    anchor: Option<usize>,
+) -> Option<OrientedDecoded> {
+    let endpoints = match anchor {
+        Some(position) => {
+            let (upper, lower) = guard_levels(orientation, position);
+            let scale = calibration(pairs[position], upper, lower)?;
+            (scale, scale)
+        }
+        None => {
+            let (first_up, first_down) = guard_levels(orientation, 0);
+            let (last_up, last_down) = guard_levels(orientation, FRAME_BARS - 1);
+            (
+                calibration(pairs[0], first_up, first_down)?,
+                calibration(pairs[FRAME_BARS - 1], last_up, last_down)?,
+            )
+        }
     };
-    let scale = calibration(pairs[anchor], start_upper, start_lower)?;
     let mut observations = Vec::with_capacity(SYMBOL_COUNT);
     let mut soft = Vec::with_capacity(SYMBOL_COUNT);
 
     for index in 0..SYMBOL_COUNT {
         let pair = pairs[index + 1];
+        let t = (index + 1) as f64 / (FRAME_BARS - 1) as f64;
+        let scale = Calibration {
+            base: endpoints.0.base + (endpoints.1.base - endpoints.0.base) * t,
+            step: endpoints.0.step + (endpoints.1.step - endpoints.0.step) * t,
+        };
         let (up, up_confidence, up_alt) = measure_level(pair.upper.height, scale);
         let (down, down_confidence, down_alt) = measure_level(pair.lower.height, scale);
         let (upper, lower) = match orientation {
@@ -472,7 +518,7 @@ fn scan_rails(shapes: &[Component]) -> Result<OrientedDecoded, Error> {
     let mut result: Option<OrientedDecoded> = None;
 
     for orientation in [Orientation::Upright, Orientation::UpsideDown] {
-        for anchor in [0, FRAME_BARS - 1] {
+        for anchor in [None, Some(0), Some(FRAME_BARS - 1)] {
             if let Some(candidate) = trial(&pairs, orientation, anchor) {
                 match &result {
                     Some(previous)
