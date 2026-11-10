@@ -1,6 +1,6 @@
 use std::io::Cursor;
 
-use image::{DynamicImage, GrayImage, ImageOutputFormat, Luma};
+use image::{DynamicImage, GrayImage, ImageOutputFormat, Luma, RgbImage};
 
 use crate::{Error, Orientation, OrientedDecoded};
 
@@ -10,7 +10,8 @@ use super::visual::{self, RenderProfile, FRAME_BARS};
 const EXPECTED_COMPONENTS: usize = FRAME_BARS * 2;
 const MAX_PIXELS: u64 = 20_000_000;
 const MAX_BYTES: usize = 16 * 1024 * 1024;
-const DARK_THRESHOLD: u8 = 150;
+const DEFAULT_THRESHOLD: u8 = 150;
+const MAX_SEGMENTATIONS: usize = 6;
 const MAX_COMPONENTS: usize = 4096;
 const MAX_COMPONENT_AREA: usize = 100_000;
 
@@ -102,7 +103,7 @@ struct Pair {
     lower: Projected,
 }
 
-fn components(image: &GrayImage) -> Result<Vec<Component>, Error> {
+fn components(image: &GrayImage, threshold: u8, light_ink: bool) -> Result<Vec<Component>, Error> {
     let (width, height) = image.dimensions();
     let pixels = u64::from(width) * u64::from(height);
     if pixels == 0 || pixels > MAX_PIXELS {
@@ -114,11 +115,18 @@ fn components(image: &GrayImage) -> Result<Vec<Component>, Error> {
     let mut visited = vec![false; width * height];
     let mut components = Vec::new();
     let minimum_area = (width * height / 2_000_000).max(4);
+    let ink = |value: u8| {
+        if light_ink {
+            value >= threshold
+        } else {
+            value <= threshold
+        }
+    };
 
     for y in 0..height {
         for x in 0..width {
             let start = y * width + x;
-            if visited[start] || image.get_pixel(x as u32, y as u32).0[0] > DARK_THRESHOLD {
+            if visited[start] || !ink(image.get_pixel(x as u32, y as u32).0[0]) {
                 continue;
             }
 
@@ -156,7 +164,7 @@ fn components(image: &GrayImage) -> Result<Vec<Component>, Error> {
                         if visited[index] {
                             continue;
                         }
-                        if image.get_pixel(nx as u32, ny as u32).0[0] <= DARK_THRESHOLD {
+                        if ink(image.get_pixel(nx as u32, ny as u32).0[0]) {
                             visited[index] = true;
                             pending.push((nx, ny));
                         }
@@ -572,22 +580,120 @@ fn bounds(group: &[Component]) -> ScanBounds {
     }
 }
 
-/// Finds one or more isolated WaveCode V1 patterns inside a raster image.
+fn otsu_threshold(image: &GrayImage) -> u8 {
+    let mut histogram = [0_u64; 256];
+    for pixel in image.pixels() {
+        histogram[pixel[0] as usize] += 1;
+    }
+
+    let total = u64::from(image.width()) * u64::from(image.height());
+    let weighted_total: f64 = histogram
+        .iter()
+        .enumerate()
+        .map(|(level, count)| level as f64 * *count as f64)
+        .sum();
+    let mut left_count = 0_u64;
+    let mut left_sum = 0.0_f64;
+    let mut best_score = -1.0_f64;
+    let mut threshold = DEFAULT_THRESHOLD;
+
+    for (level, &count) in histogram.iter().enumerate().take(255) {
+        left_count += count;
+        left_sum += level as f64 * count as f64;
+        if left_count == 0 || left_count == total {
+            continue;
+        }
+
+        let mean_left = left_sum / left_count as f64;
+        let mean_right = (weighted_total - left_sum) / (total - left_count) as f64;
+        let difference = mean_left - mean_right;
+        let score = left_count as f64 * (total - left_count) as f64 * difference * difference;
+        if score > best_score {
+            best_score = score;
+            threshold = level as u8;
+        }
+    }
+    threshold
+}
+
+fn segmentations(image: &GrayImage) -> Vec<(u8, bool)> {
+    let adaptive = otsu_threshold(image);
+    let mut candidates = Vec::with_capacity(MAX_SEGMENTATIONS);
+    for (threshold, light_ink) in [
+        (DEFAULT_THRESHOLD, false),
+        (adaptive, false),
+        (adaptive.saturating_add(1), true),
+        (DEFAULT_THRESHOLD, true),
+        (adaptive.saturating_sub(12), false),
+        (adaptive.saturating_add(12), true),
+    ] {
+        if !candidates.contains(&(threshold, light_ink)) {
+            candidates.push((threshold, light_ink));
+        }
+    }
+    candidates
+}
+
+fn intersects_mostly(a: ScanBounds, b: ScanBounds) -> bool {
+    let x_start = a.left.max(b.left);
+    let y_start = a.top.max(b.top);
+    let x_end = (a.left + a.width).min(b.left + b.width);
+    let y_end = (a.top + a.height).min(b.top + b.height);
+    if x_end <= x_start || y_end <= y_start {
+        return false;
+    }
+    let overlap = u64::from(x_end - x_start) * u64::from(y_end - y_start);
+    let min_area =
+        (u64::from(a.width) * u64::from(a.height)).min(u64::from(b.width) * u64::from(b.height));
+    overlap * 5 >= min_area * 4
+}
+
+fn merge_detections(results: &mut Vec<LocatedCode>, candidate: LocatedCode) -> Result<(), Error> {
+    if let Some(existing) = results
+        .iter_mut()
+        .find(|result| intersects_mostly(result.bounds, candidate.bounds))
+    {
+        if existing.result.decoded.code != candidate.result.decoded.code
+            || existing.result.orientation != candidate.result.orientation
+        {
+            return Err(Error::AmbiguousOrientation);
+        }
+        if candidate.result.decoded.corrected_symbols < existing.result.decoded.corrected_symbols {
+            *existing = candidate;
+        }
+    } else {
+        results.push(candidate);
+    }
+    Ok(())
+}
+
+/// Locates codes without requiring a particular color, brightness or corner radius.
 ///
-/// The detector can ignore disconnected background marks and independently
-/// locate multiple codes. It still requires visible, separated rail components;
-/// overlapping foreground objects or strong photographic perspective are not
-/// guaranteed to decode.
+/// Tries independently derived dark-ink and light-ink masks, retaining only
+/// candidates that pass the V1 geometry, RS and CRC checks. Geometry still needs
+/// 72 individually detectable rail silhouettes; disconnected or overlapping
+/// artistic strokes require a future stroke-segmentation fallback.
 pub fn scan_gray_all(image: &GrayImage) -> Result<Vec<LocatedCode>, Error> {
-    let shapes = components(image)?;
     let mut decoded = Vec::new();
-    for indexes in candidate_groups(&shapes) {
-        let rails: Vec<Component> = indexes.iter().map(|&index| shapes[index].clone()).collect();
-        if let Ok(result) = scan_rails(&rails) {
-            decoded.push(LocatedCode {
-                result,
-                bounds: bounds(&rails),
-            });
+    for (threshold, light_ink) in segmentations(image) {
+        let Ok(shapes) = components(image, threshold, light_ink) else {
+            continue;
+        };
+        for indexes in candidate_groups(&shapes) {
+            let rails: Vec<Component> =
+                indexes.iter().map(|&index| shapes[index].clone()).collect();
+            if let Ok(result) = scan_rails(&rails) {
+                merge_detections(
+                    &mut decoded,
+                    LocatedCode {
+                        result,
+                        bounds: bounds(&rails),
+                    },
+                )?;
+            }
+        }
+        if !decoded.is_empty() {
+            break;
         }
     }
     if decoded.is_empty() {
@@ -598,13 +704,72 @@ pub fn scan_gray_all(image: &GrayImage) -> Result<Vec<LocatedCode>, Error> {
     }
 }
 
+fn dominant_colors(image: &RgbImage) -> [[u8; 3]; 2] {
+    let mut histogram = [0_u32; 4096];
+    for pixel in image.pixels() {
+        let [r, g, b] = pixel.0;
+        let index = (usize::from(r >> 4) << 8) | (usize::from(g >> 4) << 4) | usize::from(b >> 4);
+        histogram[index] += 1;
+    }
+
+    let mut ordered: Vec<usize> = (0..4096).collect();
+    ordered.sort_unstable_by_key(|&index| (std::cmp::Reverse(histogram[index]), index));
+    std::array::from_fn(|rank| {
+        let index = ordered[rank];
+        [
+            ((index >> 8) as u8 & 15) * 16 + 8,
+            ((index >> 4) as u8 & 15) * 16 + 8,
+            (index as u8 & 15) * 16 + 8,
+        ]
+    })
+}
+
+fn color_distance_mask(image: &RgbImage, background: [u8; 3]) -> GrayImage {
+    let (width, height) = image.dimensions();
+    let mut mask = GrayImage::new(width, height);
+    for (target, pixel) in mask.pixels_mut().zip(image.pixels()) {
+        let distance = pixel
+            .0
+            .iter()
+            .zip(background)
+            .map(|(color, reference)| color.abs_diff(reference))
+            .max()
+            .unwrap_or(0);
+        target[0] = distance.saturating_mul(3);
+    }
+    mask
+}
+
 /// Locates and decodes WaveCode V1 marks in PNG or JPEG images.
+///
+/// The luminance pass handles most designs. If it fails, RGB color-distance
+/// passes can recover strokes whose hue contrasts with the background even
+/// when their grayscale luminance is nearly identical.
 pub fn scan_image_all(bytes: &[u8]) -> Result<Vec<LocatedCode>, Error> {
     if bytes.len() > MAX_BYTES {
         return Err(Error::InvalidFrame);
     }
     let image = image::load_from_memory(bytes).map_err(|_| Error::InvalidFrame)?;
-    scan_gray_all(&image.to_luma8())
+    if let Ok(found) = scan_gray_all(&image.to_luma8()) {
+        return Ok(found);
+    }
+
+    let rgb = image.to_rgb8();
+    let mut found = Vec::new();
+    for background in dominant_colors(&rgb) {
+        let difference = color_distance_mask(&rgb, background);
+        if let Ok(candidates) = scan_gray_all(&difference) {
+            for candidate in candidates {
+                merge_detections(&mut found, candidate)?;
+            }
+        }
+    }
+    if found.is_empty() {
+        Err(Error::InvalidFrame)
+    } else {
+        found.sort_by_key(|candidate| (candidate.bounds.top, candidate.bounds.left));
+        Ok(found)
+    }
 }
 
 /// Decodes exactly one WaveCode V1 mark from PNG or JPEG bytes.
