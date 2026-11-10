@@ -124,6 +124,17 @@ fn run() -> Result<(), Box<dyn Error>> {
             };
             display_decoded(&decoded)?;
         }
+        #[cfg(feature = "raster")]
+        Some("scan") => {
+            let file = args.next().ok_or_else(usage_error)?;
+            if args.next().is_some() {
+                return Err(Box::new(usage_error()));
+            }
+            let bytes = fs::read(file)?;
+            let result = v1::scan_image(&bytes)?;
+            display_decoded(&result.decoded)?;
+            println!("Orientation: {:?}", result.orientation);
+        }
         Some("decode-svg") => {
             let file = args.next().ok_or_else(usage_error)?;
             if args.next().is_some() {
@@ -153,7 +164,7 @@ fn run() -> Result<(), Box<dyn Error>> {
 fn usage_error() -> io::Error {
     io::Error::new(
         ErrorKind::InvalidInput,
-        "usage:\n  wavecode encode '<music URL>' [--time SECONDS] [--svg FILE.svg] [--width PX] [--height PX] [--gap-ratio R] [--fill-ratio R] [--legacy]\n  wavecode decode <HEX>\n  wavecode decode-svg <FILE.svg>",
+        "usage:\n  wavecode encode '<music URL>' [--time SECONDS] [--svg FILE.svg] [--width PX] [--height PX] [--gap-ratio R] [--fill-ratio R] [--legacy]\n  wavecode decode <HEX>\n  wavecode decode-svg <FILE.svg>\n  wavecode scan <IMAGE.png|IMAGE.jpg>",
     )
 }
 
