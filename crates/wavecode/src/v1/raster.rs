@@ -705,9 +705,7 @@ fn dominant_colors(image: &RgbImage) -> [[u8; 3]; 2] {
     let mut histogram = [0_u32; 4096];
     for pixel in image.pixels() {
         let [r, g, b] = pixel.0;
-        let index = (usize::from(r >> 4) << 8)
-            | (usize::from(g >> 4) << 4)
-            | usize::from(b >> 4);
+        let index = (usize::from(r >> 4) << 8) | (usize::from(g >> 4) << 4) | usize::from(b >> 4);
         histogram[index] += 1;
     }
 
