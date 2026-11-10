@@ -68,13 +68,14 @@ fn run() -> Result<(), Box<dyn Error>> {
             if let Some(seconds) = code.moment_seconds {
                 println!("Moment: {seconds} s");
             }
-            println!(
-                "Format: {}",
-                if legacy { "legacy" } else { "v1" }
-            );
+            println!("Format: {}", if legacy { "legacy" } else { "v1" });
             println!(
                 "Bars: {}",
-                if legacy { symbols.len() } else { v1::FRAME_BARS }
+                if legacy {
+                    symbols.len()
+                } else {
+                    v1::FRAME_BARS
+                }
             );
             println!("Symbols: {}", hex_encode(&symbols));
 
