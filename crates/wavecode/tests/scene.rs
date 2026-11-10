@@ -34,6 +34,50 @@ fn rectangle(image: &mut GrayImage, x: u32, y: u32, w: u32, h: u32) {
 }
 
 #[test]
+fn reads_screenshot_sized_wavecode_on_dark_background() {
+    use std::io::Cursor;
+
+    use image::{DynamicImage, ImageOutputFormat};
+
+    let expected = MusicCode::from_url(SECOND).unwrap();
+    let bars = v1::frame_from_symbols(&v1::encode(&expected).unwrap()).unwrap();
+    let mut screenshot = GrayImage::from_pixel(463, 231, Luma([25]));
+
+    for y in 61..185 {
+        for x in 44..415 {
+            screenshot.put_pixel(x, y, Luma([255]));
+        }
+    }
+
+    for (index, bar) in bars.iter().enumerate() {
+        let x = 68 + index as u32 * 9;
+        let upper_height = 12 + u32::from(bar.upper_level) * 3;
+        let lower_height = 12 + u32::from(bar.lower_level) * 3;
+        rectangle(&mut screenshot, x, 118 - upper_height, 5, upper_height);
+        rectangle(&mut screenshot, x, 124, 5, lower_height);
+    }
+
+    let found = v1::scan_gray_all(&screenshot).unwrap();
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].result.decoded.code, expected);
+    assert_eq!(found[0].result.decoded.corrected_symbols, 0);
+    assert!(found[0].bounds.left >= 68 && found[0].bounds.left <= 70);
+
+    let mut png = Cursor::new(Vec::new());
+    DynamicImage::ImageLuma8(screenshot)
+        .write_to(&mut png, ImageOutputFormat::Png)
+        .unwrap();
+    let decoded = v1::scan_image(png.get_ref()).unwrap();
+    assert_eq!(decoded.decoded.code.to_url().unwrap(), SECOND);
+}
+
+#[test]
+fn dark_empty_frame_is_not_mistaken_for_wavecode() {
+    let black = GrayImage::from_pixel(463, 231, Luma([25]));
+    assert!(v1::scan_gray_all(&black).is_err());
+}
+
+#[test]
 fn finds_code_inside_a_larger_busy_canvas() {
     let mut photograph = GrayImage::from_pixel(1900, 1050, Luma([255]));
     let code = code_image(FIRST, 900.0, 240.0);
