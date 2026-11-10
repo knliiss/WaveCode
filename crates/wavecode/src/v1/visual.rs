@@ -531,9 +531,6 @@ mod tests {
         let mut start = 0;
         for _ in 0..=index {
             start += svg[start..].find(&marker).unwrap();
-            if index > 0 {
-                // No file-dependent offsets; each match is found from the previous marker.
-            }
             start += marker.len();
         }
         let tag_start = start - marker.len();
