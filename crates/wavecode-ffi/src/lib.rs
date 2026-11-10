@@ -1,6 +1,9 @@
 //! WaveCode V1 stable C ABI. Each owned output must be released with wavecode_free_buffer.
-use std::{panic::{catch_unwind, AssertUnwindSafe}, ptr};
 use serde_json::json;
+use std::{
+    panic::{catch_unwind, AssertUnwindSafe},
+    ptr,
+};
 use wavecode::{v1, MusicCode, Orientation};
 
 const MAX_URL: usize = 4096;
@@ -14,7 +17,10 @@ pub struct WaveCodeBuffer {
 }
 impl Default for WaveCodeBuffer {
     fn default() -> Self {
-        Self { ptr: ptr::null_mut(), len: 0 }
+        Self {
+            ptr: ptr::null_mut(),
+            len: 0,
+        }
     }
 }
 
@@ -30,10 +36,14 @@ pub enum WaveCodeStatus {
 }
 
 #[no_mangle]
-pub extern "C" fn wavecode_abi_version() -> u32 { 1 }
+pub extern "C" fn wavecode_abi_version() -> u32 {
+    1
+}
 
 #[no_mangle]
-pub extern "C" fn wavecode_format_version() -> u32 { u32::from(v1::FORMAT_VERSION) }
+pub extern "C" fn wavecode_format_version() -> u32 {
+    u32::from(v1::FORMAT_VERSION)
+}
 
 #[no_mangle]
 pub extern "C" fn wavecode_status_message(status: i32) -> *const std::ffi::c_char {
@@ -131,7 +141,11 @@ pub extern "C" fn wavecode_v1_decode_symbols(
     write_output(out_url, || {
         let symbols = encoded_symbols(ptr, len)?;
         let decoded = v1::decode(&symbols).map_err(|_| WaveCodeStatus::DecodeError)?;
-        decoded.code.to_url().map(String::into_bytes).map_err(|_| WaveCodeStatus::DecodeError)
+        decoded
+            .code
+            .to_url()
+            .map(String::into_bytes)
+            .map_err(|_| WaveCodeStatus::DecodeError)
     })
 }
 
@@ -176,7 +190,9 @@ pub extern "C" fn wavecode_v1_scan_image(
         let bytes = input(image, len, MAX_IMAGE)?;
         v1::scan_image(bytes)
             .map_err(|_| WaveCodeStatus::ScanError)?
-            .decoded.code.to_url()
+            .decoded
+            .code
+            .to_url()
             .map(String::into_bytes)
             .map_err(|_| WaveCodeStatus::ScanError)
     })
@@ -220,7 +236,9 @@ pub extern "C" fn wavecode_free_buffer(buffer: WaveCodeBuffer) {
     // SAFETY: ownership is exclusively transferred from an unmodified
     // WaveCode output; calling this twice or with foreign pointers is invalid.
     unsafe {
-        drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(buffer.ptr, buffer.len)));
+        drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+            buffer.ptr, buffer.len,
+        )));
     }
 }
 
@@ -240,19 +258,37 @@ mod tests {
         let mut out = WaveCodeBuffer::default();
         assert_eq!(wavecode_abi_version(), 1);
         assert_eq!(wavecode_format_version(), 1);
-        assert_eq!(wavecode_v1_encode_url(url.as_ptr(), url.len(), -1, &mut out), WaveCodeStatus::Ok);
+        assert_eq!(
+            wavecode_v1_encode_url(url.as_ptr(), url.len(), -1, &mut out),
+            WaveCodeStatus::Ok
+        );
         let symbols = consume(out);
         assert_eq!(symbols.len(), 34);
-        assert_eq!(wavecode_v1_decode_symbols(symbols.as_ptr(), symbols.len(), &mut out), WaveCodeStatus::Ok);
+        assert_eq!(
+            wavecode_v1_decode_symbols(symbols.as_ptr(), symbols.len(), &mut out),
+            WaveCodeStatus::Ok
+        );
         assert_eq!(consume(out), url);
-        assert_eq!(wavecode_v1_render_svg(symbols.as_ptr(), symbols.len(), 900, 240, &mut out), WaveCodeStatus::Ok);
+        assert_eq!(
+            wavecode_v1_render_svg(symbols.as_ptr(), symbols.len(), 900, 240, &mut out),
+            WaveCodeStatus::Ok
+        );
         assert!(String::from_utf8(consume(out)).unwrap().contains("<svg"));
-        assert_eq!(wavecode_v1_render_png(symbols.as_ptr(), symbols.len(), 900, 240, &mut out), WaveCodeStatus::Ok);
+        assert_eq!(
+            wavecode_v1_render_png(symbols.as_ptr(), symbols.len(), 900, 240, &mut out),
+            WaveCodeStatus::Ok
+        );
         let png = consume(out);
         assert!(png.starts_with(b"\x89PNG\r\n\x1a\n"));
-        assert_eq!(wavecode_v1_scan_image(png.as_ptr(), png.len(), &mut out), WaveCodeStatus::Ok);
+        assert_eq!(
+            wavecode_v1_scan_image(png.as_ptr(), png.len(), &mut out),
+            WaveCodeStatus::Ok
+        );
         assert_eq!(consume(out), url);
-        assert_eq!(wavecode_v1_scan_all(png.as_ptr(), png.len(), &mut out), WaveCodeStatus::Ok);
+        assert_eq!(
+            wavecode_v1_scan_all(png.as_ptr(), png.len(), &mut out),
+            WaveCodeStatus::Ok
+        );
         let entries: serde_json::Value = serde_json::from_slice(&consume(out)).unwrap();
         assert_eq!(entries[0]["url"], String::from_utf8_lossy(url).as_ref());
         assert_eq!(entries[0]["orientation"], "upright");
@@ -262,13 +298,28 @@ mod tests {
     fn invalid_inputs_return_errors_and_no_allocation() {
         let mut out = WaveCodeBuffer::default();
         let invalid = b"invalid";
-        assert_eq!(wavecode_v1_encode_url(ptr::null(), 4, -1, &mut out), WaveCodeStatus::InvalidArgument);
+        assert_eq!(
+            wavecode_v1_encode_url(ptr::null(), 4, -1, &mut out),
+            WaveCodeStatus::InvalidArgument
+        );
         assert!(out.ptr.is_null());
-        assert_eq!(wavecode_v1_encode_url(invalid.as_ptr(), invalid.len(), -2, &mut out), WaveCodeStatus::InvalidArgument);
+        assert_eq!(
+            wavecode_v1_encode_url(invalid.as_ptr(), invalid.len(), -2, &mut out),
+            WaveCodeStatus::InvalidArgument
+        );
         let symbols = [255_u8; 34];
-        assert_eq!(wavecode_v1_decode_symbols(symbols.as_ptr(), symbols.len(), &mut out), WaveCodeStatus::InvalidArgument);
-        assert_eq!(wavecode_v1_render_png(symbols.as_ptr(), symbols.len(), 0, 0, &mut out), WaveCodeStatus::InvalidArgument);
-        assert_eq!(wavecode_v1_encode_url(invalid.as_ptr(), invalid.len(), -1, ptr::null_mut()), WaveCodeStatus::InvalidArgument);
+        assert_eq!(
+            wavecode_v1_decode_symbols(symbols.as_ptr(), symbols.len(), &mut out),
+            WaveCodeStatus::InvalidArgument
+        );
+        assert_eq!(
+            wavecode_v1_render_png(symbols.as_ptr(), symbols.len(), 0, 0, &mut out),
+            WaveCodeStatus::InvalidArgument
+        );
+        assert_eq!(
+            wavecode_v1_encode_url(invalid.as_ptr(), invalid.len(), -1, ptr::null_mut()),
+            WaveCodeStatus::InvalidArgument
+        );
         wavecode_free_buffer(WaveCodeBuffer::default());
     }
 }
