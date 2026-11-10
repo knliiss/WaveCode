@@ -1,6 +1,6 @@
 use std::io::Cursor;
 
-use image::{DynamicImage, GrayImage, ImageOutputFormat, Luma};
+use image::{DynamicImage, GrayImage, ImageOutputFormat, Luma, RgbImage};
 
 use crate::{Error, Orientation, OrientedDecoded};
 
@@ -701,13 +701,74 @@ pub fn scan_gray_all(image: &GrayImage) -> Result<Vec<LocatedCode>, Error> {
     }
 }
 
+fn dominant_colors(image: &RgbImage) -> [[u8; 3]; 2] {
+    let mut histogram = [0_u32; 4096];
+    for pixel in image.pixels() {
+        let [r, g, b] = pixel.0;
+        let index = (usize::from(r >> 4) << 8)
+            | (usize::from(g >> 4) << 4)
+            | usize::from(b >> 4);
+        histogram[index] += 1;
+    }
+
+    let mut ordered: Vec<usize> = (0..4096).collect();
+    ordered.sort_unstable_by_key(|&index| (std::cmp::Reverse(histogram[index]), index));
+    std::array::from_fn(|rank| {
+        let index = ordered[rank];
+        [
+            ((index >> 8) as u8 & 15) * 16 + 8,
+            ((index >> 4) as u8 & 15) * 16 + 8,
+            (index as u8 & 15) * 16 + 8,
+        ]
+    })
+}
+
+fn color_distance_mask(image: &RgbImage, background: [u8; 3]) -> GrayImage {
+    let (width, height) = image.dimensions();
+    let mut mask = GrayImage::new(width, height);
+    for (target, pixel) in mask.pixels_mut().zip(image.pixels()) {
+        let distance = pixel
+            .0
+            .iter()
+            .zip(background)
+            .map(|(color, reference)| color.abs_diff(reference))
+            .max()
+            .unwrap_or(0);
+        target[0] = distance.saturating_mul(3);
+    }
+    mask
+}
+
 /// Locates and decodes WaveCode V1 marks in PNG or JPEG images.
+///
+/// The luminance pass handles most designs. If it fails, RGB color-distance
+/// passes can recover strokes whose hue contrasts with the background even
+/// when their grayscale luminance is nearly identical.
 pub fn scan_image_all(bytes: &[u8]) -> Result<Vec<LocatedCode>, Error> {
     if bytes.len() > MAX_BYTES {
         return Err(Error::InvalidFrame);
     }
     let image = image::load_from_memory(bytes).map_err(|_| Error::InvalidFrame)?;
-    scan_gray_all(&image.to_luma8())
+    if let Ok(found) = scan_gray_all(&image.to_luma8()) {
+        return Ok(found);
+    }
+
+    let rgb = image.to_rgb8();
+    let mut found = Vec::new();
+    for background in dominant_colors(&rgb) {
+        let difference = color_distance_mask(&rgb, background);
+        if let Ok(candidates) = scan_gray_all(&difference) {
+            for candidate in candidates {
+                merge_detections(&mut found, candidate)?;
+            }
+        }
+    }
+    if found.is_empty() {
+        Err(Error::InvalidFrame)
+    } else {
+        found.sort_by_key(|candidate| (candidate.bounds.top, candidate.bounds.left));
+        Ok(found)
+    }
 }
 
 /// Decodes exactly one WaveCode V1 mark from PNG or JPEG bytes.
