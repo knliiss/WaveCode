@@ -607,8 +607,7 @@ fn otsu_threshold(image: &GrayImage) -> u8 {
         let mean_left = left_sum / left_count as f64;
         let mean_right = (weighted_total - left_sum) / (total - left_count) as f64;
         let difference = mean_left - mean_right;
-        let score =
-            left_count as f64 * (total - left_count) as f64 * difference * difference;
+        let score = left_count as f64 * (total - left_count) as f64 * difference * difference;
         if score > best_score {
             best_score = score;
             threshold = level as u8;
@@ -644,15 +643,12 @@ fn intersects_mostly(a: ScanBounds, b: ScanBounds) -> bool {
         return false;
     }
     let overlap = u64::from(x_end - x_start) * u64::from(y_end - y_start);
-    let min_area = (u64::from(a.width) * u64::from(a.height))
-        .min(u64::from(b.width) * u64::from(b.height));
+    let min_area =
+        (u64::from(a.width) * u64::from(a.height)).min(u64::from(b.width) * u64::from(b.height));
     overlap * 5 >= min_area * 4
 }
 
-fn merge_detections(
-    results: &mut Vec<LocatedCode>,
-    candidate: LocatedCode,
-) -> Result<(), Error> {
+fn merge_detections(results: &mut Vec<LocatedCode>, candidate: LocatedCode) -> Result<(), Error> {
     if let Some(existing) = results
         .iter_mut()
         .find(|result| intersects_mostly(result.bounds, candidate.bounds))
@@ -684,7 +680,8 @@ pub fn scan_gray_all(image: &GrayImage) -> Result<Vec<LocatedCode>, Error> {
             continue;
         };
         for indexes in candidate_groups(&shapes) {
-            let rails: Vec<Component> = indexes.iter().map(|&index| shapes[index].clone()).collect();
+            let rails: Vec<Component> =
+                indexes.iter().map(|&index| shapes[index].clone()).collect();
             if let Ok(result) = scan_rails(&rails) {
                 merge_detections(
                     &mut decoded,
