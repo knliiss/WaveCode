@@ -40,8 +40,7 @@ pub(crate) fn encode(track: &Track) -> Result<Rank, Error> {
             if id.len() != 22 {
                 return Err(Error::InvalidIdentifier);
             }
-            let number = Rank::from_digits(id, SPOTIFY_ALPHABET)
-                .ok_or(Error::InvalidIdentifier)?;
+            let number = Rank::from_digits(id, SPOTIFY_ALPHABET).ok_or(Error::InvalidIdentifier)?;
             Ok(youtube_space().add(apple_space()).add(number))
         }
         Track::AppleMusic { id, storefront } => {
@@ -56,7 +55,9 @@ pub(crate) fn decode(number: Rank) -> Result<Track, Error> {
     let youtube_end = youtube_space();
     if number < youtube_end {
         return Ok(Track::YouTubeMusic(
-            number.to_digits(YOUTUBE_ALPHABET, 11).ok_or(Error::InvalidCodeword)?,
+            number
+                .to_digits(YOUTUBE_ALPHABET, 11)
+                .ok_or(Error::InvalidCodeword)?,
         ));
     }
 
@@ -79,7 +80,8 @@ pub(crate) fn decode(number: Rank) -> Result<Track, Error> {
     if number >= capacity() {
         return Err(Error::InvalidCodeword);
     }
-    let spotify = number.sub(apple_end)
+    let spotify = number
+        .sub(apple_end)
         .to_digits(SPOTIFY_ALPHABET, 22)
         .ok_or(Error::InvalidCodeword)?;
     Ok(Track::Spotify(spotify))
@@ -97,8 +99,14 @@ mod tests {
             Track::YouTubeMusic("___________".into()),
             Track::Spotify("0000000000000000000000".into()),
             Track::Spotify("zzzzzzzzzzzzzzzzzzzzzz".into()),
-            Track::AppleMusic { id: 0, storefront: "aa".into() },
-            Track::AppleMusic { id: u64::MAX, storefront: "zz".into() },
+            Track::AppleMusic {
+                id: 0,
+                storefront: "aa".into(),
+            },
+            Track::AppleMusic {
+                id: u64::MAX,
+                storefront: "zz".into(),
+            },
         ] {
             assert_eq!(decode(encode(&track).unwrap()).unwrap(), track);
         }

@@ -32,7 +32,9 @@ impl Track {
         let segments: Vec<&str> = path.split('/').filter(|part| !part.is_empty()).collect();
 
         match host {
-            "music.youtube.com" | "www.youtube.com" if segments.as_slice() == ["watch"] => {
+            "music.youtube.com" | "www.youtube.com" | "youtube.com"
+                if segments.as_slice() == ["watch"] =>
+            {
                 let id = parameter(query, "v").ok_or(Error::InvalidIdentifier)?;
                 let track = Self::YouTubeMusic(id.to_owned());
                 identity::encode(&track)?;
@@ -194,9 +196,21 @@ mod tests {
     #[test]
     fn full_round_trip() {
         let inputs = [
-            MusicCode { track: Track::YouTubeMusic("dQw4w9WgXcQ".into()), moment_seconds: None },
-            MusicCode { track: Track::Spotify("6rqhFgbbKwnb9MLmUQDhG6".into()), moment_seconds: Some(254) },
-            MusicCode { track: Track::AppleMusic { id: u64::MAX, storefront: "ua".into() }, moment_seconds: Some(u16::MAX) },
+            MusicCode {
+                track: Track::YouTubeMusic("dQw4w9WgXcQ".into()),
+                moment_seconds: None,
+            },
+            MusicCode {
+                track: Track::Spotify("6rqhFgbbKwnb9MLmUQDhG6".into()),
+                moment_seconds: Some(254),
+            },
+            MusicCode {
+                track: Track::AppleMusic {
+                    id: u64::MAX,
+                    storefront: "ua".into(),
+                },
+                moment_seconds: Some(u16::MAX),
+            },
         ];
         for original in inputs {
             let bars = encode(&original).unwrap();
