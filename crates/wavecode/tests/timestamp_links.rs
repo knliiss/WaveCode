@@ -1,8 +1,6 @@
 use std::process::Command;
 
-use wavecode::{
-    decode_symbols, encode_symbols, Error, MusicCode, Track, SHORT_MOMENT_SYMBOLS,
-};
+use wavecode::{decode_symbols, encode_symbols, Error, MusicCode, Track, SHORT_MOMENT_SYMBOLS};
 
 const YOUTUBE_LINK: &str =
     "https://music.youtube.com/watch?v=WYYkdveJyn8&si=n7qJQ2K-00AiN4Fw&drli=1&t=187";
@@ -25,8 +23,7 @@ fn youtube_timestamp_is_preserved_through_wavecode() {
 
 #[test]
 fn spotify_moment_is_kept_in_link_and_data() {
-    let source =
-        "https://open.spotify.com/track/6rqhFgbbKwnb9MLmUQDhG6?si=example&t=187";
+    let source = "https://open.spotify.com/track/6rqhFgbbKwnb9MLmUQDhG6?si=example&t=187";
     let original = MusicCode::from_url(source).unwrap();
     let expected = "https://open.spotify.com/track/6rqhFgbbKwnb9MLmUQDhG6?t=187";
 
@@ -85,7 +82,9 @@ fn timestamp_zero_and_max_value_round_trip() {
         assert_eq!(original.moment_seconds, Some(seconds));
         assert_eq!(original.to_url().unwrap(), source);
         assert_eq!(
-            decode_symbols(&encode_symbols(&original).unwrap()).unwrap().code,
+            decode_symbols(&encode_symbols(&original).unwrap())
+                .unwrap()
+                .code,
             original
         );
     }
@@ -104,13 +103,19 @@ fn invalid_timestamp_is_not_silently_removed() {
 #[test]
 fn native_cli_embeds_and_restores_input_timestamp() {
     let bin = env!("CARGO_BIN_EXE_wavecode");
-    let encoded = Command::new(bin).args(["encode", YOUTUBE_LINK]).output().unwrap();
+    let encoded = Command::new(bin)
+        .args(["encode", YOUTUBE_LINK])
+        .output()
+        .unwrap();
     assert!(encoded.status.success());
     let output = String::from_utf8(encoded.stdout).unwrap();
     assert!(output.contains(&format!("Track: {YOUTUBE_CANONICAL}")));
     assert!(output.contains("Moment: 187 s"));
 
-    let hex = output.lines().find_map(|line| line.strip_prefix("Symbols: ")).unwrap();
+    let hex = output
+        .lines()
+        .find_map(|line| line.strip_prefix("Symbols: "))
+        .unwrap();
     let decoded = Command::new(bin).args(["decode", hex]).output().unwrap();
     assert!(decoded.status.success());
     let restored = String::from_utf8(decoded.stdout).unwrap();
