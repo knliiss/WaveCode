@@ -32,7 +32,7 @@ impl Track {
         let segments: Vec<&str> = path.split('/').filter(|part| !part.is_empty()).collect();
 
         match host {
-            "music.youtube.com" | "www.youtube.com" if segments.as_slice() == ["watch"] => {
+            "music.youtube.com" | "www.youtube.com" | "youtube.com" if segments.as_slice() == ["watch"] => {
                 let id = parameter(query, "v").ok_or(Error::InvalidIdentifier)?;
                 let track = Self::YouTubeMusic(id.to_owned());
                 identity::encode(&track)?;
