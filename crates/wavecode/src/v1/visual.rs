@@ -543,10 +543,8 @@ mod tests {
         );
         if category.ends_with("-upper") {
             let y = super::attribute(&original, "y").unwrap();
-            modified = modified.replace(
-                &format!("y=\"{y:.6}\""),
-                &format!("y=\"{:.6}\"", y - delta),
-            );
+            modified =
+                modified.replace(&format!("y=\"{y:.6}\""), &format!("y=\"{:.6}\"", y - delta));
         }
         svg.replace_range(tag_start..tag_end, &modified);
     }
