@@ -3,6 +3,9 @@ name = "wavecode"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
+license = "MIT"
+repository = "https://github.com/knliiss/WaveCode"
+description = "WaveCode V1 music-link encoder, optical renderer and scanner"
 
 [features]
 default = ["raster"]
