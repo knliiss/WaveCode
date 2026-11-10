@@ -77,7 +77,10 @@ fn locates_code_when_small_text_like_components_dominate_the_scene() {
 
     let found = v1::scan_gray_all(&photo).unwrap();
     assert_eq!(found.len(), 1);
-    assert_eq!(found[0].result.decoded.code, MusicCode::from_url(FIRST).unwrap());
+    assert_eq!(
+        found[0].result.decoded.code,
+        MusicCode::from_url(FIRST).unwrap()
+    );
 }
 
 #[test]
