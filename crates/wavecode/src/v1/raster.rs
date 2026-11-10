@@ -11,24 +11,57 @@ const EXPECTED_COMPONENTS: usize = FRAME_BARS * 2;
 const MAX_PIXELS: u64 = 20_000_000;
 const MAX_BYTES: usize = 16 * 1024 * 1024;
 const DARK_THRESHOLD: u8 = 150;
+const MAX_COMPONENTS: usize = 4096;
+const MAX_COMPONENT_AREA: usize = 100_000;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ScanBounds {
+    pub left: u32,
+    pub top: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LocatedCode {
+    pub result: OrientedDecoded,
+    pub bounds: ScanBounds,
+}
+
 
 #[derive(Clone, Debug)]
 struct Component {
     points: Vec<(u32, u32)>,
     center_x: f64,
     center_y: f64,
+    left: u32,
+    top: u32,
+    right: u32,
+    bottom: u32,
 }
 
 impl Component {
     fn new(points: Vec<(u32, u32)>) -> Self {
         let count = points.len() as f64;
+        let mut left = u32::MAX;
+        let mut top = u32::MAX;
+        let mut right = 0;
+        let mut bottom = 0;
         let (sum_x, sum_y) = points.iter().fold((0.0, 0.0), |(x, y), (px, py)| {
+            left = left.min(*px);
+            top = top.min(*py);
+            right = right.max(*px);
+            bottom = bottom.max(*py);
             (x + f64::from(*px), y + f64::from(*py))
         });
         Self {
             points,
             center_x: sum_x / count,
             center_y: sum_y / count,
+            left,
+            top,
+            right,
+            bottom,
         }
     }
 
@@ -81,7 +114,7 @@ fn components(image: &GrayImage) -> Result<Vec<Component>, Error> {
     let height = height as usize;
     let mut visited = vec![false; width * height];
     let mut components = Vec::new();
-    let minimum_area = (width * height / 50_000).max(4);
+    let minimum_area = (width * height / 2_000_000).max(4);
     let mut dark_pixels = 0usize;
 
     for y in 0..height {
@@ -94,9 +127,13 @@ fn components(image: &GrayImage) -> Result<Vec<Component>, Error> {
             let mut pending = vec![(x, y)];
             visited[start] = true;
             let mut points = Vec::new();
+            let mut point_count = 0_usize;
 
             while let Some((cx, cy)) = pending.pop() {
-                points.push((cx as u32, cy as u32));
+                point_count += 1;
+                if points.len() < MAX_COMPONENT_AREA {
+                    points.push((cx as u32, cy as u32));
+                }
                 for dy in -1isize..=1 {
                     for dx in -1isize..=1 {
                         if dx == 0 && dy == 0 {
@@ -120,16 +157,16 @@ fn components(image: &GrayImage) -> Result<Vec<Component>, Error> {
                     }
                 }
             }
-            dark_pixels += points.len();
-            if points.len() >= minimum_area {
+            dark_pixels += point_count;
+            if point_count >= minimum_area && point_count <= MAX_COMPONENT_AREA {
                 components.push(Component::new(points));
+                if components.len() > MAX_COMPONENTS {
+                    return Err(Error::InvalidFrame);
+                }
             }
         }
     }
     if dark_pixels > width * height / 2 {
-        return Err(Error::InvalidFrame);
-    }
-    if components.len() != EXPECTED_COMPONENTS {
         return Err(Error::InvalidFrame);
     }
     Ok(components)
@@ -371,24 +408,69 @@ pub fn render_png(symbols: &[u8], profile: RenderProfile) -> Result<Vec<u8>, Err
     Ok(bytes.into_inner())
 }
 
-/// Scans an isolated high-contrast WaveCode V1 image, in PNG or JPEG form.
-///
-/// This first raster scanner assumes 72 separated ink components (36 upper and
-/// 36 lower rails). Arbitrary photographic backgrounds, occlusion and strong
-/// perspective warping require a separate localization stage.
-pub fn scan_image(bytes: &[u8]) -> Result<OrientedDecoded, Error> {
-    if bytes.len() > MAX_BYTES {
-        return Err(Error::InvalidFrame);
+fn candidate_groups(shapes: &[Component]) -> Vec<Vec<usize>> {
+    if shapes.len() == EXPECTED_COMPONENTS {
+        return vec![(0..EXPECTED_COMPONENTS).collect()];
     }
-    let image = image::load_from_memory(bytes).map_err(|_| Error::InvalidFrame)?;
-    scan_gray(&image.to_luma8())
+    if shapes.len() < EXPECTED_COMPONENTS {
+        return Vec::new();
+    }
+
+    let mut strokes: Vec<u32> = shapes
+        .iter()
+        .map(|component| {
+            (component.right - component.left + 1)
+                .min(component.bottom - component.top + 1)
+        })
+        .collect();
+    strokes.sort_unstable();
+    let max_gap = (f64::from(strokes[strokes.len() / 2]) * 2.1).max(4.0);
+    let max_gap = max_gap.ceil() as u32;
+    let mut visited = vec![false; shapes.len()];
+    let mut candidates = Vec::new();
+
+    for root in 0..shapes.len() {
+        if visited[root] {
+            continue;
+        }
+        visited[root] = true;
+        let mut pending = vec![root];
+        let mut group = Vec::new();
+
+        while let Some(index) = pending.pop() {
+            group.push(index);
+            let source = &shapes[index];
+            for (candidate, target) in shapes.iter().enumerate() {
+                if visited[candidate] {
+                    continue;
+                }
+                let dx = source
+                    .left
+                    .saturating_sub(target.right)
+                    .max(target.left.saturating_sub(source.right));
+                let dy = source
+                    .top
+                    .saturating_sub(target.bottom)
+                    .max(target.top.saturating_sub(source.bottom));
+                if dx <= max_gap && dy <= max_gap {
+                    visited[candidate] = true;
+                    pending.push(candidate);
+                }
+            }
+        }
+        if group.len() == EXPECTED_COMPONENTS {
+            candidates.push(group);
+        }
+    }
+    candidates
 }
 
-/// Scans an already-decoded grayscale raster image.
-pub fn scan_gray(image: &GrayImage) -> Result<OrientedDecoded, Error> {
-    let shapes = components(image)?;
-    let angle = estimated_angle(&shapes);
-    let pairs = pair_components(&shapes, angle)?;
+fn scan_rails(shapes: &[Component]) -> Result<OrientedDecoded, Error> {
+    if shapes.len() != EXPECTED_COMPONENTS {
+        return Err(Error::InvalidFrame);
+    }
+    let angle = estimated_angle(shapes);
+    let pairs = pair_components(shapes, angle)?;
     let mut result: Option<OrientedDecoded> = None;
 
     for orientation in [Orientation::Upright, Orientation::UpsideDown] {
@@ -408,6 +490,72 @@ pub fn scan_gray(image: &GrayImage) -> Result<OrientedDecoded, Error> {
         }
     }
     result.ok_or(Error::InvalidFrame)
+}
+
+fn bounds(group: &[Component]) -> ScanBounds {
+    let left = group.iter().map(|c| c.left).min().unwrap_or(0);
+    let top = group.iter().map(|c| c.top).min().unwrap_or(0);
+    let right = group.iter().map(|c| c.right).max().unwrap_or(left);
+    let bottom = group.iter().map(|c| c.bottom).max().unwrap_or(top);
+    ScanBounds {
+        left,
+        top,
+        width: right - left + 1,
+        height: bottom - top + 1,
+    }
+}
+
+/// Finds one or more isolated WaveCode V1 patterns inside a raster image.
+///
+/// The detector can ignore disconnected background marks and independently
+/// locate multiple codes. It still requires visible, separated rail components;
+/// overlapping foreground objects or strong photographic perspective are not
+/// guaranteed to decode.
+pub fn scan_gray_all(image: &GrayImage) -> Result<Vec<LocatedCode>, Error> {
+    let shapes = components(image)?;
+    let mut decoded = Vec::new();
+    for indexes in candidate_groups(&shapes) {
+        let rails: Vec<Component> = indexes.iter().map(|&index| shapes[index].clone()).collect();
+        if let Ok(result) = scan_rails(&rails) {
+            decoded.push(LocatedCode {
+                result,
+                bounds: bounds(&rails),
+            });
+        }
+    }
+    if decoded.is_empty() {
+        Err(Error::InvalidFrame)
+    } else {
+        decoded.sort_by_key(|candidate| (candidate.bounds.top, candidate.bounds.left));
+        Ok(decoded)
+    }
+}
+
+/// Locates and decodes WaveCode V1 marks in PNG or JPEG images.
+pub fn scan_image_all(bytes: &[u8]) -> Result<Vec<LocatedCode>, Error> {
+    if bytes.len() > MAX_BYTES {
+        return Err(Error::InvalidFrame);
+    }
+    let image = image::load_from_memory(bytes).map_err(|_| Error::InvalidFrame)?;
+    scan_gray_all(&image.to_luma8())
+}
+
+/// Decodes exactly one WaveCode V1 mark from PNG or JPEG bytes.
+pub fn scan_image(bytes: &[u8]) -> Result<OrientedDecoded, Error> {
+    let mut candidates = scan_image_all(bytes)?;
+    if candidates.len() != 1 {
+        return Err(Error::MultipleCodes);
+    }
+    Ok(candidates.remove(0).result)
+}
+
+/// Decodes exactly one WaveCode V1 mark from a grayscale raster.
+pub fn scan_gray(image: &GrayImage) -> Result<OrientedDecoded, Error> {
+    let mut candidates = scan_gray_all(image)?;
+    if candidates.len() != 1 {
+        return Err(Error::MultipleCodes);
+    }
+    Ok(candidates.remove(0).result)
 }
 
 #[cfg(test)]
