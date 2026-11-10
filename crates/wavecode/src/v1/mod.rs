@@ -7,5 +7,6 @@ pub use codec::{
     DATA_COUNT, FORMAT_VERSION, SYMBOL_COUNT,
 };
 pub use visual::{
-    decode_frame, decode_svg, frame_from_symbols, render_svg, Bar, FRAME_BARS, LEVELS_PER_RAIL,
+    decode_frame, decode_svg, frame_from_symbols, render_svg, render_svg_with_profile,
+    Bar, RenderProfile, FRAME_BARS, LEVELS_PER_RAIL,
 };
