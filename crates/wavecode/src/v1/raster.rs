@@ -1,4 +1,4 @@
-use image::{GrayImage, Luma};
+use image::GrayImage;
 
 use crate::{Error, Orientation, OrientedDecoded};
 
