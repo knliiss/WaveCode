@@ -336,17 +336,13 @@ pub fn render_png(symbols: &[u8], profile: RenderProfile) -> Result<Vec<u8>, Err
     let width = profile.width.ceil();
     let height = profile.height.ceil();
 
-    if width > u32::MAX as f64
-        || height > u32::MAX as f64
-        || width * height > MAX_PIXELS as f64
-    {
+    if width > u32::MAX as f64 || height > u32::MAX as f64 || width * height > MAX_PIXELS as f64 {
         return Err(Error::InvalidGeometry);
     }
 
     let mut image = GrayImage::from_pixel(width as u32, height as u32, Luma([255]));
     for (index, bar) in frame.iter().enumerate() {
-        let x = geometry.quiet + (index as f64 + 0.5) * geometry.pitch
-            - geometry.bar_width / 2.0;
+        let x = geometry.quiet + (index as f64 + 0.5) * geometry.pitch - geometry.bar_width / 2.0;
         let upper_height = geometry.height(bar.upper_level);
         let lower_height = geometry.height(bar.lower_level);
 
