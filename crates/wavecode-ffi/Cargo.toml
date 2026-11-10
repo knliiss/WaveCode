@@ -1,0 +1,15 @@
+[package]
+name = "wavecode-ffi"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license = "MIT"
+repository = "https://github.com/knliiss/WaveCode"
+description = "Versioned C ABI for WaveCode"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wavecode = { path = "../wavecode" }
+serde_json = "1"
