@@ -467,42 +467,54 @@ fn candidate_groups(shapes: &[Component]) -> Vec<Vec<usize>> {
         })
         .collect();
     strokes.sort_unstable();
-    let max_gap = (f64::from(strokes[strokes.len() / 2]) * 2.1).max(4.0);
-    let max_gap = max_gap.ceil() as u32;
-    let mut visited = vec![false; shapes.len()];
     let mut candidates = Vec::new();
+    let mut tested_gaps = Vec::new();
 
-    for root in 0..shapes.len() {
-        if visited[root] {
+    for percentile in [50, 75, 90, 95] {
+        let width = strokes[(strokes.len() - 1) * percentile / 100];
+        let max_gap = (f64::from(width) * 2.1).max(4.0).ceil() as u32;
+        if tested_gaps.contains(&max_gap) {
             continue;
         }
-        visited[root] = true;
-        let mut pending = vec![root];
-        let mut group = Vec::new();
+        tested_gaps.push(max_gap);
 
-        while let Some(index) = pending.pop() {
-            group.push(index);
-            let source = &shapes[index];
-            for (candidate, target) in shapes.iter().enumerate() {
-                if visited[candidate] {
-                    continue;
-                }
-                let dx = source
-                    .left
-                    .saturating_sub(target.right)
-                    .max(target.left.saturating_sub(source.right));
-                let dy = source
-                    .top
-                    .saturating_sub(target.bottom)
-                    .max(target.top.saturating_sub(source.bottom));
-                if dx <= max_gap && dy <= max_gap {
-                    visited[candidate] = true;
-                    pending.push(candidate);
+        let mut visited = vec![false; shapes.len()];
+        for root in 0..shapes.len() {
+            if visited[root] {
+                continue;
+            }
+            visited[root] = true;
+            let mut pending = vec![root];
+            let mut group = Vec::new();
+
+            while let Some(index) = pending.pop() {
+                group.push(index);
+                let source = &shapes[index];
+                for (candidate, target) in shapes.iter().enumerate() {
+                    if visited[candidate] {
+                        continue;
+                    }
+                    let dx = source
+                        .left
+                        .saturating_sub(target.right)
+                        .max(target.left.saturating_sub(source.right));
+                    let dy = source
+                        .top
+                        .saturating_sub(target.bottom)
+                        .max(target.top.saturating_sub(source.bottom));
+                    if dx <= max_gap && dy <= max_gap {
+                        visited[candidate] = true;
+                        pending.push(candidate);
+                    }
                 }
             }
-        }
-        if group.len() == EXPECTED_COMPONENTS {
-            candidates.push(group);
+
+            if group.len() == EXPECTED_COMPONENTS {
+                group.sort_unstable();
+                if !candidates.contains(&group) {
+                    candidates.push(group);
+                }
+            }
         }
     }
     candidates

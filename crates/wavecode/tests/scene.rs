@@ -59,6 +59,31 @@ fn finds_code_inside_a_larger_busy_canvas() {
 }
 
 #[test]
+fn locates_code_when_small_text_like_components_dominate_the_scene() {
+    let mut photo = GrayImage::from_pixel(1900, 1050, Luma([255]));
+    let code = code_image(FIRST, 900.0, 240.0);
+    place(&mut photo, &code, 420, 405);
+
+    for index in 0..360_u32 {
+        let column = index % 45;
+        let row = index / 45;
+        rectangle(&mut photo, 50 + column * 37, 45 + row * 27, 5, 9);
+    }
+    for index in 0..120_u32 {
+        let column = index % 40;
+        let row = index / 40;
+        rectangle(&mut photo, 70 + column * 42, 800 + row * 32, 6, 11);
+    }
+
+    let found = v1::scan_gray_all(&photo).unwrap();
+    assert_eq!(found.len(), 1);
+    assert_eq!(
+        found[0].result.decoded.code,
+        MusicCode::from_url(FIRST).unwrap()
+    );
+}
+
+#[test]
 fn finds_two_separate_codes_without_choosing_silently() {
     let mut photograph = GrayImage::from_pixel(2100, 1100, Luma([255]));
     place(&mut photograph, &code_image(FIRST, 850.0, 210.0), 180, 180);
