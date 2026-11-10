@@ -113,12 +113,7 @@ fn confidence_decoder_recovers_four_bad_observations() {
         })
         .collect();
 
-    for (position, difference, confidence) in [
-        (1, 3, 1),
-        (9, 7, 2),
-        (15, 13, 3),
-        (31, 24, 4),
-    ] {
+    for (position, difference, confidence) in [(1, 3, 1), (9, 7, 2), (15, 13, 3), (31, 24, 4)] {
         observations[position].symbol ^= difference;
         observations[position].confidence = confidence;
     }
