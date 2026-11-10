@@ -106,6 +106,42 @@ pub struct MusicCode {
     pub moment_seconds: Option<u16>,
 }
 
+impl MusicCode {
+    pub fn from_url(url: &str) -> Result<Self, Error> {
+        let track = Track::from_url(url)?;
+        let mut moment_seconds = None;
+        let without_fragment = url.split('#').next().unwrap_or(url);
+        if let Some((_, query)) = without_fragment.split_once('?') {
+            for parameter in query.split('&') {
+                if let Some(("t", seconds)) = parameter.split_once('=') {
+                    if moment_seconds.is_some() {
+                        return Err(Error::InvalidTimestamp);
+                    }
+                    let seconds = seconds.parse::<u16>().map_err(|_| Error::InvalidTimestamp)?;
+                    moment_seconds = Some(seconds);
+                }
+            }
+        }
+        Ok(Self {
+            track,
+            moment_seconds,
+        })
+    }
+
+    pub fn to_url(&self) -> Result<String, Error> {
+        let mut url = self.track.to_url()?;
+        if let Some(seconds) = self.moment_seconds {
+            if url.contains('?') {
+                url.push_str("&t=");
+            } else {
+                url.push_str("?t=");
+            }
+            url.push_str(&seconds.to_string());
+        }
+        Ok(url)
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Decoded {
     pub code: MusicCode,
@@ -123,6 +159,7 @@ pub enum Error {
     Uncorrectable,
     InvalidErasure,
     AmbiguousOrientation,
+    InvalidTimestamp,
 }
 
 impl std::fmt::Display for Error {
@@ -137,6 +174,7 @@ impl std::fmt::Display for Error {
             Self::Uncorrectable => "unable to correct WaveCode errors",
             Self::InvalidErasure => "invalid or repeated erasure position",
             Self::AmbiguousOrientation => "ambiguous WaveCode orientation",
+            Self::InvalidTimestamp => "invalid timestamp, expected 0..65535 seconds",
         };
         formatter.write_str(message)
     }
