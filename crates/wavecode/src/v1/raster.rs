@@ -545,7 +545,7 @@ fn decode_pairs(pairs: &[Pair]) -> Result<OrientedDecoded, Error> {
 
     for orientation in [Orientation::Upright, Orientation::UpsideDown] {
         for anchor in [None, Some(0), Some(FRAME_BARS - 1)] {
-            if let Some(candidate) = trial(&pairs, orientation, anchor) {
+            if let Some(candidate) = trial(pairs, orientation, anchor) {
                 match &result {
                     Some(previous)
                         if previous.decoded.code != candidate.decoded.code
