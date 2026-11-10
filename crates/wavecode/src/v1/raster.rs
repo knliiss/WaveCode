@@ -114,7 +114,6 @@ fn components(image: &GrayImage) -> Result<Vec<Component>, Error> {
     let mut visited = vec![false; width * height];
     let mut components = Vec::new();
     let minimum_area = (width * height / 2_000_000).max(4);
-    let mut discarded_backgrounds = 0usize;
 
     for y in 0..height {
         for x in 0..width {
@@ -170,7 +169,6 @@ fn components(image: &GrayImage) -> Result<Vec<Component>, Error> {
                 && (spans_both_horizontal_edges || spans_both_vertical_edges);
 
             if is_surrounding_background {
-                discarded_backgrounds += 1;
                 continue;
             }
 
@@ -181,9 +179,6 @@ fn components(image: &GrayImage) -> Result<Vec<Component>, Error> {
                 }
             }
         }
-    }
-    if discarded_backgrounds > 1 {
-        return Err(Error::InvalidFrame);
     }
     Ok(components)
 }
