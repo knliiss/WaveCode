@@ -46,7 +46,10 @@ fn finds_code_inside_a_larger_busy_canvas() {
 
     let found = v1::scan_gray_all(&photograph).unwrap();
     assert_eq!(found.len(), 1);
-    assert_eq!(found[0].result.decoded.code, MusicCode::from_url(FIRST).unwrap());
+    assert_eq!(
+        found[0].result.decoded.code,
+        MusicCode::from_url(FIRST).unwrap()
+    );
     assert!(found[0].bounds.left >= 420 && found[0].bounds.left < 600);
     assert!(found[0].bounds.top >= 405 && found[0].bounds.top < 520);
     assert_eq!(
@@ -59,12 +62,23 @@ fn finds_code_inside_a_larger_busy_canvas() {
 fn finds_two_separate_codes_without_choosing_silently() {
     let mut photograph = GrayImage::from_pixel(2100, 1100, Luma([255]));
     place(&mut photograph, &code_image(FIRST, 850.0, 210.0), 180, 180);
-    place(&mut photograph, &code_image(SECOND, 850.0, 210.0), 1030, 730);
+    place(
+        &mut photograph,
+        &code_image(SECOND, 850.0, 210.0),
+        1030,
+        730,
+    );
 
     let found = v1::scan_gray_all(&photograph).unwrap();
     assert_eq!(found.len(), 2);
-    assert_eq!(found[0].result.decoded.code, MusicCode::from_url(FIRST).unwrap());
-    assert_eq!(found[1].result.decoded.code, MusicCode::from_url(SECOND).unwrap());
+    assert_eq!(
+        found[0].result.decoded.code,
+        MusicCode::from_url(FIRST).unwrap()
+    );
+    assert_eq!(
+        found[1].result.decoded.code,
+        MusicCode::from_url(SECOND).unwrap()
+    );
     assert_eq!(v1::scan_gray(&photograph), Err(Error::MultipleCodes));
 }
 
