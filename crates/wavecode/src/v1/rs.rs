@@ -94,10 +94,7 @@ fn erasure_annihilator(erasures: &[usize]) -> Vec<u8> {
     polynomial
 }
 
-fn modified_syndromes(
-    observed: &[u8; PARITY_SYMBOLS],
-    erasures: &[usize],
-) -> Vec<u8> {
+fn modified_syndromes(observed: &[u8; PARITY_SYMBOLS], erasures: &[usize]) -> Vec<u8> {
     let polynomial = erasure_annihilator(erasures);
     (0..PARITY_SYMBOLS - erasures.len())
         .map(|index| {
@@ -330,7 +327,10 @@ mod tests {
         let expected = encode(&[0; DATA_SYMBOLS]);
         assert_eq!(decode(&expected, &[]).unwrap(), (expected, 0));
         assert_eq!(decode(&expected, &[2, 2]), Err(Error::InvalidErasure));
-        assert_eq!(decode(&expected, &[TOTAL_SYMBOLS]), Err(Error::InvalidErasure));
+        assert_eq!(
+            decode(&expected, &[TOTAL_SYMBOLS]),
+            Err(Error::InvalidErasure)
+        );
         let mut corrupted = expected;
         corrupted[0] = 64;
         assert_eq!(decode(&corrupted, &[]), Err(Error::InvalidCodeword));
