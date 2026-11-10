@@ -5,7 +5,9 @@ mod rs;
 mod visual;
 
 #[cfg(feature = "raster")]
-pub use raster::{render_png, scan_gray, scan_gray_all, scan_image, scan_image_all, LocatedCode, ScanBounds};
+pub use raster::{
+    render_png, scan_gray, scan_gray_all, scan_image, scan_image_all, LocatedCode, ScanBounds,
+};
 
 pub use codec::{
     decode, decode_observations, decode_soft, decode_with_erasures, encode, Observation,
