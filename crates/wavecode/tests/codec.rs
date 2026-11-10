@@ -1,8 +1,7 @@
 use wavecode::{
     bars_from_symbols, decode, decode_oriented, decode_symbols, decode_symbols_with_erasures,
-    decode_with_erasures, encode, encode_symbols, symbols_from_bars, Bar,
-    Error, MusicCode, Orientation, Track, LONG_MOMENT_SYMBOLS, SHORT_MOMENT_SYMBOLS,
-    TRACK_SYMBOLS,
+    decode_with_erasures, encode, encode_symbols, symbols_from_bars, Bar, Error, MusicCode,
+    Orientation, Track, LONG_MOMENT_SYMBOLS, SHORT_MOMENT_SYMBOLS, TRACK_SYMBOLS,
 };
 
 fn examples() -> [Track; 6] {
