@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/wavecode"]
+members = ["crates/wavecode", "crates/wavecode-ffi", "crates/wavecode-wasm"]
 resolver = "2"
 
 [workspace.package]
