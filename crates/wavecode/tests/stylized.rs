@@ -118,6 +118,31 @@ fn scans_multicolored_rails_on_white() {
 }
 
 #[test]
+fn scans_rails_split_into_many_disconnected_dashes() {
+    let mut image = reference(RenderProfile::new(1152.0, 310.0));
+    for (x, y, pixel) in image.enumerate_pixels_mut() {
+        // A pattern unrelated to WaveCode's rendering profile: every rail
+        // is broken into separate dash fragments.
+        if y % 7 == 3 && x > 0 {
+            *pixel = Luma([255]);
+        }
+    }
+    verify(&image);
+}
+
+#[test]
+fn scans_fragmented_light_rails_on_a_dark_background() {
+    let mut image = reference(RenderProfile::new(1152.0, 310.0));
+    for (_, y, pixel) in image.enumerate_pixels_mut() {
+        if y % 7 == 3 {
+            *pixel = Luma([255]);
+        }
+        pixel[0] = 255 - pixel[0];
+    }
+    verify(&image);
+}
+
+#[test]
 fn rejects_uniform_images_regardless_of_polarity() {
     for brightness in [0, 64, 128, 225, 255] {
         let empty = GrayImage::from_pixel(512, 160, Luma([brightness]));
