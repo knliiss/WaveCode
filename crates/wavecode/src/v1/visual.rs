@@ -217,11 +217,7 @@ pub fn decode_svg(svg: &str) -> Result<OrientedDecoded, Error> {
     }
 
     let mut frame = Vec::with_capacity(FRAME_BARS);
-    frame.push(read_bar(
-        guards_upper[0],
-        guards_lower[0],
-        QUIET_ZONE,
-    )?);
+    frame.push(read_bar(guards_upper[0], guards_lower[0], QUIET_ZONE)?);
 
     for index in 0..SYMBOL_COUNT {
         frame.push(read_bar(
