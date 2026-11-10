@@ -117,7 +117,9 @@ impl MusicCode {
                     if moment_seconds.is_some() {
                         return Err(Error::InvalidTimestamp);
                     }
-                    let seconds = seconds.parse::<u16>().map_err(|_| Error::InvalidTimestamp)?;
+                    let seconds = seconds
+                        .parse::<u16>()
+                        .map_err(|_| Error::InvalidTimestamp)?;
                     moment_seconds = Some(seconds);
                 }
             }
