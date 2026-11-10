@@ -115,17 +115,17 @@ fn components(image: &GrayImage, threshold: u8, light_ink: bool) -> Result<Vec<C
     let mut visited = vec![false; width * height];
     let mut components = Vec::new();
     let minimum_area = (width * height / 2_000_000).max(4);
+    let ink = |value: u8| {
+        if light_ink {
+            value >= threshold
+        } else {
+            value <= threshold
+        }
+    };
 
     for y in 0..height {
         for x in 0..width {
             let start = y * width + x;
-            let ink = |value: u8| {
-                if light_ink {
-                    value >= threshold
-                } else {
-                    value <= threshold
-                }
-            };
             if visited[start] || !ink(image.get_pixel(x as u32, y as u32).0[0]) {
                 continue;
             }
@@ -680,7 +680,9 @@ fn merge_detections(
 pub fn scan_gray_all(image: &GrayImage) -> Result<Vec<LocatedCode>, Error> {
     let mut decoded = Vec::new();
     for (threshold, light_ink) in segmentations(image) {
-        let shapes = components(image, threshold, light_ink)?;
+        let Ok(shapes) = components(image, threshold, light_ink) else {
+            continue;
+        };
         for indexes in candidate_groups(&shapes) {
             let rails: Vec<Component> = indexes.iter().map(|&index| shapes[index].clone()).collect();
             if let Ok(result) = scan_rails(&rails) {
