@@ -5,7 +5,7 @@ use std::io::{self, ErrorKind};
 
 use wavecode::{
     bars_from_symbols, decode_oriented, decode_symbols, encode_symbols, Bar, Decoded, MusicCode,
-    Orientation, Track,
+    Orientation,
 };
 
 const CANVAS_HEIGHT: i32 = 120;
@@ -49,15 +49,15 @@ fn run() -> Result<(), Box<dyn Error>> {
                 }
             }
 
-            let code = MusicCode {
-                track: Track::from_url(&url)?,
-                moment_seconds: timestamp,
-            };
+            let mut code = MusicCode::from_url(&url)?;
+            if let Some(seconds) = timestamp {
+                code.moment_seconds = Some(seconds);
+            }
             let symbols = encode_symbols(&code)?;
             let bars = bars_from_symbols(&symbols);
 
-            println!("Track: {}", code.track.to_url()?);
-            if let Some(seconds) = timestamp {
+            println!("Track: {}", code.to_url()?);
+            if let Some(seconds) = code.moment_seconds {
                 println!("Moment: {seconds} s");
             }
             println!("Bars: {}", bars.len());
@@ -111,7 +111,7 @@ fn invalid_svg(message: &'static str) -> io::Error {
 }
 
 fn display_decoded(decoded: &Decoded) -> Result<(), Box<dyn Error>> {
-    println!("Track: {}", decoded.code.track.to_url()?);
+    println!("Track: {}", decoded.code.to_url()?);
     if let Some(seconds) = decoded.code.moment_seconds {
         println!("Moment: {seconds} s");
     }
