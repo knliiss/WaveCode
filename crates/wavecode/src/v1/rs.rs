@@ -164,12 +164,7 @@ impl Search<'_> {
         unknown_left: usize,
     ) -> Option<([u8; TOTAL_SYMBOLS], usize)> {
         if unknown_left == 0 {
-            return correct_at_positions(
-                self.original,
-                self.observed,
-                positions,
-                self.locators,
-            );
+            return correct_at_positions(self.original, self.observed, positions, self.locators);
         }
 
         for candidate in next..TOTAL_SYMBOLS {
@@ -211,9 +206,7 @@ pub(super) fn decode(
         return Ok((received, 0));
     }
 
-    let locators = std::array::from_fn(|position| {
-        power(2, (TOTAL_SYMBOLS - 1 - position) as u8)
-    });
+    let locators = std::array::from_fn(|position| power(2, (TOTAL_SYMBOLS - 1 - position) as u8));
     let search = Search {
         original: &received,
         observed: &observed,
