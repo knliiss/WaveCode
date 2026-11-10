@@ -75,7 +75,7 @@ impl RenderProfile {
         }
     }
 
-    fn geometry(self) -> Result<Geometry, Error> {
+    pub(super) fn geometry(self) -> Result<Geometry, Error> {
         let valid = [
             self.width,
             self.height,
@@ -124,19 +124,19 @@ impl RenderProfile {
 }
 
 #[derive(Clone, Copy, Debug)]
-struct Geometry {
-    quiet: f64,
-    pitch: f64,
-    bar_width: f64,
-    gap: f64,
-    level_step: f64,
-    minimum_height: f64,
-    radius: f64,
-    baseline: f64,
+pub(super) struct Geometry {
+    pub(super) quiet: f64,
+    pub(super) pitch: f64,
+    pub(super) bar_width: f64,
+    pub(super) gap: f64,
+    pub(super) level_step: f64,
+    pub(super) minimum_height: f64,
+    pub(super) radius: f64,
+    pub(super) baseline: f64,
 }
 
 impl Geometry {
-    fn height(self, level: u8) -> f64 {
+    pub(super) fn height(self, level: u8) -> f64 {
         self.minimum_height + f64::from(level) * self.level_step
     }
 }
