@@ -72,6 +72,43 @@ bash scripts/generate-examples.sh
 
 All three SVGs are validated against their intended tracks by automated tests. Song names are captions, **not part of the encoded payload**.
 
+## Cross-platform SDK
+
+**One implementation. Multiple platforms.** The native and WebAssembly
+interfaces reuse the same Rust V1 algorithms, with no platform-specific
+reimplementation of Reed–Solomon, CRC or optical scanning.
+
+| Integration | Package / interface | Status |
+| --- | --- | --- |
+| Rust | [`wavecode`](crates/wavecode) crate | Available |
+| C / C++ | [Versioned C ABI](include/wavecode.h) · `.so`, `.dylib`, `.dll` | Available |
+| Python | [`wavecode-native`](bindings/python) · ctypes wrapper | Available (native binary required) |
+| C# / .NET | [`WaveCode.Native`](bindings/dotnet) · .NET 8 | Available (native binary required) |
+| JavaScript / TypeScript | [`wavecode-wasm`](crates/wavecode-wasm) · browser/Node via wasm-pack | Available (build from source) |
+| Swift, Java/Kotlin, Go, Dart and other native runtimes | C ABI / FFI | Supported at the ABI level; dedicated bindings not yet bundled |
+
+The SDK exposes URL encoding, V1 symbol decoding, SVG/PNG rendering, single-image scanning, and multi-code detection. Input images and output codes can stay entirely on-device.
+
+**[SDK documentation, installation and ABI contract →](docs/sdk.md)**
+
+### Native build
+
+```bash
+cargo build --release -p wavecode-ffi
+```
+
+The shared library is written to `target/release`. Include
+[`wavecode.h`](include/wavecode.h) when building a C/C++ consumer.
+
+### Browser build
+
+```bash
+cargo install wasm-pack
+wasm-pack build crates/wavecode-wasm --target web --release
+```
+
+This repository remains the **format and SDK project**. A future web platform with a camera interface will live in a separate repository.
+
 ## Quick start
 
 **Requirements:** Rust 1.82 or newer and Cargo.
