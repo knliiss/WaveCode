@@ -28,7 +28,6 @@ pub struct LocatedCode {
     pub bounds: ScanBounds,
 }
 
-
 #[derive(Clone, Debug)]
 struct Component {
     points: Vec<(u32, u32)>,
@@ -419,8 +418,7 @@ fn candidate_groups(shapes: &[Component]) -> Vec<Vec<usize>> {
     let mut strokes: Vec<u32> = shapes
         .iter()
         .map(|component| {
-            (component.right - component.left + 1)
-                .min(component.bottom - component.top + 1)
+            (component.right - component.left + 1).min(component.bottom - component.top + 1)
         })
         .collect();
     strokes.sort_unstable();
