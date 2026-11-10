@@ -13,7 +13,7 @@ scanner are separate products, not part of this repository.
               wavecode-ffi           wavecode-wasm
              Stable C ABI          wasm-bindgen exports
             /     |       \                  |
-        Python  .NET    C/C++            JS/TypeScript
+        Python  .NET  JVM  C/C++        JS/TypeScript
           and any language with C FFI       browser / Node
 \`\`\`
 
@@ -82,6 +82,12 @@ See [bindings/dotnet/README.md](../bindings/dotnet/README.md).
 \`WaveCode.Native\` targets .NET 8 and exposes strongly typed methods, native
 exception mapping, and scan results.
 
+## Java and Kotlin
+
+See [bindings/jvm/README.md](../bindings/jvm/README.md). The `wavecode-jvm`
+library uses JNA over the same C ABI; Kotlin consumes it like any Java library.
+The native library must be packaged for the target platform.
+
 ## Browser and Node.js
 
 See [crates/wavecode-wasm/README.md](../crates/wavecode-wasm/README.md).
@@ -94,8 +100,8 @@ wasm-pack build crates/wavecode-wasm --target web --release
 
 ## Other languages, platforms and distribution
 
-C ABI enables integration via **Swift, C++, Java/Kotlin (JNI/JNA), Go
-(cgo), Dart (FFI), Rust**, etc. Wrappers for those languages are not yet
+C ABI enables integration via **Swift, C++, Go (cgo), Dart (FFI), Rust**,
+and other FFI-capable languages. Wrappers for those languages are not yet
 included. On mobile, compile a native library for each platform/CPU
 architecture and respect the host runtime's FFI restrictions.
 
