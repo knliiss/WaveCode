@@ -2,8 +2,6 @@
 mod geometry;
 #[path = "illumination.rs"]
 mod illumination;
-#[path = "perspective.rs"]
-mod perspective;
 #[path = "segmentation.rs"]
 mod segmentation;
 
@@ -600,20 +598,9 @@ fn scan_rails(shapes: &[Component]) -> Result<OrientedDecoded, Error> {
     if shapes.len() != EXPECTED_COMPONENTS {
         return Err(Error::InvalidFrame);
     }
-
-    // Keep the original V1 path first: previously printed marks must continue
-    // to decode exactly as before. Only invalid optical geometries trigger the
-    // projective row correspondence fallback; payload validation is unchanged.
-    let result =
-        pair_components(shapes, estimated_angle(shapes)).and_then(|pairs| decode_pairs(&pairs));
-    match result {
-        Ok(decoded) => Ok(decoded),
-        Err(Error::InvalidFrame) => {
-            let pairs = perspective::pair_rows(shapes).ok_or(Error::InvalidFrame)?;
-            decode_pairs(&pairs)
-        }
-        Err(other) => Err(other),
-    }
+    let angle = estimated_angle(shapes);
+    let pairs = pair_components(shapes, angle)?;
+    decode_pairs(&pairs)
 }
 
 fn bounds(group: &[Component]) -> ScanBounds {
