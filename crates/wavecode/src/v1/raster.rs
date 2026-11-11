@@ -1,3 +1,6 @@
+#[path = "geometry.rs"]
+mod geometry;
+
 use std::io::Cursor;
 
 use image::{DynamicImage, GrayImage, ImageOutputFormat, Luma, RgbImage};
@@ -481,10 +484,25 @@ pub fn render_png(symbols: &[u8], profile: RenderProfile) -> Result<Vec<u8>, Err
 }
 
 fn candidate_groups(shapes: &[Component]) -> Vec<Vec<usize>> {
-    if shapes.len() == EXPECTED_COMPONENTS {
+    candidate_groups_with_size(shapes, EXPECTED_COMPONENTS, EXPECTED_COMPONENTS)
+}
+
+fn candidate_regions(shapes: &[Component]) -> Vec<Vec<usize>> {
+    candidate_groups_with_size(shapes, 64, 160)
+}
+
+fn candidate_groups_with_size(
+    shapes: &[Component],
+    min_components: usize,
+    max_components: usize,
+) -> Vec<Vec<usize>> {
+    if shapes.len() == EXPECTED_COMPONENTS
+        && min_components <= EXPECTED_COMPONENTS
+        && max_components >= EXPECTED_COMPONENTS
+    {
         return vec![(0..EXPECTED_COMPONENTS).collect()];
     }
-    if shapes.len() < EXPECTED_COMPONENTS {
+    if shapes.len() < min_components || shapes.len() > 2048 {
         return Vec::new();
     }
 
@@ -537,7 +555,7 @@ fn candidate_groups(shapes: &[Component]) -> Vec<Vec<usize>> {
                 }
             }
 
-            if group.len() == EXPECTED_COMPONENTS {
+            if (min_components..=max_components).contains(&group.len()) {
                 group.sort_unstable();
                 if !candidates.contains(&group) {
                     candidates.push(group);
@@ -829,6 +847,24 @@ pub fn scan_gray_all(image: &GrayImage) -> Result<Vec<LocatedCode>, Error> {
                             bounds: bounds(&rails),
                         },
                     )?;
+                }
+            }
+
+            if decoded.is_empty() {
+                for indexes in candidate_regions(&shapes).into_iter().take(2) {
+                    let rails: Vec<Component> =
+                        indexes.iter().map(|&index| shapes[index].clone()).collect();
+                    if let Some(region) = geometry::normalize_region(&rails) {
+                        if let Ok(candidate) = scan_projected(&region.image, 128, false) {
+                            merge_detections(
+                                &mut decoded,
+                                LocatedCode {
+                                    result: candidate.result,
+                                    bounds: region.bounds,
+                                },
+                            )?;
+                        }
+                    }
                 }
             }
         }
