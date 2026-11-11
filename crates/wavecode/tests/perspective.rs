@@ -108,12 +108,7 @@ fn strong_perspective_and_in_plane_rotation_round_trip() {
     let code = MusicCode::from_url(URL).unwrap();
     let input = image_for(URL);
 
-    for (keystone_strength, roll) in [
-        (0.48, 0.60),
-        (-0.32, -0.62),
-        (0.25, 1.15),
-        (-0.25, -1.10),
-    ] {
+    for (keystone_strength, roll) in [(0.48, 0.60), (-0.32, -0.62), (0.25, 1.15), (-0.25, -1.10)] {
         let scene = rotate_frame(&keystone(&input, keystone_strength), roll);
         let found = v1::scan_gray_all(&scene).unwrap();
         assert_eq!(found.len(), 1, "keystone {keystone_strength}, roll {roll}");
