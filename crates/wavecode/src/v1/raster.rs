@@ -604,8 +604,8 @@ fn scan_rails(shapes: &[Component]) -> Result<OrientedDecoded, Error> {
     // Keep the original V1 path first: previously printed marks must continue
     // to decode exactly as before. Only invalid optical geometries trigger the
     // projective row correspondence fallback; payload validation is unchanged.
-    let result = pair_components(shapes, estimated_angle(shapes))
-        .and_then(|pairs| decode_pairs(&pairs));
+    let result =
+        pair_components(shapes, estimated_angle(shapes)).and_then(|pairs| decode_pairs(&pairs));
     match result {
         Ok(decoded) => Ok(decoded),
         Err(Error::InvalidFrame) => {
