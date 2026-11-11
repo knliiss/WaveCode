@@ -902,7 +902,8 @@ pub fn scan_gray_all(image: &GrayImage) -> Result<Vec<LocatedCode>, Error> {
             let corrected =
                 illumination::normalize_illumination(image).ok_or(Error::InvalidFrame)?;
             if image.width() == 936 && image.height() == 250 {
-                for (threshold, light_ink) in [(150, false), (205, true)] {
+                for threshold in [80_u8, 95, 110, 125, 140, 150, 160, 175, 190, 205, 215, 225, 235, 245] {
+                  for light_ink in [false, true] {
                     if let Ok(shapes) = components(&corrected, threshold, light_ink) {
                         let groups = candidate_groups(&shapes);
                         let success = groups.iter().any(|indexes| {
@@ -916,6 +917,7 @@ pub fn scan_gray_all(image: &GrayImage) -> Result<Vec<LocatedCode>, Error> {
                             scan_projected(&corrected, threshold, light_ink).is_ok()
                         );
                     }
+                  }
                 }
             }
             scan_gray_pass(&corrected)
