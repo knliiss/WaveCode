@@ -124,7 +124,11 @@ fn reads_raised_light_ink_on_a_shaded_dark_surface() {
     for (x, y, pixel) in shaded.enumerate_pixels_mut() {
         let background = 112 + (u64::from(x) * 60 / 900) as u8;
         let original_shade = clean.get_pixel(x, y)[0];
-        pixel[0] = if original_shade < 128 { 218 } else { background };
+        pixel[0] = if original_shade < 128 {
+            218
+        } else {
+            background
+        };
     }
 
     let read = v1::scan_gray(&shaded).unwrap();
