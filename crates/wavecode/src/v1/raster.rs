@@ -1,5 +1,9 @@
 #[path = "geometry.rs"]
 mod geometry;
+#[path = "illumination.rs"]
+mod illumination;
+#[path = "segmentation.rs"]
+mod segmentation;
 
 use std::io::Cursor;
 
@@ -828,15 +832,18 @@ fn merge_detections(results: &mut Vec<LocatedCode>, candidate: LocatedCode) -> R
     Ok(())
 }
 
-/// Locates codes without requiring a particular color, brightness or corner radius.
-///
-/// Tries independently derived dark-ink and light-ink masks, retaining only
-/// candidates that pass the V1 geometry, RS and CRC checks. Geometry still needs
-/// 72 individually detectable rail silhouettes; disconnected or overlapping
-/// artistic strokes require a future stroke-segmentation fallback.
-pub fn scan_gray_all(image: &GrayImage) -> Result<Vec<LocatedCode>, Error> {
+fn scan_gray_pass(image: &GrayImage, compensated: bool) -> Result<Vec<LocatedCode>, Error> {
     let mut decoded = Vec::new();
-    for (threshold, light_ink) in segmentations(image) {
+    let mut masks = segmentations(image);
+    if compensated {
+        for candidate in [(175, false), (245, true)] {
+            if !masks.contains(&candidate) {
+                masks.push(candidate);
+            }
+        }
+    }
+
+    for (threshold, light_ink) in masks {
         let shapes = components(image, threshold, light_ink).ok();
         if let Some(shapes) = &shapes {
             for indexes in candidate_groups(shapes) {
@@ -850,6 +857,20 @@ pub fn scan_gray_all(image: &GrayImage) -> Result<Vec<LocatedCode>, Error> {
                             bounds: bounds(&rails),
                         },
                     )?;
+                }
+            }
+
+            if compensated && decoded.is_empty() {
+                if let Some(repaired) = segmentation::repair_rail_fragments(shapes) {
+                    if let Ok(result) = scan_rails(&repaired) {
+                        merge_detections(
+                            &mut decoded,
+                            LocatedCode {
+                                result,
+                                bounds: bounds(&repaired),
+                            },
+                        )?;
+                    }
                 }
             }
         }
@@ -890,6 +911,23 @@ pub fn scan_gray_all(image: &GrayImage) -> Result<Vec<LocatedCode>, Error> {
     } else {
         decoded.sort_by_key(|candidate| (candidate.bounds.top, candidate.bounds.left));
         Ok(decoded)
+    }
+}
+
+/// Locates WaveCodes while retaining strict geometry, Reed–Solomon and CRC validation.
+///
+/// Uses standard segmentation and geometry paths first. The bounded fallback
+/// removes nonuniform lighting and repairs short glare-split rails, but still
+/// requires a valid V1 optical frame with checksum-verifiable payload.
+pub fn scan_gray_all(image: &GrayImage) -> Result<Vec<LocatedCode>, Error> {
+    match scan_gray_pass(image, false) {
+        Ok(found) => Ok(found),
+        Err(Error::InvalidFrame) => {
+            let corrected =
+                illumination::normalize_illumination(image).ok_or(Error::InvalidFrame)?;
+            scan_gray_pass(&corrected, true)
+        }
+        Err(error) => Err(error),
     }
 }
 
