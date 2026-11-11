@@ -75,7 +75,6 @@ fn false_positives_do_not_appear_in_structured_noise() {
     assert!(v1::scan_gray_all(&picture).is_err());
 }
 
-
 /// Rotates the camera frame after a keystone warp, rather than rotating the
 /// ideal image first. This reproduces a phone held diagonally to the tag.
 fn rotate_frame(image: &GrayImage, angle: f64) -> GrayImage {
@@ -114,8 +113,7 @@ fn strong_perspective_and_in_plane_rotation_round_trip() {
         let found = v1::scan_gray_all(&scene).unwrap();
         assert_eq!(found.len(), 1, "keystone {keystone_strength}, roll {roll}");
         assert_eq!(
-            found[0].result.decoded.code,
-            code,
+            found[0].result.decoded.code, code,
             "keystone {keystone_strength}, roll {roll}"
         );
     }
