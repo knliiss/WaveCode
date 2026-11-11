@@ -113,6 +113,25 @@ fn reads_downscaled_and_noisy_image() {
 }
 
 #[test]
+fn reads_raised_light_ink_on_a_shaded_dark_surface() {
+    let url = "https://open.spotify.com/track/0123456789abcdefghijkl";
+    let original = MusicCode::from_url(url).unwrap();
+    let symbols = v1::encode(&original).unwrap();
+    let png = v1::render_png(&symbols, RenderProfile::new(900.0, 240.0)).unwrap();
+    let clean = image::load_from_memory(&png).unwrap().to_luma8();
+
+    let mut shaded = GrayImage::new(clean.width(), clean.height());
+    for (x, y, pixel) in shaded.enumerate_pixels_mut() {
+        let background = 112 + (u64::from(x) * 60 / 900) as u8;
+        let original_shade = clean.get_pixel(x, y)[0];
+        pixel[0] = if original_shade < 128 { 218 } else { background };
+    }
+
+    let read = v1::scan_gray(&shaded).unwrap();
+    assert_eq!(read.decoded.code, original);
+}
+
+#[test]
 fn reads_small_skewed_images() {
     let original = MusicCode::from_url(URL).unwrap();
     let raster = rasterize(&original, RenderProfile::new(1050.0, 290.0));
