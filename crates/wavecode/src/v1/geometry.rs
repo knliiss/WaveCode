@@ -48,10 +48,7 @@ pub(super) fn normalize_region(shapes: &[Component]) -> Option<NormalizedRegion>
 
     let span_long = max_long - min_long;
     let span_cross = max_cross - min_cross;
-    if span_long < 110.0
-        || span_cross < 20.0
-        || !(2.1..=18.0).contains(&(span_long / span_cross))
-    {
+    if span_long < 110.0 || span_cross < 20.0 || !(2.1..=18.0).contains(&(span_long / span_cross)) {
         return None;
     }
 
