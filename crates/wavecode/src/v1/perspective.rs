@@ -20,8 +20,7 @@ pub(super) fn pair_rows(shapes: &[Component]) -> Option<Vec<Pair>> {
         .collect();
 
     components.sort_by(|a, b| a.center_cross.total_cmp(&b.center_cross));
-    let separation = components[FRAME_BARS].center_cross
-        - components[FRAME_BARS - 1].center_cross;
+    let separation = components[FRAME_BARS].center_cross - components[FRAME_BARS - 1].center_cross;
     let median_height = {
         let mut heights: Vec<f64> = components.iter().map(|shape| shape.height).collect();
         heights.sort_by(f64::total_cmp);
@@ -67,12 +66,10 @@ pub(super) fn pair_rows(shapes: &[Component]) -> Option<Vec<Pair>> {
         return None;
     }
 
-    let expected = |t: f64| {
-        first + distance * (1.0 + perspective) * t / (1.0 + perspective * t)
-    };
+    let expected = |t: f64| first + distance * (1.0 + perspective) * t / (1.0 + perspective * t);
     let row_shift_start = pairs[0].upper.center_long - pairs[0].lower.center_long;
-    let row_shift_end = pairs[FRAME_BARS - 1].upper.center_long
-        - pairs[FRAME_BARS - 1].lower.center_long;
+    let row_shift_end =
+        pairs[FRAME_BARS - 1].upper.center_long - pairs[FRAME_BARS - 1].lower.center_long;
 
     for (index, pair) in pairs.iter().enumerate() {
         let t = index as f64 / (FRAME_BARS - 1) as f64;
@@ -95,8 +92,7 @@ pub(super) fn pair_rows(shapes: &[Component]) -> Option<Vec<Pair>> {
         }
 
         if index > 0
-            && (current <= centers[index - 1]
-                || current - centers[index - 1] > local_pitch * 1.9)
+            && (current <= centers[index - 1] || current - centers[index - 1] > local_pitch * 1.9)
         {
             return None;
         }
