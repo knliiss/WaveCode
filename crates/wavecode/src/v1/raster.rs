@@ -502,7 +502,9 @@ fn candidate_groups_with_size(
     {
         return vec![(0..EXPECTED_COMPONENTS).collect()];
     }
-    if shapes.len() < min_components || shapes.len() > 2048 {
+    if shapes.len() < min_components
+        || (min_components < EXPECTED_COMPONENTS && shapes.len() > 2048)
+    {
         return Vec::new();
     }
 
@@ -835,8 +837,9 @@ fn merge_detections(results: &mut Vec<LocatedCode>, candidate: LocatedCode) -> R
 pub fn scan_gray_all(image: &GrayImage) -> Result<Vec<LocatedCode>, Error> {
     let mut decoded = Vec::new();
     for (threshold, light_ink) in segmentations(image) {
-        if let Ok(shapes) = components(image, threshold, light_ink) {
-            for indexes in candidate_groups(&shapes) {
+        let shapes = components(image, threshold, light_ink).ok();
+        if let Some(shapes) = &shapes {
+            for indexes in candidate_groups(shapes) {
                 let rails: Vec<Component> =
                     indexes.iter().map(|&index| shapes[index].clone()).collect();
                 if let Ok(result) = scan_rails(&rails) {
@@ -849,9 +852,17 @@ pub fn scan_gray_all(image: &GrayImage) -> Result<Vec<LocatedCode>, Error> {
                     )?;
                 }
             }
+        }
 
-            if decoded.is_empty() {
-                for indexes in candidate_regions(&shapes).into_iter().take(2) {
+        if decoded.is_empty() {
+            if let Ok(candidate) = scan_projected(image, threshold, light_ink) {
+                merge_detections(&mut decoded, candidate)?;
+            }
+        }
+
+        if decoded.is_empty() {
+            if let Some(shapes) = &shapes {
+                for indexes in candidate_regions(shapes).into_iter().take(2) {
                     let rails: Vec<Component> =
                         indexes.iter().map(|&index| shapes[index].clone()).collect();
                     if let Some(region) = geometry::normalize_region(&rails) {
@@ -868,15 +879,12 @@ pub fn scan_gray_all(image: &GrayImage) -> Result<Vec<LocatedCode>, Error> {
                 }
             }
         }
-        if decoded.is_empty() {
-            if let Ok(candidate) = scan_projected(image, threshold, light_ink) {
-                merge_detections(&mut decoded, candidate)?;
-            }
-        }
+
         if !decoded.is_empty() {
             break;
         }
     }
+
     if decoded.is_empty() {
         Err(Error::InvalidFrame)
     } else {
