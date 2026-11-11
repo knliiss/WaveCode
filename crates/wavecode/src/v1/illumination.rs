@@ -92,8 +92,14 @@ mod tests {
             }
         }
         let corrected = normalize_illumination(&frame).expect("rails are locally distinct");
-        assert!(corrected.get_pixel(65, 75)[0] < 85);
-        assert!(corrected.get_pixel(385, 75)[0] < 145);
-        assert!(corrected.get_pixel(240, 75)[0] > 105);
+        assert!(
+            i16::from(corrected.get_pixel(65, 75)[0]) + 25
+                < i16::from(corrected.get_pixel(95, 75)[0])
+        );
+        assert!(
+            i16::from(corrected.get_pixel(385, 75)[0]) + 20
+                < i16::from(corrected.get_pixel(410, 75)[0])
+        );
+        assert!(corrected.get_pixel(240, 75)[0] > 170);
     }
 }
