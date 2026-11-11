@@ -918,6 +918,13 @@ pub fn scan_gray_all(image: &GrayImage) -> Result<Vec<LocatedCode>, Error> {
                                 shapes.len(), groups.len(), success,
                                 scan_projected(&corrected, threshold, light_ink).is_ok()
                             );
+                            if (threshold == 175 && !light_ink) || (threshold == 205 && light_ink) {
+                                let mut order: Vec<_> = shapes.iter().collect();
+                                order.sort_by(|a, b| a.center_x.total_cmp(&b.center_x));
+                                eprintln!("shape details: {}", order.iter().map(|s| {
+                                    format!("({},{},{}x{})", s.left, s.top, s.right-s.left+1, s.bottom-s.top+1)
+                                }).collect::<Vec<_>>().join(" "));
+                            }
                         }
                     }
                 }
