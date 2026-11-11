@@ -88,7 +88,7 @@ mod tests {
         }
         for x in 380..395 {
             for y in 55..115 {
-                frame.put_pixel(x, y, Luma([210]));
+                frame.put_pixel(x, y, Luma([170]));
             }
         }
         let corrected = normalize_illumination(&frame).expect("rails are locally distinct");
