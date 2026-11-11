@@ -11,7 +11,7 @@ const EXPECTED_COMPONENTS: usize = FRAME_BARS * 2;
 const MAX_PIXELS: u64 = 20_000_000;
 const MAX_BYTES: usize = 16 * 1024 * 1024;
 const DEFAULT_THRESHOLD: u8 = 150;
-const MAX_SEGMENTATIONS: usize = 6;
+const MAX_SEGMENTATIONS: usize = 9;
 const MAX_COMPONENTS: usize = 4096;
 const MAX_COMPONENT_AREA: usize = 100_000;
 
@@ -764,6 +764,9 @@ fn segmentations(image: &GrayImage) -> Vec<(u8, bool)> {
         (DEFAULT_THRESHOLD, true),
         (adaptive.saturating_sub(12), false),
         (adaptive.saturating_add(12), true),
+        (adaptive.saturating_add(60), true),
+        (180, true),
+        (205, true),
     ] {
         if !candidates.contains(&(threshold, light_ink)) {
             candidates.push((threshold, light_ink));
