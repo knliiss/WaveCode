@@ -40,8 +40,7 @@ pub(super) fn normalize_illumination(image: &GrayImage) -> Option<GrayImage> {
         for x in 0..w {
             let left = x.saturating_sub(radius);
             let right = (x + radius + 1).min(w);
-            let sum = sums[bottom * stride + right]
-                + sums[top * stride + left]
+            let sum = sums[bottom * stride + right] + sums[top * stride + left]
                 - sums[top * stride + right]
                 - sums[bottom * stride + left];
             let count = ((right - left) * (bottom - top)) as f64;
