@@ -1,5 +1,7 @@
 #[path = "geometry.rs"]
 mod geometry;
+#[path = "illumination.rs"]
+mod illumination;
 
 use std::io::Cursor;
 
@@ -828,13 +830,7 @@ fn merge_detections(results: &mut Vec<LocatedCode>, candidate: LocatedCode) -> R
     Ok(())
 }
 
-/// Locates codes without requiring a particular color, brightness or corner radius.
-///
-/// Tries independently derived dark-ink and light-ink masks, retaining only
-/// candidates that pass the V1 geometry, RS and CRC checks. Geometry still needs
-/// 72 individually detectable rail silhouettes; disconnected or overlapping
-/// artistic strokes require a future stroke-segmentation fallback.
-pub fn scan_gray_all(image: &GrayImage) -> Result<Vec<LocatedCode>, Error> {
+fn scan_gray_pass(image: &GrayImage) -> Result<Vec<LocatedCode>, Error> {
     let mut decoded = Vec::new();
     for (threshold, light_ink) in segmentations(image) {
         let shapes = components(image, threshold, light_ink).ok();
@@ -890,6 +886,23 @@ pub fn scan_gray_all(image: &GrayImage) -> Result<Vec<LocatedCode>, Error> {
     } else {
         decoded.sort_by_key(|candidate| (candidate.bounds.top, candidate.bounds.left));
         Ok(decoded)
+    }
+}
+
+/// Locates WaveCodes while retaining strict geometry, Reed–Solomon and CRC validation.
+///
+/// Runs the original threshold/region paths first. Only when none yields a valid
+/// code, attempts bounded local illumination compensation, followed by the same
+/// decoder. A glare-saturated region with no surviving rail information cannot
+/// be reconstructed from a single image.
+pub fn scan_gray_all(image: &GrayImage) -> Result<Vec<LocatedCode>, Error> {
+    match scan_gray_pass(image) {
+        Ok(found) => Ok(found),
+        Err(Error::InvalidFrame) => {
+            let corrected = illumination::normalize_illumination(image).ok_or(Error::InvalidFrame)?;
+            scan_gray_pass(&corrected)
+        }
+        Err(error) => Err(error),
     }
 }
 
