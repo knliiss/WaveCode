@@ -899,7 +899,8 @@ pub fn scan_gray_all(image: &GrayImage) -> Result<Vec<LocatedCode>, Error> {
     match scan_gray_pass(image) {
         Ok(found) => Ok(found),
         Err(Error::InvalidFrame) => {
-            let corrected = illumination::normalize_illumination(image).ok_or(Error::InvalidFrame)?;
+            let corrected =
+                illumination::normalize_illumination(image).ok_or(Error::InvalidFrame)?;
             scan_gray_pass(&corrected)
         }
         Err(error) => Err(error),
