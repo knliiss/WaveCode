@@ -2,11 +2,12 @@ use image::{GrayImage, Luma};
 
 const MAX_LOCAL_PIXELS: u64 = 2_400_000;
 const GAIN: f64 = 3.4;
+const NEUTRAL: f64 = 192.0;
 
 /// Removes slowly varying illumination while retaining local rail contrast.
 ///
 /// This pass is only used after ordinary decoding fails. A local average is
-/// subtracted from each pixel and mapped around neutral gray, so a code whose
+/// subtracted from each pixel and mapped around a bright neutral background, so a code whose
 /// background varies widely across the image can still be segmented with a
 /// single threshold. The prefix sum bounds processing to O(width * height).
 pub(super) fn normalize_illumination(image: &GrayImage) -> Option<GrayImage> {
@@ -52,7 +53,7 @@ pub(super) fn normalize_illumination(image: &GrayImage) -> Option<GrayImage> {
             result.put_pixel(
                 x as u32,
                 y as u32,
-                Luma([(128.0 + deviation * GAIN).round().clamp(0.0, 255.0) as u8]),
+                Luma([(NEUTRAL + deviation * GAIN).round().clamp(0.0, 255.0) as u8]),
             );
         }
     }
@@ -92,7 +93,7 @@ mod tests {
         }
         let corrected = normalize_illumination(&frame).expect("rails are locally distinct");
         assert!(corrected.get_pixel(65, 75)[0] < 85);
-        assert!(corrected.get_pixel(385, 75)[0] < 110);
+        assert!(corrected.get_pixel(385, 75)[0] < 145);
         assert!(corrected.get_pixel(240, 75)[0] > 105);
     }
 }
