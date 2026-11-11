@@ -1,5 +1,6 @@
 #![cfg(feature = "raster")]
 
+use image::imageops::{resize, FilterType};
 use image::{GrayImage, Luma};
 use wavecode::v1::{self, RenderProfile};
 use wavecode::MusicCode;
@@ -65,6 +66,30 @@ fn finds_fragmented_closeup_after_deskewing_its_region() {
     assert_eq!(decoded[0].result.decoded.code, expected);
     assert!(decoded[0].bounds.left > 200);
     assert!(decoded[0].bounds.width > 700);
+}
+
+#[test]
+fn recognizes_fragmented_light_rails_on_a_dark_background() {
+    let expected = MusicCode::from_url(URL).unwrap();
+    let mut scene = on_tilted_background(&fragmented_mark(), -0.22);
+    for pixel in scene.pixels_mut() {
+        pixel[0] = 255 - pixel[0];
+    }
+
+    let decoded = v1::scan_gray_all(&scene).unwrap();
+    assert_eq!(decoded.len(), 1);
+    assert_eq!(decoded[0].result.decoded.code, expected);
+}
+
+#[test]
+fn recognizes_a_closeup_using_large_rails_without_downscaling_the_scene() {
+    let expected = MusicCode::from_url(URL).unwrap();
+    let large = resize(&fragmented_mark(), 1450, 369, FilterType::Nearest);
+    let scene = on_tilted_background(&large, 0.18);
+
+    let decoded = v1::scan_gray_all(&scene).unwrap();
+    assert_eq!(decoded.len(), 1);
+    assert_eq!(decoded[0].result.decoded.code, expected);
 }
 
 #[test]
