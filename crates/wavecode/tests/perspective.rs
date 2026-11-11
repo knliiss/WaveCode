@@ -74,3 +74,49 @@ fn false_positives_do_not_appear_in_structured_noise() {
     }
     assert!(v1::scan_gray_all(&picture).is_err());
 }
+
+
+/// Rotates the camera frame after a keystone warp, rather than rotating the
+/// ideal image first. This reproduces a phone held diagonally to the tag.
+fn rotate_frame(image: &GrayImage, angle: f64) -> GrayImage {
+    let mut output = GrayImage::from_pixel(1900, 1450, Luma([255]));
+    let (sine, cosine) = angle.sin_cos();
+    let source_center = (
+        f64::from(image.width()) / 2.0,
+        f64::from(image.height()) / 2.0,
+    );
+    let target_center = (
+        f64::from(output.width()) / 2.0,
+        f64::from(output.height()) / 2.0,
+    );
+
+    for (x, y, pixel) in output.enumerate_pixels_mut() {
+        let dx = f64::from(x) - target_center.0;
+        let dy = f64::from(y) - target_center.1;
+        let source_x = (source_center.0 + dx * cosine + dy * sine).round() as i64;
+        let source_y = (source_center.1 - dx * sine + dy * cosine).round() as i64;
+        if (0..i64::from(image.width())).contains(&source_x)
+            && (0..i64::from(image.height())).contains(&source_y)
+        {
+            *pixel = *image.get_pixel(source_x as u32, source_y as u32);
+        }
+    }
+    output
+}
+
+#[test]
+fn strong_perspective_and_in_plane_rotation_round_trip() {
+    let code = MusicCode::from_url(URL).unwrap();
+    let input = image_for(URL);
+
+    for (keystone_strength, roll) in [(0.48, 0.60), (-0.32, -0.62)] {
+        let scene = rotate_frame(&keystone(&input, keystone_strength), roll);
+        let found = v1::scan_gray_all(&scene).unwrap();
+        assert_eq!(found.len(), 1, "keystone {keystone_strength}, roll {roll}");
+        assert_eq!(
+            found[0].result.decoded.code,
+            code,
+            "keystone {keystone_strength}, roll {roll}"
+        );
+    }
+}
