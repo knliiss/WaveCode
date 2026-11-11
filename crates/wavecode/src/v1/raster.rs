@@ -901,6 +901,23 @@ pub fn scan_gray_all(image: &GrayImage) -> Result<Vec<LocatedCode>, Error> {
         Err(Error::InvalidFrame) => {
             let corrected =
                 illumination::normalize_illumination(image).ok_or(Error::InvalidFrame)?;
+            if image.width() == 936 && image.height() == 250 {
+                for (threshold, light_ink) in [(150, false), (205, true)] {
+                    if let Ok(shapes) = components(&corrected, threshold, light_ink) {
+                        let groups = candidate_groups(&shapes);
+                        let success = groups.iter().any(|indexes| {
+                            let rails: Vec<Component> =
+                                indexes.iter().map(|&index| shapes[index].clone()).collect();
+                            scan_rails(&rails).is_ok()
+                        });
+                        eprintln!(
+                            "illumination diagnostic: threshold={threshold}, light={light_ink}, shapes={}, groups={}, decode={}, projected={}",
+                            shapes.len(), groups.len(), success,
+                            scan_projected(&corrected, threshold, light_ink).is_ok()
+                        );
+                    }
+                }
+            }
             scan_gray_pass(&corrected)
         }
         Err(error) => Err(error),
