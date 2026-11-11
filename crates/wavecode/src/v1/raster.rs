@@ -208,6 +208,14 @@ fn estimated_angle(components: &[Component]) -> f64 {
     0.5 * (2.0 * xy).atan2(xx - yy)
 }
 
+fn max_column_width(index: usize, pitch: f64) -> f64 {
+    if index == 0 || index + 1 == FRAME_BARS {
+        pitch * 1.28
+    } else {
+        pitch * 0.99
+    }
+}
+
 fn pair_components(components: &[Component], angle: f64) -> Result<Vec<Pair>, Error> {
     let (sine, cosine) = angle.sin_cos();
     let mut projected: Vec<Projected> = components
@@ -256,8 +264,8 @@ fn pair_components(components: &[Component], angle: f64) -> Result<Vec<Pair>, Er
             || local_pitch > pitch * 2.0
             || (pair.upper.center_long - pair.lower.center_long).abs() > local_pitch * 0.55
             || (centers[index] - position(t)).abs() > pitch * 0.43
-            || pair.upper.width > local_pitch * 0.99
-            || pair.lower.width > local_pitch * 0.99
+            || pair.upper.width > max_column_width(index, local_pitch)
+            || pair.lower.width > max_column_width(index, local_pitch)
         {
             return Err(Error::InvalidFrame);
         }
@@ -926,8 +934,18 @@ pub fn scan_gray(image: &GrayImage) -> Result<OrientedDecoded, Error> {
 
 #[cfg(test)]
 mod tests {
-    use super::scan_gray;
+    use super::{max_column_width, scan_gray, FRAME_BARS};
     use image::{GrayImage, Luma};
+
+    #[test]
+    fn permits_perspective_broadening_only_at_frame_guards() {
+        let local_pitch = 17.1;
+        let photograph_guard_width = 18.4;
+        assert!(photograph_guard_width < max_column_width(0, local_pitch));
+        assert!(photograph_guard_width < max_column_width(FRAME_BARS - 1, local_pitch));
+        assert!(photograph_guard_width > max_column_width(1, local_pitch));
+        assert!(photograph_guard_width > max_column_width(FRAME_BARS - 2, local_pitch));
+    }
 
     #[test]
     fn rejects_empty_or_all_black_images() {
