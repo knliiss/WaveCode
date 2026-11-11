@@ -902,22 +902,24 @@ pub fn scan_gray_all(image: &GrayImage) -> Result<Vec<LocatedCode>, Error> {
             let corrected =
                 illumination::normalize_illumination(image).ok_or(Error::InvalidFrame)?;
             if image.width() == 936 && image.height() == 250 {
-                for threshold in [80_u8, 95, 110, 125, 140, 150, 160, 175, 190, 205, 215, 225, 235, 245] {
-                  for light_ink in [false, true] {
-                    if let Ok(shapes) = components(&corrected, threshold, light_ink) {
-                        let groups = candidate_groups(&shapes);
-                        let success = groups.iter().any(|indexes| {
-                            let rails: Vec<Component> =
-                                indexes.iter().map(|&index| shapes[index].clone()).collect();
-                            scan_rails(&rails).is_ok()
-                        });
-                        eprintln!(
-                            "illumination diagnostic: threshold={threshold}, light={light_ink}, shapes={}, groups={}, decode={}, projected={}",
-                            shapes.len(), groups.len(), success,
-                            scan_projected(&corrected, threshold, light_ink).is_ok()
-                        );
+                for threshold in [
+                    80_u8, 95, 110, 125, 140, 150, 160, 175, 190, 205, 215, 225, 235, 245,
+                ] {
+                    for light_ink in [false, true] {
+                        if let Ok(shapes) = components(&corrected, threshold, light_ink) {
+                            let groups = candidate_groups(&shapes);
+                            let success = groups.iter().any(|indexes| {
+                                let rails: Vec<Component> =
+                                    indexes.iter().map(|&index| shapes[index].clone()).collect();
+                                scan_rails(&rails).is_ok()
+                            });
+                            eprintln!(
+                                "illumination diagnostic: threshold={threshold}, light={light_ink}, shapes={}, groups={}, decode={}, projected={}",
+                                shapes.len(), groups.len(), success,
+                                scan_projected(&corrected, threshold, light_ink).is_ok()
+                            );
+                        }
                     }
-                  }
                 }
             }
             scan_gray_pass(&corrected)
