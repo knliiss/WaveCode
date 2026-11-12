@@ -195,7 +195,6 @@ fn proposed_column_budgets_preserve_crc16_and_four_rs_bytes() {
     assert_eq!(columns(74), 16);
 }
 
-
 #[test]
 fn padding_slack_can_host_exact_short_moments_without_another_column() {
     fn slack(identity_bits: usize) -> usize {
@@ -217,7 +216,6 @@ fn padding_slack_can_host_exact_short_moments_without_another_column() {
     assert_eq!(slack(64), 0);
     assert_eq!(columns(64 + 1), columns(64) + 1);
 }
-
 
 #[test]
 fn proposed_opt_in_w_headers_cover_six_legacy_and_ten_extensions() {
