@@ -191,7 +191,11 @@ mod tests {
             Point { x: 290.0, y: 201.0 },
         ];
         let pose = AnchorPose::from_fiducials(expected).unwrap();
-        for (point, &(x, y)) in expected.iter().zip(&[(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)]) {
+        for (point, &(x, y)) in
+            expected
+                .iter()
+                .zip(&[(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)])
+        {
             let projected = pose.project(x, y).unwrap();
             assert!((projected.x - point.x).abs() < 1.0e-5);
             assert!((projected.y - point.y).abs() < 1.0e-5);
