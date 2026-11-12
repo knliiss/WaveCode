@@ -80,19 +80,19 @@ impl Track {
                 identity::encode(&track)?;
                 Ok(track)
             }
-            "www.tiktok.com" | "tiktok.com"
-                if segments.len() == 3 && segments[1] == "video" =>
-            {
+            "www.tiktok.com" | "tiktok.com" if segments.len() == 3 && segments[1] == "video" => {
                 let handle = segments[0];
                 if !handle.starts_with('@')
-                    || !handle[1..].bytes().all(|c| {
-                        c.is_ascii_alphanumeric() || c == b'_' || c == b'.'
-                    })
+                    || !handle[1..]
+                        .bytes()
+                        .all(|c| c.is_ascii_alphanumeric() || c == b'_' || c == b'.')
                     || handle.len() > 25
                 {
                     return Err(Error::InvalidIdentifier);
                 }
-                let id = segments[2].parse::<u64>().map_err(|_| Error::InvalidIdentifier)?;
+                let id = segments[2]
+                    .parse::<u64>()
+                    .map_err(|_| Error::InvalidIdentifier)?;
                 if id == 0 {
                     return Err(Error::InvalidIdentifier);
                 }
@@ -179,7 +179,7 @@ impl Track {
             Self::TikTokVideo(id) => format!("https://www.tiktok.com/@/video/{id}"),
             Self::InstagramReel(shortcode) => {
                 format!("https://www.instagram.com/reel/{shortcode}/")
-            },
+            }
             Self::Spotify(id) => format!("https://open.spotify.com/track/{id}"),
             Self::AppleMusic { id, storefront } => {
                 format!("https://music.apple.com/{storefront}/song/{id}")
