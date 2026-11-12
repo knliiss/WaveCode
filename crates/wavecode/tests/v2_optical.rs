@@ -9,15 +9,15 @@ const YOUTUBE: &str = "JGwWNGJdvx8";
 
 fn samples() -> Vec<Content> {
     vec![
-        Content::Single(MusicCode::from_url(
-            "https://music.youtube.com/watch?v=JGwWNGJdvx8",
-        ).unwrap()),
-        Content::Single(MusicCode::from_url(
-            "https://music.youtube.com/watch?v=JGwWNGJdvx8&t=95",
-        ).unwrap()),
-        Content::Single(MusicCode::from_url(
-            "https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b",
-        ).unwrap()),
+        Content::Single(
+            MusicCode::from_url("https://music.youtube.com/watch?v=JGwWNGJdvx8").unwrap(),
+        ),
+        Content::Single(
+            MusicCode::from_url("https://music.youtube.com/watch?v=JGwWNGJdvx8&t=95").unwrap(),
+        ),
+        Content::Single(
+            MusicCode::from_url("https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b").unwrap(),
+        ),
         Content::Dual {
             spotify_id: SPOTIFY.into(),
             youtube_music_id: YOUTUBE.into(),
@@ -35,7 +35,8 @@ fn frame_image(content: &Content) -> GrayImage {
             height: 210.0,
             quiet: 20.0,
         },
-    ).unwrap();
+    )
+    .unwrap();
     image::load_from_memory(&image).unwrap().to_luma8()
 }
 
