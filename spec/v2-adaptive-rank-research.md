@@ -1,0 +1,223 @@
+# WaveCode adaptive identity-rank research (experimental)
+
+**Status:** mathematical design and bounds, **not an approved optical format**. No V1
+or V2 on-wire layout is changed by this document. Experimental code MUST use a
+new, unmistakable decoding contract before any incompatible modes are emitted.
+
+## Non-negotiable constraints
+
+- W-anchor remains mandatory for all new layouts and **never carries identity
+  bits**. Its 4-bit logical codeword (extended Hamming(8,4), SECDED) may specify
+  only metadata such as payload type, identifier-width class and time-width class.
+- Offline, deterministic round-trip: no external track database, search/API, hash
+  reversal or truncated identity. All platforms supported by the existing codec
+  retain a universal fallback, including noncanonical 11-character YouTube IDs.
+- Preserve the current experimental CRC-16/CCITT-FALSE and four GF(256)
+  Reed-Solomon parity *bytes* (two unknown symbol errors, four erasures).
+- Do not equate fewer symbols with reliable smaller printing: widths must be
+  compared at equal physical capture quality and detection probability.
+
+## Theorem 1: what cannot be compressed
+
+For a domain `S` containing `N` different admissible identifiers, a
+losslessly reversible fixed-width encoder is an injection `E:S->[0,2^b)`.
+Therefore `N<=2^b`, so the tight lower bound is
+
+`b_min = ceil(log2(N))`.
+
+For arbitrary 22-character Spotify Base62 strings,
+`N_S=62^22`, `log2(N_S)=130.9923188285...`, hence **131 bits**.
+The Spotify developer documentation describes Base62 IDs but does **not**
+promise that every valid ID is 128-bit. Indeed, the Spotify API's own example
+`7ouMYWpwJ422jRcDASZB7P`, interpreted with the repository's Base62
+alphabet, has numeric bit length **129**. Never unconditionally assume 128 bits,
+UUIDv4 structure, or six fixed UUID bits.
+
+For a canonical YouTube 11-character Base64URL video ID, the final Base64
+digit must be divisible by 4: the last **two bits are zero**, so its cardinality
+is `2^64` and its exact reversible rank needs **64 bits** (not 66).
+This is a documented property of the canonical 64-bit ID format; do not apply
+it silently to arbitrary 11-character strings.
+
+For an *independent* Spotify + canonical YouTube Music pair, the domain is a
+Cartesian product and needs
+
+`ceil(log2(62^22 * 2^64)) = ceil(194.9923188285...) = 195 bits`.
+
+An optimal rank is `R = spotify_base62_rank * 2^64 + youtube_u64`.
+Decode with `spotify_rank = R >> 64` and `youtube_u64 = R mod 2^64`.
+This is collision-free. No offline algorithm can represent **all** such
+independent pairs in 194 fixed bits, even if the algorithms are new or complex.
+
+An entropy coder (arithmetic, ANS, Golomb, etc.) cannot defeat this
+worst-case bound. If real IDs are statistically nonuniform, a self-contained
+fixed source model may improve **expected** length; it must have a reversible
+escape route, be reproducible by the decoder, and be evaluated on representative
+held-out IDs. Do not claim such a distribution or savings without evidence.
+
+## Theorem 2: adaptive disjoint-domain rank (WaveCode ADR)
+
+Instead of concatenating `platform_tag | storefront | ID`, partition the
+accepted input set into known, disjoint finite domains `S_0..S_m`. Each has
+a reversible rank `r_i(x)` in `[0, N_i)` and an agreed order. Define:
+
+`offset_i = sum_{j<i} N_j`
+`E(i,x) = offset_i + r_i(x)`.
+
+The decoder finds the unique interval `[offset_i, offset_i+N_i)`, subtracts
+`offset_i`, and calls the inverse `r_i^-1`. Disjoint intervals prove
+**injectivity**, and every integer in `[0,sum N_i)` has an inverse.
+Thus the method reaches the optimal width for the whole profile:
+
+`b = ceil(log2(sum_i N_i))`.
+
+This is a custom *engineering composition* of known enumerative/mixed-radix
+coding principles, **not** a claim to have invented a new mathematical theorem.
+
+### Surprising case: reuse impossible Apple storefront values
+
+The current 2-letter lower-case Apple storefront grammar has exactly
+`26*26=676` possible tags, while its 10-bit field has `1024` values.
+Therefore **348 namespace slots are unused**. If a W metadata profile says
+"Apple-or-numeric family", reserve tag `0..675` for Apple storefronts, and
+`676..679` for four numeric-ID platforms (TikTok, Deezer, Tidal, Qobuz).
+
+Let `T` be that 10-bit group and `x` the entire 64-bit ID:
+
+`R = (T << 64) | x`, `0<=T<680`, `0<=x<2^64`.
+
+Decoding is exact: `T = R >> 64`, `x = R mod 2^64`; for Apple,
+`country[0]=floor(T/26)`, `country[1]=T mod 26`.
+All **680** groups still fit **74 bits**, exactly the same width as an
+Apple storefront plus ID alone: `ceil(log2(680*2^64))=74`.
+This folds four whole platform namespaces into unused valid field states
+**without adding a bit**. It does not, by itself, shorten Apple's existing
+74-bit contents, and specialized short-ID profiles remain better for small
+numeric identifiers. Tags must be stable and versioned.
+
+The general optimization for `m` subordinate namespaces is: pack all
+admissible variants inside the unused states of an existing bounded field
+before allocating new tag bits.
+
+## Theorem 3: range-tier modes with explicit fallback
+
+For each admissible interval `[a_i,b_i)` of integer IDs, W metadata may
+select the **range class** (not any identity bit), while payload stores
+`x-a_i` in `ceil(log2(b_i-a_i))` bits. The decoder computes `x=a_i+r`;
+it checks `r<b_i-a_i`. This is reversible and optimal *within the class*.
+
+Example: a platform's 64-bit numeric ID uses **32 bits** when `x<2^32`
+and **64 bits otherwise**. The latter route is mandatory; this is not
+universal 32-bit compression. The two-bit 4-service tag can be added inside
+the payload if the W profile identifies a numeric-family layout.
+
+More sophisticated schemes can use intervals based on an analytically
+specified model (not a lookup table of songs). A mode selector can choose
+the shortest admissible representation **after accounting for all headers,
+CRC, RS, column rounding and W overhead**.
+
+## Theorem 4: the W codebook is a scarce resource
+
+The current 4 logical W bits give **16 optically protected metadata words**
+not 16 additional payload bits. Current experimental V2 uses six meaningful
+layout/timestamp combinations; ten words are currently unused. A new compact
+codebook should allocate those words to high-yield classes: canonical
+YouTube Music, numeric-ID widths, 128-bit-subset Spotify, 8-bit timestamp,
+canonical Dual, and a complete general fallback.
+
+The following is **not allowed** under our agreement: placing Spotify's
+high bits, a quotient, URL fragments, or any other identity payload in W,
+even if doing so saves a column. A width-class indicator is metadata;
+an actual ID bit is not.
+
+Choose a codebook by maximizing expected *physical* savings over measured
+workloads:
+
+`min_modes sum_{cases c} P(c) * W_total(c, selected_profile(c))`
+
+subject to `number_of_meta_values <= 16`, full domain coverage, no
+ambiguous decoding, stable version identification, and unchanged ECC.
+This is a finite discrete optimization problem. There is no justified claim
+that the distribution of real users' links is known yet.
+
+Versioning is essential: the existing V2 uses reserved bit zero. Do **not**
+repurpose already-accepted headers to an incompatible bit layout. Either
+assign disjoint reserved version values with fewer available profiles, or
+introduce a recognizably new format and run dual-format readers during
+migration. Maintain compatibility with already printed V1.
+
+## Column budgets: same CRC-16 + 4 RS bytes
+
+For `B` information bits, with the entire logical mode available via W:
+
+`columns(B) = ceil((B+16)/8) + 4`.
+
+Here `+16` is CRC, and `+4` is RS parity *bytes*. These are **payload**
+columns; W, separation and optical quiet zones are additional.
+
+| Case | Identity/time bits B | Payload columns | Conditions |
+| --- | ---: | ---: | --- |
+| Existing V2 YouTube Music no moment | 4+66=70 | 15 | 4-bit in-payload service tag |
+| Specialized YouTube Music no moment | 64 | **14** | Canonical ID, service metadata in W |
+| Specialized YouTube Music, t<=255 | 64+8=72 | **15** | Time-width metadata in W |
+| Existing V2 Spotify no moment | 131 | 23 | Full fallback |
+| Spotify ID with rank <2^128 | 128 | **22** | Range-class metadata in W |
+| Spotify any rank, t<=255 | 131+8=139 | **24** | Full rank and short time |
+| Spotify rank <2^128, t<=255 | 128+8=136 | **23** | Conditional fast path |
+| Existing V2 Dual no moment | 131+66=197 | 31 | Arbitrary YouTube 11-char input |
+| Canonical Dual no moment | 131+64=195 | 31 | 195-bit lower bound achieved |
+| Canonical Dual, t<=255 | 131+64+8=203 | **32** | Compared to 33 today |
+| Spotify rank <2^128 + canonical YouTube | 128+64=192 | **30** | Subset fast path |
+| Spotify rank <2^128 + canonical YouTube, t<=255 | 128+64+8=200 | **31** | Compared to 33 today |
+| Four-service numeric family, ID <2^32 | 2+32=34 | **11** | 2-bit platform tag, no moment |
+| Apple + four numeric services, full ID | 74 | 16 | 680-group combined rank |
+
+The 128-bit Spotify fast path can represent only a subset. If all `62^22`
+Base62 strings were equally likely, that subset would have probability
+`2^128 / 62^22 = 0.1256672976...`, i.e. about **12.57%**.
+Actual Spotify IDs may have a different distribution; this is not a measured
+success rate. No rule is allowed to *truncate* or silently wrap any rank.
+
+If `T` is an arbitrary 16-bit timestamp, worst-case time takes 16 bits.
+An explicit "short moment" profile can represent exactly 0..255 seconds in
+8 bits, with a 16-bit fallback. Do not quantize or silently lose seconds.
+
+## Another bound: variable optical length is not free storage
+
+If a decoder reliably distinguishes length classes `b_1,..,b_k` and their
+routing modes, their *combined* capacity is at most
+`sum_i 2^(b_i)`. Length is useful **side information**, but it cannot
+magically carry dozens of bits in a code with only a few detectable lengths.
+In particular, shorter variants cannot represent all inputs from a uniform
+large space; there must always be fallback. Nor can the W's sixteen
+metawords provide an extra eight payload bits: the absolute maximum is
+four bits **before** subtracting the mandatory layout metadata.
+
+## Validation requirements before changing the renderer / scanner
+
+1. Implement ADR as a pure versioned source-codec prototype, with exhaustive
+   testing of the 680-group boundaries, inverse ranks, canonical YT endings,
+   Spotify >128-bit examples, timestamp boundaries and fallback.
+2. Search for the best <=16-profile codebook on **representative user-provided
+   URL samples**, then report median/mean/p95 optical width. Do not infer
+   popularity from made-up datasets.
+3. Verify encoded frame round-trips with CRC-16 and two intentionally corrupted
+   GF(256) symbols for every profile. Test corrupt W metawords separately.
+4. Measure W finding/pose and decode success on printed and photographed marks
+   with rotation, roll, keystone perspective, clutter, blur, reflections, and
+   3D-printed relief. Compare equal camera-readable dimensions against V1 and
+   existing experimental V2.
+5. No default switch, automatic migration or release until mobile camera tests
+   pass and historical V1 decoding remains identical.
+
+## Background sources
+
+- Spotify developer docs: https://developer.spotify.com/documentation/web-api/concepts/spotify-uris-ids
+- Spotify official API track ID example: https://developer.spotify.com/documentation/web-api/reference/get-several-tracks
+- YouTube canonical video ID notes: https://wiki.archiveteam.org/index.php/YouTube/Technical_details
+- Base64URL representation: https://www.rfc-editor.org/rfc/rfc4648
+- Reed-Solomon shortening and correction: https://www.cs.cmu.edu/~realworld/reedsolomon/reed_solomon_codes.html
+- Mathematical background: enumerative coding, mixed-radix ranking, and
+  injective fixed-to-variable source coding are established techniques. The
+  WaveCode ADR profile grouping / W metadata allocation is an experimental
+  application, not a new universal compression theorem.
