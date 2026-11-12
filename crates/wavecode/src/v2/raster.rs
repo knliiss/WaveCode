@@ -300,23 +300,6 @@ fn fit<'a>(dots: &[&'a Component], sites: &[DotSite], angle: f64) -> Option<Fit<
     })
 }
 
-fn locate<'a>(dots: &[&'a Component], sites: &[DotSite]) -> Result<Fit<'a>, Error> {
-    let initial = principal_angle(dots);
-    let mut best: Option<Fit<'a>> = None;
-    for inverted in [false, true] {
-        let base = initial + if inverted { std::f64::consts::PI } else { 0.0 };
-        for offset in -8..=8 {
-            let angle = base + f64::from(offset) * 0.012;
-            if let Some(candidate) = fit(dots, sites, angle) {
-                if best.as_ref().is_none_or(|previous| candidate.score < previous.score) {
-                    best = Some(candidate);
-                }
-            }
-        }
-    }
-    best.ok_or(Error::InvalidFrame)
-}
-
 fn read_frame(
     components: &[Component],
     dots: &[&Component],
