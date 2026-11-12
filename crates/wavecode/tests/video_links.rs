@@ -4,14 +4,38 @@ use wavecode::{Error, MusicCode, Track};
 #[test]
 fn video_platforms_round_trip_without_changing_the_v1_bar_count() {
     let links = [
-        ("https://www.youtube.com/watch?v=JGwWNGJdvx8", "https://www.youtube.com/watch?v=JGwWNGJdvx8"),
-        ("https://youtu.be/JGwWNGJdvx8?t=95", "https://www.youtube.com/watch?v=JGwWNGJdvx8&t=95"),
-        ("https://m.youtube.com/watch?v=JGwWNGJdvx8&t=59", "https://www.youtube.com/watch?v=JGwWNGJdvx8&t=59"),
-        ("https://www.youtube.com/shorts/JGwWNGJdvx8", "https://www.youtube.com/shorts/JGwWNGJdvx8"),
-        ("https://www.youtube.com/shorts/JGwWNGJdvx8?t=35", "https://www.youtube.com/watch?v=JGwWNGJdvx8&t=35"),
-        ("https://www.tiktok.com/@creator/video/7300873037530795272?lang=en", "https://www.tiktok.com/@/video/7300873037530795272"),
-        ("https://www.instagram.com/reel/DIPPWkUh7Rj/?igsh=a1b2", "https://www.instagram.com/reel/DIPPWkUh7Rj/"),
-        ("https://www.instagram.com/reels/C1-2_abcD/", "https://www.instagram.com/reel/C1-2_abcD/"),
+        (
+            "https://www.youtube.com/watch?v=JGwWNGJdvx8",
+            "https://www.youtube.com/watch?v=JGwWNGJdvx8",
+        ),
+        (
+            "https://youtu.be/JGwWNGJdvx8?t=95",
+            "https://www.youtube.com/watch?v=JGwWNGJdvx8&t=95",
+        ),
+        (
+            "https://m.youtube.com/watch?v=JGwWNGJdvx8&t=59",
+            "https://www.youtube.com/watch?v=JGwWNGJdvx8&t=59",
+        ),
+        (
+            "https://www.youtube.com/shorts/JGwWNGJdvx8",
+            "https://www.youtube.com/shorts/JGwWNGJdvx8",
+        ),
+        (
+            "https://www.youtube.com/shorts/JGwWNGJdvx8?t=35",
+            "https://www.youtube.com/watch?v=JGwWNGJdvx8&t=35",
+        ),
+        (
+            "https://www.tiktok.com/@creator/video/7300873037530795272?lang=en",
+            "https://www.tiktok.com/@/video/7300873037530795272",
+        ),
+        (
+            "https://www.instagram.com/reel/DIPPWkUh7Rj/?igsh=a1b2",
+            "https://www.instagram.com/reel/DIPPWkUh7Rj/",
+        ),
+        (
+            "https://www.instagram.com/reels/C1-2_abcD/",
+            "https://www.instagram.com/reel/C1-2_abcD/",
+        ),
     ];
 
     for (source, destination) in links {
