@@ -63,18 +63,18 @@ pub struct Decoded {
 }
 
 #[derive(Default)]
-struct BitWriter {
+pub(super) struct BitWriter {
     bits: Vec<bool>,
 }
 
 impl BitWriter {
-    fn push(&mut self, value: u64, width: usize) {
+    pub(super) fn push(&mut self, value: u64, width: usize) {
         for shift in (0..width).rev() {
             self.bits.push((value >> shift) & 1 != 0);
         }
     }
 
-    fn rank(&mut self, rank: Rank, width: usize) -> Result<(), Error> {
+    pub(super) fn rank(&mut self, rank: Rank, width: usize) -> Result<(), Error> {
         let bytes = rank
             .to_bytes(width.div_ceil(8))
             .ok_or(Error::InvalidIdentifier)?;
@@ -87,7 +87,7 @@ impl BitWriter {
         Ok(())
     }
 
-    fn finish(mut self) -> Vec<u8> {
+    pub(super) fn finish(mut self) -> Vec<u8> {
         while self.bits.len() % 8 != 0 {
             self.bits.push(false);
         }
@@ -102,17 +102,17 @@ impl BitWriter {
     }
 }
 
-struct BitReader<'a> {
+pub(super) struct BitReader<'a> {
     bytes: &'a [u8],
     cursor: usize,
 }
 
 impl<'a> BitReader<'a> {
-    fn new(bytes: &'a [u8]) -> Self {
+    pub(super) fn new(bytes: &'a [u8]) -> Self {
         Self { bytes, cursor: 0 }
     }
 
-    fn take(&mut self, width: usize) -> Result<u64, Error> {
+    pub(super) fn take(&mut self, width: usize) -> Result<u64, Error> {
         if width > 64 || self.cursor + width > self.bytes.len() * 8 {
             return Err(Error::InvalidCodeword);
         }
@@ -125,7 +125,7 @@ impl<'a> BitReader<'a> {
         Ok(value)
     }
 
-    fn rank(&mut self, width: usize) -> Result<Rank, Error> {
+    pub(super) fn rank(&mut self, width: usize) -> Result<Rank, Error> {
         let mut result = Rank::zero();
         for _ in 0..width {
             result = result.mul_small(2).add(Rank::from_u64(self.take(1)?));
@@ -133,7 +133,7 @@ impl<'a> BitReader<'a> {
         Ok(result)
     }
 
-    fn finish(&self) -> Result<(), Error> {
+    pub(super) fn finish(&self) -> Result<(), Error> {
         if self.bytes.len() * 8 - self.cursor >= 8 {
             return Err(Error::InvalidCodeword);
         }
@@ -150,7 +150,7 @@ impl<'a> BitReader<'a> {
     }
 }
 
-fn crc16(bytes: &[u8]) -> u16 {
+pub(super) fn crc16(bytes: &[u8]) -> u16 {
     let mut crc = 0xffff_u16;
     for &byte in bytes {
         crc ^= u16::from(byte) << 8;
@@ -308,6 +308,18 @@ pub fn encode(content: &Content) -> Result<Frame, Error> {
     encode_with_layout(content, layout)
 }
 
+/// Choose the shortest supported experimental frame, preserving a legacy V2
+/// fallback for every identifier and moment. This is opt-in: `encode` is unchanged.
+pub fn encode_adaptive(content: &Content) -> Result<Frame, Error> {
+    let mut shortest = encode(content)?;
+    for candidate in super::adaptive::candidates(content)? {
+        if candidate.symbols.len() < shortest.symbols.len() {
+            shortest = candidate;
+        }
+    }
+    Ok(shortest)
+}
+
 pub fn encode_with_layout(content: &Content, layout: Layout) -> Result<Frame, Error> {
     let has_time = content.moment().is_some();
     let metadata = make_header(layout, has_time);
@@ -363,6 +375,9 @@ pub fn encode_with_layout(content: &Content, layout: Layout) -> Result<Frame, Er
 }
 
 pub fn decode(frame: &Frame) -> Result<Decoded, Error> {
+    if !matches!(frame.metadata, 0 | 2 | 4 | 6 | 8 | 10) {
+        return super::adaptive::decode(frame);
+    }
     let (layout, has_time) = parse_header(frame.metadata)?;
     let (recovered, corrected_symbols) = reed_solomon::decode(&frame.symbols)?;
     if recovered.len() < PARITY_BYTES + 3 || recovered.len() > 34 {
