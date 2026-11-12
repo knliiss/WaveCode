@@ -3,10 +3,10 @@
 //! This path is never called by the production V1 scanner.
 use image::{GrayImage, RgbImage};
 
-use crate::Error;
 use super::anchor::{self, AnchorPose, Point};
 use super::codec::{self, Decoded, Frame};
 use super::visual::RenderProfile;
+use crate::Error;
 
 const MAX_PIXELS: u64 = 5_000_000;
 const MAX_COMPONENTS: usize = 150;
@@ -95,7 +95,11 @@ fn connected(image: &GrayImage, light: bool) -> Result<Vec<Component>, Error> {
             visited[start] = true;
             let ink = |x: usize, y: usize| {
                 let shade = image.get_pixel(x as u32, y as u32).0[0];
-                if light { shade >= 128 } else { shade < 128 }
+                if light {
+                    shade >= 128
+                } else {
+                    shade < 128
+                }
             };
             if !ink(x, y) {
                 continue;
@@ -151,8 +155,10 @@ fn connected(image: &GrayImage, light: bool) -> Result<Vec<Component>, Error> {
 }
 
 fn angle(components: &[Component]) -> f64 {
-    let mean_x = components.iter().map(|component| component.cx).sum::<f64>() / components.len() as f64;
-    let mean_y = components.iter().map(|component| component.cy).sum::<f64>() / components.len() as f64;
+    let mean_x =
+        components.iter().map(|component| component.cx).sum::<f64>() / components.len() as f64;
+    let mean_y =
+        components.iter().map(|component| component.cy).sum::<f64>() / components.len() as f64;
     let mut xx = 0.0;
     let mut yy = 0.0;
     let mut xy = 0.0;
@@ -174,7 +180,11 @@ struct Pair {
 
 impl Pair {
     fn ordered(self, inverted: bool) -> (Measure, Measure) {
-        if inverted { (self.bottom, self.top) } else { (self.top, self.bottom) }
+        if inverted {
+            (self.bottom, self.top)
+        } else {
+            (self.top, self.bottom)
+        }
     }
 
     fn center(self) -> f64 {
@@ -188,15 +198,24 @@ fn scan_components(components: &[Component]) -> Result<Located, Error> {
     }
     let theta = angle(components);
     let (sine, cosine) = theta.sin_cos();
-    let mut parts: Vec<Measure> = components.iter().map(|item| item.project(sine, cosine)).collect();
+    let mut parts: Vec<Measure> = components
+        .iter()
+        .map(|item| item.project(sine, cosine))
+        .collect();
     parts.sort_by(|a, b| a.long.total_cmp(&b.long));
     let columns: Vec<Pair> = parts
         .chunks_exact(2)
         .map(|col| {
             if col[0].cross <= col[1].cross {
-                Pair { top: col[0], bottom: col[1] }
+                Pair {
+                    top: col[0],
+                    bottom: col[1],
+                }
             } else {
-                Pair { top: col[1], bottom: col[0] }
+                Pair {
+                    top: col[1],
+                    bottom: col[0],
+                }
             }
         })
         .collect();
@@ -238,20 +257,33 @@ fn scan_components(components: &[Component]) -> Result<Located, Error> {
             let n = samples.len() as f64;
             let avg_x = samples.iter().map(|(x, _)| x).sum::<f64>() / n;
             let avg_y = samples.iter().map(|(_, y)| y).sum::<f64>() / n;
-            let variance = samples.iter().map(|(x, _)| (x - avg_x).powi(2)).sum::<f64>();
-            let covariance = samples.iter().map(|(x, y)| (x - avg_x) * (y - avg_y)).sum::<f64>();
+            let variance = samples
+                .iter()
+                .map(|(x, _)| (x - avg_x).powi(2))
+                .sum::<f64>();
+            let covariance = samples
+                .iter()
+                .map(|(x, y)| (x - avg_x) * (y - avg_y))
+                .sum::<f64>();
             let step = covariance / variance;
             let base = avg_y - step * avg_x;
-            if step < 1.1 || base <= 0.0 || samples.iter().any(|(x, y)| {
-                (y - (base + step * x)).abs() > step * 0.48 + 0.6
-            }) {
+            if step < 1.1
+                || base <= 0.0
+                || samples
+                    .iter()
+                    .any(|(x, y)| (y - (base + step * x)).abs() > step * 0.48 + 0.6)
+            {
                 continue;
             }
 
             let mut bits = [false; 8];
             for (bit, &(index, upper)) in anchor::META_SITES.iter().enumerate() {
                 let (u, d) = w[index].ordered(inverted);
-                let (measured, fixed) = if upper { (u.width, d.width) } else { (d.width, u.width) };
+                let (measured, fixed) = if upper {
+                    (u.width, d.width)
+                } else {
+                    (d.width, u.width)
+                };
                 bits[bit] = measured > fixed * 1.25;
             }
             let (metadata, _) = match anchor::decode_meta(bits) {
@@ -284,13 +316,25 @@ fn scan_components(components: &[Component]) -> Result<Located, Error> {
                     break;
                 };
                 let local_pitch = if index == 0 {
-                    payload.get(1).map(|next| (next.center() - pair.center()).abs()).unwrap_or(pitch)
+                    payload
+                        .get(1)
+                        .map(|next| (next.center() - pair.center()).abs())
+                        .unwrap_or(pitch)
                 } else {
                     (pair.center() - payload[index - 1].center()).abs()
                 };
-                let symbol = (up << 5) | (down << 2)
-                    | if upper.width / local_pitch > 0.55 { 2 } else { 0 }
-                    | if lower.width / local_pitch > 0.55 { 1 } else { 0 };
+                let symbol = (up << 5)
+                    | (down << 2)
+                    | if upper.width / local_pitch > 0.55 {
+                        2
+                    } else {
+                        0
+                    }
+                    | if lower.width / local_pitch > 0.55 {
+                        1
+                    } else {
+                        0
+                    };
                 symbols.push(symbol);
             }
             if !valid {
@@ -303,23 +347,54 @@ fn scan_components(components: &[Component]) -> Result<Located, Error> {
             let (first_up, first_down) = w[0].ordered(inverted);
             let (last_up, last_down) = w[10].ordered(inverted);
             let pose = match AnchorPose::from_fiducials([
-                Point { x: first_up.x, y: first_up.y },
-                Point { x: last_up.x, y: last_up.y },
-                Point { x: first_down.x, y: first_down.y },
-                Point { x: last_down.x, y: last_down.y },
+                Point {
+                    x: first_up.x,
+                    y: first_up.y,
+                },
+                Point {
+                    x: last_up.x,
+                    y: last_up.y,
+                },
+                Point {
+                    x: first_down.x,
+                    y: first_down.y,
+                },
+                Point {
+                    x: last_down.x,
+                    y: last_down.y,
+                },
             ]) {
                 Ok(pose) => pose,
                 Err(_) => continue,
             };
-            let left = components.iter().map(|component| component.left).min().unwrap_or(0);
-            let right = components.iter().map(|component| component.right).max().unwrap_or(left);
-            let top = components.iter().map(|component| component.top).min().unwrap_or(0);
-            let bottom = components.iter().map(|component| component.bottom).max().unwrap_or(top);
+            let left = components
+                .iter()
+                .map(|component| component.left)
+                .min()
+                .unwrap_or(0);
+            let right = components
+                .iter()
+                .map(|component| component.right)
+                .max()
+                .unwrap_or(left);
+            let top = components
+                .iter()
+                .map(|component| component.top)
+                .min()
+                .unwrap_or(0);
+            let bottom = components
+                .iter()
+                .map(|component| component.bottom)
+                .max()
+                .unwrap_or(top);
             return Ok(Located {
                 decoded,
                 pose,
                 bounds: Bounds {
-                    left, top, width: right - left + 1, height: bottom - top + 1,
+                    left,
+                    top,
+                    width: right - left + 1,
+                    height: bottom - top + 1,
                 },
             });
         }
@@ -356,16 +431,29 @@ pub fn scan_png_or_jpeg(bytes: &[u8]) -> Result<Located, Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{MusicCode, v2::{encode, visual}};
+    use crate::{
+        v2::{encode, visual},
+        MusicCode,
+    };
 
     #[test]
     fn detects_an_isolated_w_and_uses_its_geometry_for_single_and_dual() {
-        let profiles = [RenderProfile::default(), RenderProfile {
-            pitch: 22.0, height: 220.0, quiet: 22.0,
-        }];
+        let profiles = [
+            RenderProfile::default(),
+            RenderProfile {
+                pitch: 22.0,
+                height: 220.0,
+                quiet: 22.0,
+            },
+        ];
         let examples = [
-            codec::Content::Single(MusicCode::from_url("https://music.youtube.com/watch?v=JGwWNGJdvx8&t=52").unwrap()),
-            codec::Content::Single(MusicCode::from_url("https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b").unwrap()),
+            codec::Content::Single(
+                MusicCode::from_url("https://music.youtube.com/watch?v=JGwWNGJdvx8&t=52").unwrap(),
+            ),
+            codec::Content::Single(
+                MusicCode::from_url("https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b")
+                    .unwrap(),
+            ),
             codec::Content::Dual {
                 spotify_id: "0VjIjW4GlUZAMYd2vXMi3b".into(),
                 youtube_music_id: "JGwWNGJdvx8".into(),
