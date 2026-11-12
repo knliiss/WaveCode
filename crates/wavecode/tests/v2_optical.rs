@@ -132,18 +132,12 @@ fn tiny_resampled_codes_do_not_claim_guaranteed_readability() {
 fn logo_is_found_even_with_disconnected_marks_outside_the_code() {
     for content in samples() {
         let input = frame_image(&content);
-        let mut scene = GrayImage::from_pixel(
-            input.width() + 160,
-            input.height() + 100,
-            Luma([255]),
-        );
+        let mut scene =
+            GrayImage::from_pixel(input.width() + 160, input.height() + 100, Luma([255]));
         for (x, y, pixel) in input.enumerate_pixels() {
             scene.put_pixel(x + 80, y + 50, *pixel);
         }
-        for &(x0, y0) in &[
-            (8, 65),
-            (input.width() + 125, 90),
-        ] {
+        for &(x0, y0) in &[(8, 65), (input.width() + 125, 90)] {
             for y in y0..y0 + 5 {
                 for x in x0..x0 + 5 {
                     scene.put_pixel(x, y, Luma([0]));
@@ -171,10 +165,7 @@ fn keystone(input: &GrayImage, factor: f64) -> GrayImage {
             }
             let sx = (dx / inverse).round() as i64;
             let sy = (middle + (dy - middle) / inverse).round() as i64;
-            if sx >= 0
-                && sx < i64::from(input.width())
-                && sy >= 0
-                && sy < i64::from(input.height())
+            if sx >= 0 && sx < i64::from(input.width()) && sy >= 0 && sy < i64::from(input.height())
             {
                 scene.put_pixel(x, y, *input.get_pixel(sx as u32, sy as u32));
             }
