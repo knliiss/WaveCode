@@ -130,7 +130,7 @@ fn base62_rank_roundtrips_all_edge_classes_and_random_ids() {
 
 #[test]
 fn canonical_youtube_video_ids_are_exactly_64_bit_ranks() {
-    assert_eq!(youtube_rank("JGwWNGJdvx8"), Some(0x246c163462ddbf1f));
+    assert_eq!(youtube_rank("JGwWNGJdvx8"), Some(0x246c1634625dbf1f));
     for id in [0, 1, u64::MAX, 0x123456789abcdef0] {
         assert_eq!(youtube_rank(&youtube_from_rank(id)), Some(id));
     }
