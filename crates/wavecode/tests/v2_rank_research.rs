@@ -146,7 +146,7 @@ fn canonical_youtube_video_ids_are_exactly_64_bit_ranks() {
 fn leftover_apple_country_slots_fit_four_numeric_namespaces() {
     assert_eq!(APPLE_STOREFRONTS, 676);
     assert_eq!(RANK_GROUPS, 680);
-    assert!(RANK_GROUPS <= 1 << 10);
+    assert_eq!(RANK_GROUPS.div_ceil(1024), 1);
     assert_eq!(1024 - RANK_GROUPS, 344);
     for group in 0..RANK_GROUPS {
         for id in [0, 1, 0x123456789abcdef0, u64::MAX] {
