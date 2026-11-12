@@ -123,8 +123,7 @@ fn tiny_resampled_codes_do_not_claim_guaranteed_readability() {
         (f64::from(image.height()) * 0.45) as u32,
         FilterType::Triangle,
     );
-    match raster::scan_gray(&resized) {
-        Ok(code) => assert_eq!(code.decoded.content, content),
-        Err(_) => {}
+    if let Ok(code) = raster::scan_gray(&resized) {
+        assert_eq!(code.decoded.content, content);
     }
 }
