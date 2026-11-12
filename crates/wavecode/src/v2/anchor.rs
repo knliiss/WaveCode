@@ -30,9 +30,6 @@ pub fn encode_meta(nibble: u8) -> Result<[bool; 8], Error> {
     for parity in [1, 2, 4] {
         bits[parity - 1] = (1..8)
             .filter(|position| position & parity != 0)
-            .any(|_| false);
-        bits[parity - 1] = (1..8)
-            .filter(|position| position & parity != 0)
             .filter(|position| *position != parity)
             .fold(false, |sum, position| sum ^ bits[position - 1]);
     }
@@ -118,16 +115,17 @@ impl AnchorPose {
             }
             matrix.swap(col, pivot);
             let divisor = matrix[col][col];
-            for c in col..9 {
-                matrix[col][c] /= divisor;
+            for value in &mut matrix[col][col..] {
+                *value /= divisor;
             }
-            for row in 0..8 {
-                if row == col {
+            let pivot_row = matrix[col];
+            for (row_index, values) in matrix.iter_mut().enumerate() {
+                if row_index == col {
                     continue;
                 }
-                let factor = matrix[row][col];
-                for c in col..9 {
-                    matrix[row][c] -= factor * matrix[col][c];
+                let factor = values[col];
+                for (value, source) in values[col..].iter_mut().zip(&pivot_row[col..]) {
+                    *value -= factor * source;
                 }
             }
         }
