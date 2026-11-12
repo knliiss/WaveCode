@@ -10,7 +10,10 @@ const YOUTUBE: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz012
 const PARITY: usize = reed_solomon::PARITY_SYMBOLS;
 
 fn spotify_rank(id: &str) -> Option<Rank> {
-    (id.len() == 22).then(|| Rank::from_digits(id, SPOTIFY)).flatten()
+    if id.len() != 22 {
+        return None;
+    }
+    Rank::from_digits(id, SPOTIFY)
 }
 
 fn youtube_rank(id: &str) -> Option<u64> {
