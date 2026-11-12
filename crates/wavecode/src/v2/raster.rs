@@ -165,7 +165,7 @@ fn principal_angle(parts: &[&Component]) -> f64 {
     0.5 * (2.0 * xy).atan2(xx - yy)
 }
 
-fn dot_cluster<'a>(components: &'a [Component]) -> Result<Vec<&'a Component>, Error> {
+fn dot_cluster(components: &[Component]) -> Result<Vec<&Component>, Error> {
     if components.len() < 70 {
         return Err(Error::InvalidFrame);
     }
