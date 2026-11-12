@@ -42,7 +42,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             geometry.width,
             geometry.height
         );
-        println!("Round-dot W version: {} (12-bit BCH field)", v2::anchor::VERSION);
+        println!(
+            "Round-dot W version: {} (12-bit BCH field)",
+            v2::anchor::VERSION
+        );
         println!("W payload profile (protected): {:06b}", frame.metadata);
         println!(
             "Payload columns saved against original V2: {}",
