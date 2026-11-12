@@ -4,7 +4,8 @@ use crate::{Error, Track};
 const YOUTUBE_ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 const SPOTIFY_ALPHABET: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 const AMAZON_ALPHABET: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-const INSTAGRAM_ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+const INSTAGRAM_ALPHABET: &[u8] =
+    b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 const MAX_INSTAGRAM_SHORTCODE: usize = 16;
 
 fn youtube_space() -> Rank {
@@ -60,8 +61,7 @@ fn instagram_start() -> Rank {
 }
 
 fn instagram_space() -> Rank {
-    (1..=MAX_INSTAGRAM_SHORTCODE)
-        .fold(Rank::zero(), |sum, length| sum.add(Rank::pow(64, length)))
+    (1..=MAX_INSTAGRAM_SHORTCODE).fold(Rank::zero(), |sum, length| sum.add(Rank::pow(64, length)))
 }
 
 fn instagram_length_start(length: usize) -> Rank {
@@ -122,8 +122,8 @@ pub(crate) fn encode(track: &Track) -> Result<Rank, Error> {
             if shortcode.is_empty() || shortcode.len() > MAX_INSTAGRAM_SHORTCODE {
                 return Err(Error::InvalidIdentifier);
             }
-            let number = Rank::from_digits(shortcode, INSTAGRAM_ALPHABET)
-                .ok_or(Error::InvalidIdentifier)?;
+            let number =
+                Rank::from_digits(shortcode, INSTAGRAM_ALPHABET).ok_or(Error::InvalidIdentifier)?;
             Ok(instagram_start()
                 .add(instagram_length_start(shortcode.len()))
                 .add(number))
