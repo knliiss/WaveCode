@@ -401,13 +401,76 @@ fn scan_components(components: &[Component]) -> Result<Located, Error> {
     Err(Error::InvalidFrame)
 }
 
+/// Search for the W in a field containing other disconnected ink components.
+/// The W's eleven columns have a distinctive *denser* pitch than data
+/// columns. Only windows matching this geometric prior are decoded, so a
+/// few surrounding marks do not force the camera to treat the whole scene
+/// as one code. CRC and Reed–Solomon validate every candidate.
+fn scan_windowed(components: &[Component]) -> Result<Located, Error> {
+    const W_PARTS: usize = anchor::COLUMNS * 2;
+    if components.len() < W_PARTS + 16 || components.len() > MAX_COMPONENTS {
+        return Err(Error::InvalidFrame);
+    }
+    let (sine, cosine) = angle(components).sin_cos();
+    let mut sorted: Vec<&Component> = components.iter().collect();
+    sorted.sort_by(|a, b| {
+        let along = |p: &Component| p.cx * cosine + p.cy * sine;
+        along(a).total_cmp(&along(b))
+    });
+    let coordinate = |part: &Component| part.cx * cosine + part.cy * sine;
+    let lengths = (8..=25).chain([31, 33]);
+
+    for start in 0..=sorted.len() - W_PARTS {
+        let window = &sorted[start..start + W_PARTS];
+        let centers: [f64; anchor::COLUMNS] = std::array::from_fn(|column| {
+            (coordinate(window[column * 2]) + coordinate(window[column * 2 + 1])) / 2.0
+        });
+        let w_pitch = (centers[anchor::COLUMNS - 1] - centers[0]) / 10.0;
+        if w_pitch < 3.0
+            || window.chunks_exact(2).any(|pair| {
+                (coordinate(pair[0]) - coordinate(pair[1])).abs() > w_pitch * 0.35 + 0.8
+            })
+            || centers.iter().enumerate().any(|(column, &value)| {
+                (value - (centers[0] + column as f64 * w_pitch)).abs() > w_pitch * 0.24 + 0.6
+            })
+        {
+            continue;
+        }
+
+        for columns in lengths.clone() {
+            let count = columns * 2;
+            // Normal logical orientation: W at the left and the payload to its right.
+            if start + W_PARTS + count <= sorted.len() {
+                let candidate: Vec<Component> = sorted[start..start + W_PARTS + count]
+                    .iter()
+                    .map(|component| (*component).clone())
+                    .collect();
+                if let Ok(found) = scan_components(&candidate) {
+                    return Ok(found);
+                }
+            }
+            // A 180-degree camera roll places the W on the right.
+            if start >= count {
+                let candidate: Vec<Component> = sorted[start - count..start + W_PARTS]
+                    .iter()
+                    .map(|component| (*component).clone())
+                    .collect();
+                if let Ok(found) = scan_components(&candidate) {
+                    return Ok(found);
+                }
+            }
+        }
+    }
+    Err(Error::InvalidFrame)
+}
+
 /// A bounded first-pass isolated-mark detector. Complex scenes, severe
 /// perspective and partial occlusion are deliberately outside this first
 /// implementation; avoid silently promising V1-like field reliability.
 pub fn scan_gray(image: &GrayImage) -> Result<Located, Error> {
     for light in [false, true] {
         if let Ok(parts) = connected(image, light) {
-            if let Ok(code) = scan_components(&parts) {
+            if let Ok(code) = scan_components(&parts).or_else(|_| scan_windowed(&parts)) {
                 return Ok(code);
             }
         }
