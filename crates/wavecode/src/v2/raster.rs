@@ -5,7 +5,6 @@ use image::{GrayImage, RgbImage};
 
 use super::anchor::{self, AnchorPose, Point};
 use super::codec::{self, Decoded, Frame};
-use super::visual::RenderProfile;
 use crate::Error;
 
 const MAX_PIXELS: u64 = 5_000_000;
@@ -306,7 +305,7 @@ fn scan_components(components: &[Component]) -> Result<Located, Error> {
                 let measure_height = |value: f64| -> Option<u8> {
                     let estimate = (value - base) / step;
                     let level = estimate.round();
-                    (level >= 0.0 && level <= 7.0 && (estimate - level).abs() <= 0.48)
+                    ((0.0..=7.0).contains(&level) && (estimate - level).abs() <= 0.48)
                         .then_some(level as u8)
                 };
                 let (Some(up), Some(down)) =
@@ -431,6 +430,7 @@ pub fn scan_png_or_jpeg(bytes: &[u8]) -> Result<Located, Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::v2::visual::RenderProfile;
     use crate::{
         v2::{encode, visual},
         MusicCode,
