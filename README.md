@@ -170,7 +170,7 @@ For an optimized build, you can also run `cargo build --release -p wavecode` and
 | YouTube Music | `music.youtube.com/watch?v=<video-id>` |
 | YouTube | `youtube.com/watch?v=<video-id>` |
 | YouTube Shorts | `youtube.com/shorts/<video-id>` |
-| TikTok | `tiktok.com/@creator/video/<numeric-id>` |
+| TikTok | `tiktok.com/@creator/video/<numeric-id>` or `vt.tiktok.com/<share-code>/` |
 | Instagram Reels | `instagram.com/reel/<shortcode>/` |
 | Spotify | `open.spotify.com/track/<track-id>` |
 | Apple Music | `music.apple.com/<country>/song/<song-id>` |
@@ -181,7 +181,7 @@ For an optimized build, you can also run `cargo build --release -p wavecode` and
 
 WaveCode stores a **platform-specific content identity**, not the recording, title, creator, cover artwork or arbitrary URL text. Its encoding is deterministic and does not depend on a remote database.
 
-YouTube and Shorts support native timestamps (timed Shorts open in the standard YouTube player). TikTok and Instagram Reels open the original platform without a timestamp. TikTok numeric IDs use the service's ID-only `/@/video/<id>` route, whose behavior can vary with TikTok clients. TikTok share-redirect URLs (`vt.tiktok.com` / `vm.tiktok.com`) must be expanded to a full video URL before offline encoding. No WaveCode-hosted player, redirect database or external API is required.
+YouTube and Shorts support native timestamps (timed Shorts open in the standard YouTube player). TikTok and Instagram Reels open the original platform without a timestamp. TikTok numeric IDs use the service's ID-only `/@/video/<id>` route, whose behavior can vary with TikTok clients. Short TikTok share URLs such as `https://vt.tiktok.com/ZSp94BeDn/` are encoded offline as their own lossless identities, without resolving redirects. These codes preserve the short link, not its numeric video ID; short-link availability is controlled by TikTok. No WaveCode-hosted player, redirect database or external API is required.
 
 ## How the format works
 
