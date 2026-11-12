@@ -1,0 +1,46 @@
+name: V2 round-dot W preview
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [experiment/v2]
+    paths:
+      - '.github/workflows/v2-dot-preview.yml'
+      - 'crates/wavecode/src/v2/**'
+      - 'crates/wavecode/examples/v2_experiment.rs'
+
+permissions:
+  contents: read
+
+jobs:
+  render-and-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build real PNG and SVG examples with the current V2 encoder
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p previews
+          cargo run --locked -p wavecode --example v2_experiment -- encode-adaptive \
+            'https://music.youtube.com/watch?v=JGwWNGJdvx8&t=59' previews/youtube-music-59s.png
+          cargo run --locked -p wavecode --example v2_experiment -- encode-adaptive \
+            'https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b' previews/spotify.png
+          cargo run --locked -p wavecode --example v2_experiment -- dual-adaptive \
+            'https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b' \
+            'https://music.youtube.com/watch?v=JGwWNGJdvx8' previews/dual.png
+      - name: Optical scan the actual generated marks
+        shell: bash
+        run: |
+          set -euo pipefail
+          for png in previews/*.png; do
+            echo "Verifying ${png}"
+            cargo run --locked -p wavecode --example v2_experiment -- scan "${png}"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wavecode-v2-round-dot-previews
+          path: previews/
+          if-no-files-found: error
+          retention-days: 30
