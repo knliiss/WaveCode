@@ -81,7 +81,8 @@ impl BitWriter {
         let offset = (8 - width % 8) % 8;
         for index in 0..width {
             let position = offset + index;
-            self.bits.push(bytes[position / 8] & (1 << (7 - position % 8)) != 0);
+            self.bits
+                .push(bytes[position / 8] & (1 << (7 - position % 8)) != 0);
         }
         Ok(())
     }
@@ -92,7 +93,11 @@ impl BitWriter {
         }
         self.bits
             .chunks(8)
-            .map(|chunk| chunk.iter().fold(0_u8, |sum, &bit| (sum << 1) | u8::from(bit)))
+            .map(|chunk| {
+                chunk
+                    .iter()
+                    .fold(0_u8, |sum, &bit| (sum << 1) | u8::from(bit))
+            })
             .collect()
     }
 }
@@ -114,9 +119,7 @@ impl<'a> BitReader<'a> {
         let mut value = 0_u64;
         for _ in 0..width {
             let position = self.cursor;
-            value = (value << 1) | u64::from(
-                (self.bytes[position / 8] >> (7 - position % 8)) & 1,
-            );
+            value = (value << 1) | u64::from((self.bytes[position / 8] >> (7 - position % 8)) & 1);
             self.cursor += 1;
         }
         Ok(value)
@@ -174,9 +177,15 @@ fn compact_track(code: &Track, out: &mut BitWriter) -> Result<(), Error> {
                 return Err(Error::InvalidIdentifier);
             }
             out.push(tag, 4);
-            out.rank(Rank::from_digits(id, YOUTUBE).ok_or(Error::InvalidIdentifier)?, 66)?;
+            out.rank(
+                Rank::from_digits(id, YOUTUBE).ok_or(Error::InvalidIdentifier)?,
+                66,
+            )?;
         }
-        Track::TikTokVideo(value) | Track::Deezer(value) | Track::Tidal(value) | Track::Qobuz(value) => {
+        Track::TikTokVideo(value)
+        | Track::Deezer(value)
+        | Track::Tidal(value)
+        | Track::Qobuz(value) => {
             let tag = match code {
                 Track::TikTokVideo(_) => 3,
                 Track::Deezer(_) => 5,
@@ -376,7 +385,10 @@ pub fn decode(frame: &Frame) -> Result<Decoded, Error> {
             } else {
                 None
             };
-            let code = MusicCode { track, moment_seconds };
+            let code = MusicCode {
+                track,
+                moment_seconds,
+            };
             if code.validate_moment().is_err() {
                 return Err(Error::InvalidCodeword);
             }
@@ -389,7 +401,10 @@ pub fn decode(frame: &Frame) -> Result<Decoded, Error> {
             } else {
                 None
             };
-            let code = MusicCode { track, moment_seconds };
+            let code = MusicCode {
+                track,
+                moment_seconds,
+            };
             if code.validate_moment().is_err() {
                 return Err(Error::InvalidCodeword);
             }
@@ -447,7 +462,12 @@ mod tests {
             let decoded = decode(&encoded).unwrap();
             assert_eq!(decoded.content, input, "{link}");
             assert!(encoded.symbols.len() < 34, "{link}");
-            assert_eq!(anchor::decode_meta(anchor::encode_meta(encoded.metadata).unwrap()).unwrap().0, encoded.metadata);
+            assert_eq!(
+                anchor::decode_meta(anchor::encode_meta(encoded.metadata).unwrap())
+                    .unwrap()
+                    .0,
+                encoded.metadata
+            );
         }
     }
 
@@ -490,9 +510,9 @@ mod tests {
 
     #[test]
     fn metadata_mismatch_fails_crc() {
-        let code = Content::Single(MusicCode::from_url(
-            "https://www.youtube.com/watch?v=JGwWNGJdvx8",
-        ).unwrap());
+        let code = Content::Single(
+            MusicCode::from_url("https://www.youtube.com/watch?v=JGwWNGJdvx8").unwrap(),
+        );
         let mut encoded = encode(&code).unwrap();
         encoded.metadata |= 2;
         assert!(decode(&encoded).is_err());
