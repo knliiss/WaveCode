@@ -1,6 +1,7 @@
 //! Manual, opt-in test utility for the W-anchor V2 optical experiment.
 //!
 //! cargo run -p wavecode --example v2_experiment -- encode URL out.png
+//! cargo run -p wavecode --example v2_experiment -- encode-adaptive URL out.png
 //! cargo run -p wavecode --example v2_experiment -- dual SPOTIFY_URL YOUTUBE_MUSIC_URL out.png
 //! cargo run -p wavecode --example v2_experiment -- scan photo.png
 #![cfg_attr(not(feature = "raster"), allow(dead_code))]
@@ -15,8 +16,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         IoError::new(ErrorKind::InvalidInput, message)
     }
 
-    fn write_frame(content: Content, target: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let frame = v2::encode(&content)?;
+    fn write_frame(
+        content: Content,
+        target: &str,
+        adaptive: bool,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let original = v2::encode(&content)?;
+        let frame = if adaptive {
+            v2::encode_adaptive(&content)?
+        } else {
+            original.clone()
+        };
         let profile = visual::RenderProfile {
             pitch: 22.0,
             height: 210.0,
@@ -33,16 +43,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             geometry.height
         );
         println!("W metadata (protected): {:04b}", frame.metadata);
+        println!(
+            "Payload columns saved against original V2: {}",
+            original.symbols.len() - frame.symbols.len()
+        );
         println!("PNG: {target}\nSVG: {}", svg_file.display());
         Ok(())
     }
 
     let args: Vec<String> = std::env::args().collect();
     match args.get(1).map(String::as_str) {
-        Some("encode") if args.len() == 4 => {
-            write_frame(Content::Single(MusicCode::from_url(&args[2])?), &args[3])?
+        Some("encode" | "encode-adaptive") if args.len() == 4 => {
+            write_frame(
+                Content::Single(MusicCode::from_url(&args[2])?),
+                &args[3],
+                args[1] == "encode-adaptive",
+            )?
         }
-        Some("dual") if args.len() == 5 => {
+        Some("dual" | "dual-adaptive") if args.len() == 5 => {
             let spotify_id = match MusicCode::from_url(&args[2])?.track {
                 Track::Spotify(id) => id,
                 _ => return Err(input_error("expected Spotify track URL").into()),
@@ -58,6 +76,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     moment_seconds: None,
                 },
                 &args[4],
+                args[1] == "dual-adaptive",
             )?
         }
         Some("scan") if args.len() == 3 => {
@@ -91,7 +110,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             return Err(input_error(
-                "usage: v2_experiment encode <url> <out.png> | dual <spotify-url> <youtube-music-url> <out.png> | scan <image.png>",
+                "usage: v2_experiment (encode|encode-adaptive) <url> <out.png> | (dual|dual-adaptive) <spotify-url> <youtube-music-url> <out.png> | scan <image.png>",
             ).into());
         }
     }
