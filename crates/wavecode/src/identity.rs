@@ -4,6 +4,8 @@ use crate::{Error, Track};
 const YOUTUBE_ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 const SPOTIFY_ALPHABET: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 const AMAZON_ALPHABET: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+const INSTAGRAM_ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+const MAX_INSTAGRAM_SHORTCODE: usize = 16;
 
 fn youtube_space() -> Rank {
     Rank::pow(64, 11)
@@ -41,8 +43,33 @@ fn amazon_space() -> Rank {
     Rank::pow(36, 10)
 }
 
-pub(crate) fn capacity() -> Rank {
+fn youtube_video_start() -> Rank {
     amazon_start().add(amazon_space())
+}
+
+fn youtube_shorts_start() -> Rank {
+    youtube_video_start().add(youtube_space())
+}
+
+fn tiktok_start() -> Rank {
+    youtube_shorts_start().add(youtube_space())
+}
+
+fn instagram_start() -> Rank {
+    tiktok_start().add(Rank::pow(2, 64))
+}
+
+fn instagram_space() -> Rank {
+    (1..=MAX_INSTAGRAM_SHORTCODE)
+        .fold(Rank::zero(), |sum, length| sum.add(Rank::pow(64, length)))
+}
+
+fn instagram_length_start(length: usize) -> Rank {
+    (1..length).fold(Rank::zero(), |sum, n| sum.add(Rank::pow(64, n)))
+}
+
+pub(crate) fn capacity() -> Rank {
+    instagram_start().add(instagram_space())
 }
 
 fn storefront_rank(storefront: &str) -> Result<u64, Error> {
@@ -55,11 +82,17 @@ fn storefront_rank(storefront: &str) -> Result<u64, Error> {
 
 pub(crate) fn encode(track: &Track) -> Result<Rank, Error> {
     match track {
-        Track::YouTubeMusic(id) => {
+        Track::YouTubeMusic(id) | Track::YouTubeVideo(id) | Track::YouTubeShort(id) => {
             if id.len() != 11 {
                 return Err(Error::InvalidIdentifier);
             }
-            Rank::from_digits(id, YOUTUBE_ALPHABET).ok_or(Error::InvalidIdentifier)
+            let rank = Rank::from_digits(id, YOUTUBE_ALPHABET).ok_or(Error::InvalidIdentifier)?;
+            match track {
+                Track::YouTubeMusic(_) => Ok(rank),
+                Track::YouTubeVideo(_) => Ok(youtube_video_start().add(rank)),
+                Track::YouTubeShort(_) => Ok(youtube_shorts_start().add(rank)),
+                _ => unreachable!(),
+            }
         }
         Track::Spotify(id) => {
             if id.len() != 22 {
@@ -83,6 +116,17 @@ pub(crate) fn encode(track: &Track) -> Result<Rank, Error> {
             let number =
                 Rank::from_digits(asin, AMAZON_ALPHABET).ok_or(Error::InvalidIdentifier)?;
             Ok(amazon_start().add(number))
+        }
+        Track::TikTokVideo(id) => Ok(tiktok_start().add(Rank::from_u64(*id))),
+        Track::InstagramReel(shortcode) => {
+            if shortcode.is_empty() || shortcode.len() > MAX_INSTAGRAM_SHORTCODE {
+                return Err(Error::InvalidIdentifier);
+            }
+            let number = Rank::from_digits(shortcode, INSTAGRAM_ALPHABET)
+                .ok_or(Error::InvalidIdentifier)?;
+            Ok(instagram_start()
+                .add(instagram_length_start(shortcode.len()))
+                .add(number))
         }
     }
 }
@@ -130,14 +174,46 @@ pub(crate) fn decode(number: Rank) -> Result<Track, Error> {
     if number < amazon_start() {
         return Ok(Track::Qobuz(number.sub(qobuz_start()).low_u64()));
     }
+    if number < youtube_video_start() {
+        let asin = number
+            .sub(amazon_start())
+            .to_digits(AMAZON_ALPHABET, 10)
+            .ok_or(Error::InvalidCodeword)?;
+        return Ok(Track::AmazonMusic(asin));
+    }
+    if number < youtube_shorts_start() {
+        let id = number
+            .sub(youtube_video_start())
+            .to_digits(YOUTUBE_ALPHABET, 11)
+            .ok_or(Error::InvalidCodeword)?;
+        return Ok(Track::YouTubeVideo(id));
+    }
+    if number < tiktok_start() {
+        let id = number
+            .sub(youtube_shorts_start())
+            .to_digits(YOUTUBE_ALPHABET, 11)
+            .ok_or(Error::InvalidCodeword)?;
+        return Ok(Track::YouTubeShort(id));
+    }
+    if number < instagram_start() {
+        return Ok(Track::TikTokVideo(number.sub(tiktok_start()).low_u64()));
+    }
     if number >= capacity() {
         return Err(Error::InvalidCodeword);
     }
-    let asin = number
-        .sub(amazon_start())
-        .to_digits(AMAZON_ALPHABET, 10)
-        .ok_or(Error::InvalidCodeword)?;
-    Ok(Track::AmazonMusic(asin))
+
+    let mut remaining = number.sub(instagram_start());
+    for length in 1..=MAX_INSTAGRAM_SHORTCODE {
+        let space = Rank::pow(64, length);
+        if remaining < space {
+            let shortcode = remaining
+                .to_digits(INSTAGRAM_ALPHABET, length)
+                .ok_or(Error::InvalidCodeword)?;
+            return Ok(Track::InstagramReel(shortcode));
+        }
+        remaining = remaining.sub(space);
+    }
+    Err(Error::InvalidCodeword)
 }
 
 #[cfg(test)]
@@ -150,6 +226,15 @@ mod tests {
         for track in [
             Track::YouTubeMusic("AAAAAAAAAAA".into()),
             Track::YouTubeMusic("___________".into()),
+            Track::YouTubeVideo("AAAAAAAAAAA".into()),
+            Track::YouTubeVideo("___________".into()),
+            Track::YouTubeShort("AAAAAAAAAAA".into()),
+            Track::YouTubeShort("___________".into()),
+            Track::TikTokVideo(0),
+            Track::TikTokVideo(u64::MAX),
+            Track::InstagramReel("A".into()),
+            Track::InstagramReel("C1234567890".into()),
+            Track::InstagramReel("_______________".into()),
             Track::Spotify("0000000000000000000000".into()),
             Track::Spotify("zzzzzzzzzzzzzzzzzzzzzz".into()),
             Track::AppleMusic {
