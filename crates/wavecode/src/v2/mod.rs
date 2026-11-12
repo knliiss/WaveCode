@@ -4,5 +4,8 @@
 //! symbol ordering, error correction and printed marks are not changed.
 pub mod anchor;
 mod codec;
+pub mod visual;
+#[cfg(feature = "raster")]
+pub mod raster;
 
 pub use codec::{decode, encode, encode_with_layout, Content, Decoded, Frame, Layout};
