@@ -9,4 +9,6 @@ mod codec;
 pub mod raster;
 pub mod visual;
 
-pub use codec::{decode, encode, encode_adaptive, encode_with_layout, Content, Decoded, Frame, Layout};
+pub use codec::{
+    decode, encode, encode_adaptive, encode_with_layout, Content, Decoded, Frame, Layout,
+};
