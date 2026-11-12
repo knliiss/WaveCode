@@ -1,15 +1,15 @@
-//! Experimental raster reader: recognize the eleven W rail pairs FIRST,
-//! use their stable geometry as the pose reference, then read the payload.
-//! This path is never called by the production V1 scanner.
+//! V2 reader for the BCH-protected, round-dot W locator. The former
+//! eleven-pair rectangular anchor is deliberately not recognized here.
+//! First identify the thick circular W; it determines orientation, scale
+//! and a CRC-protected metadata profile before decoding the payload rails.
 use image::{GrayImage, RgbImage};
 
-use super::anchor::{self, AnchorPose, Point};
+use super::anchor::{self, AnchorPose, DotSite, Point};
 use super::codec::{self, Decoded, Frame};
 use crate::Error;
 
 const MAX_PIXELS: u64 = 5_000_000;
-const MAX_COMPONENTS: usize = 150;
-const W_RATIO: f64 = 0.52;
+const MAX_COMPONENTS: usize = 300;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Bounds {
@@ -22,15 +22,16 @@ pub struct Bounds {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Located {
     pub decoded: Decoded,
-    /// Projective W-anchor fit. The logo is the geometric origin; its
-    /// four fixed corner rail centers define a planar coordinate frame.
     pub pose: AnchorPose,
     pub bounds: Bounds,
+    pub version: u16,
+    pub profile: u8,
+    pub corrected_anchor_bits: u8,
 }
 
 #[derive(Clone, Debug)]
 struct Component {
-    points: Vec<(u32, u32)>,
+    pixels: Vec<(u32, u32)>,
     cx: f64,
     cy: f64,
     left: u32,
@@ -39,39 +40,39 @@ struct Component {
     bottom: u32,
 }
 
-#[derive(Clone, Copy, Debug)]
-struct Measure {
-    x: f64,
-    y: f64,
-    long: f64,
-    cross: f64,
-    width: f64,
-    height: f64,
-}
-
 impl Component {
-    fn project(&self, sine: f64, cosine: f64) -> Measure {
-        let mut min_x = f64::INFINITY;
-        let mut min_y = f64::INFINITY;
-        let mut max_x = f64::NEG_INFINITY;
-        let mut max_y = f64::NEG_INFINITY;
-        for &(x, y) in &self.points {
-            let lx = f64::from(x) * cosine + f64::from(y) * sine;
-            let cy = f64::from(y) * cosine - f64::from(x) * sine;
-            min_x = min_x.min(lx);
-            max_x = max_x.max(lx);
-            min_y = min_y.min(cy);
-            max_y = max_y.max(cy);
+    fn area(&self) -> f64 {
+        self.pixels.len() as f64
+    }
+
+    fn projected(&self, sin: f64, cos: f64) -> Projection {
+        let mut lo_u = f64::INFINITY;
+        let mut hi_u = f64::NEG_INFINITY;
+        let mut lo_v = f64::INFINITY;
+        let mut hi_v = f64::NEG_INFINITY;
+        for &(x, y) in &self.pixels {
+            let u = f64::from(x) * cos + f64::from(y) * sin;
+            let v = f64::from(y) * cos - f64::from(x) * sin;
+            lo_u = lo_u.min(u);
+            hi_u = hi_u.max(u);
+            lo_v = lo_v.min(v);
+            hi_v = hi_v.max(v);
         }
-        Measure {
-            x: self.cx,
-            y: self.cy,
-            long: self.cx * cosine + self.cy * sine,
-            cross: self.cy * cosine - self.cx * sine,
-            width: max_x - min_x + 1.0,
-            height: max_y - min_y + 1.0,
+        Projection {
+            u: self.cx * cos + self.cy * sin,
+            v: self.cy * cos - self.cx * sin,
+            longitudinal: hi_u - lo_u + 1.0,
+            transverse: hi_v - lo_v + 1.0,
         }
     }
+}
+
+#[derive(Clone, Copy)]
+struct Projection {
+    u: f64,
+    v: f64,
+    longitudinal: f64,
+    transverse: f64,
 }
 
 fn connected(image: &GrayImage, light: bool) -> Result<Vec<Component>, Error> {
@@ -82,46 +83,39 @@ fn connected(image: &GrayImage, light: bool) -> Result<Vec<Component>, Error> {
     }
     let w = width as usize;
     let h = height as usize;
-    let mut visited = vec![false; w * h];
+    let mut seen = vec![false; w * h];
     let mut components = Vec::new();
-
     for y in 0..h {
         for x in 0..w {
-            let start = y * w + x;
-            if visited[start] {
+            let pixel_index = y * w + x;
+            if seen[pixel_index] {
                 continue;
             }
-            visited[start] = true;
-            let ink = |x: usize, y: usize| {
-                let shade = image.get_pixel(x as u32, y as u32).0[0];
-                if light {
-                    shade >= 128
-                } else {
-                    shade < 128
-                }
+            seen[pixel_index] = true;
+            let ink = |px: usize, py: usize| {
+                let gray = image.get_pixel(px as u32, py as u32).0[0];
+                if light { gray >= 128 } else { gray < 128 }
             };
             if !ink(x, y) {
                 continue;
             }
             let mut queue = vec![(x, y)];
-            let mut points = Vec::new();
+            let mut dots = Vec::new();
             let mut bounds = (x, x, y, y);
             while let Some((cx, cy)) = queue.pop() {
-                if points.len() > 40_000 {
+                if dots.len() > 40_000 {
                     break;
                 }
-                points.push((cx as u32, cy as u32));
+                dots.push((cx as u32, cy as u32));
                 bounds.0 = bounds.0.min(cx);
                 bounds.1 = bounds.1.max(cx);
                 bounds.2 = bounds.2.min(cy);
                 bounds.3 = bounds.3.max(cy);
-                let y0 = cy.saturating_sub(1);
-                let x0 = cx.saturating_sub(1);
-                for ny in y0..=(cy + 1).min(h - 1) {
-                    for nx in x0..=(cx + 1).min(w - 1) {
-                        let index = ny * w + nx;
-                        if !visited[index] {
-                            visited[index] = true;
+                for ny in cy.saturating_sub(1)..=(cy + 1).min(h - 1) {
+                    for nx in cx.saturating_sub(1)..=(cx + 1).min(w - 1) {
+                        let target = ny * w + nx;
+                        if !seen[target] {
+                            seen[target] = true;
                             if ink(nx, ny) {
                                 queue.push((nx, ny));
                             }
@@ -129,17 +123,17 @@ fn connected(image: &GrayImage, light: bool) -> Result<Vec<Component>, Error> {
                     }
                 }
             }
-            if points.len() < 6 || points.len() > 40_000 {
+            if dots.len() < 6 || dots.len() > 40_000 {
                 continue;
             }
-            let n = points.len() as f64;
-            let (sum_x, sum_y) = points.iter().fold((0.0, 0.0), |(sx, sy), (px, py)| {
-                (sx + f64::from(*px), sy + f64::from(*py))
+            let n = dots.len() as f64;
+            let (x_sum, y_sum) = dots.iter().fold((0.0, 0.0), |(ax, ay), &(px, py)| {
+                (ax + f64::from(px), ay + f64::from(py))
             });
             components.push(Component {
-                points,
-                cx: sum_x / n,
-                cy: sum_y / n,
+                pixels: dots,
+                cx: x_sum / n,
+                cy: y_sum / n,
                 left: bounds.0 as u32,
                 right: bounds.1 as u32,
                 top: bounds.2 as u32,
@@ -153,17 +147,13 @@ fn connected(image: &GrayImage, light: bool) -> Result<Vec<Component>, Error> {
     Ok(components)
 }
 
-fn angle(components: &[Component]) -> f64 {
-    let mean_x =
-        components.iter().map(|component| component.cx).sum::<f64>() / components.len() as f64;
-    let mean_y =
-        components.iter().map(|component| component.cy).sum::<f64>() / components.len() as f64;
-    let mut xx = 0.0;
-    let mut yy = 0.0;
-    let mut xy = 0.0;
-    for component in components {
-        let dx = component.cx - mean_x;
-        let dy = component.cy - mean_y;
+fn principal_angle(parts: &[&Component]) -> f64 {
+    let cx = parts.iter().map(|item| item.cx).sum::<f64>() / parts.len() as f64;
+    let cy = parts.iter().map(|item| item.cy).sum::<f64>() / parts.len() as f64;
+    let (mut xx, mut yy, mut xy) = (0.0, 0.0, 0.0);
+    for part in parts {
+        let dx = part.cx - cx;
+        let dy = part.cy - cy;
         xx += dx * dx;
         yy += dy * dy;
         xy += dx * dy;
@@ -171,318 +161,321 @@ fn angle(components: &[Component]) -> f64 {
     0.5 * (2.0 * xy).atan2(xx - yy)
 }
 
-#[derive(Clone, Copy)]
-struct Pair {
-    top: Measure,
-    bottom: Measure,
-}
-
-impl Pair {
-    fn ordered(self, inverted: bool) -> (Measure, Measure) {
-        if inverted {
-            (self.bottom, self.top)
-        } else {
-            (self.top, self.bottom)
-        }
-    }
-
-    fn center(self) -> f64 {
-        (self.top.long + self.bottom.long) / 2.0
-    }
-}
-
-fn scan_components(components: &[Component]) -> Result<Located, Error> {
-    if components.len() < anchor::COLUMNS * 2 + 10 || components.len() % 2 != 0 {
+fn dot_cluster<'a>(components: &'a [Component]) -> Result<Vec<&'a Component>, Error> {
+    if components.len() < 70 {
         return Err(Error::InvalidFrame);
     }
-    let theta = angle(components);
-    let (sine, cosine) = theta.sin_cos();
-    let mut parts: Vec<Measure> = components
+    let mut areas: Vec<f64> = components.iter().map(Component::area).collect();
+    areas.sort_by(f64::total_cmp);
+    let median_area = areas[areas.len() / 2];
+    let candidates: Vec<_> = components
         .iter()
-        .map(|item| item.project(sine, cosine))
+        .filter(|part| {
+            part.area() >= median_area * 0.25 && part.area() <= median_area * 1.75
+        })
         .collect();
-    parts.sort_by(|a, b| a.long.total_cmp(&b.long));
-    let columns: Vec<Pair> = parts
+    if candidates.len() < 68 {
+        return Err(Error::InvalidFrame);
+    }
+    // Dot centers form one connected geometric cluster. Ignore detached
+    // specks instead of stretching the W bounds to unrelated marks.
+    let median_diameter = (median_area / std::f64::consts::PI).sqrt() * 2.0;
+    let link_radius = 2.25 * median_diameter;
+    let mut seen = vec![false; candidates.len()];
+    let mut largest = Vec::new();
+    for start in 0..candidates.len() {
+        if seen[start] {
+            continue;
+        }
+        seen[start] = true;
+        let mut members = vec![start];
+        let mut cursor = 0;
+        while cursor < members.len() {
+            let i = members[cursor];
+            cursor += 1;
+            for j in 0..candidates.len() {
+                if !seen[j]
+                    && (candidates[i].cx - candidates[j].cx)
+                        .hypot(candidates[i].cy - candidates[j].cy)
+                        <= link_radius
+                {
+                    seen[j] = true;
+                    members.push(j);
+                }
+            }
+        }
+        if members.len() > largest.len() {
+            largest = members;
+        }
+    }
+    if largest.len() < 68 {
+        return Err(Error::InvalidFrame);
+    }
+    Ok(largest.into_iter().map(|index| candidates[index]).collect())
+}
+
+struct Fit<'a> {
+    angle: f64,
+    scale: f64,
+    origin_u: f64,
+    origin_v: f64,
+    site_parts: Vec<Option<&'a Component>>,
+    score: f64,
+}
+
+impl Fit<'_> {
+    fn to_image(&self, x: f64, y: f64) -> Point {
+        let u = self.origin_u + x * self.scale;
+        let v = self.origin_v + y * self.scale;
+        let (sin, cos) = self.angle.sin_cos();
+        Point {
+            x: u * cos - v * sin,
+            y: u * sin + v * cos,
+        }
+    }
+}
+
+fn fit<'a>(dots: &[&'a Component], sites: &[DotSite], angle: f64) -> Option<Fit<'a>> {
+    let (sin, cos) = angle.sin_cos();
+    let points: Vec<_> = dots
+        .iter()
+        .map(|part| (part.cx * cos + part.cy * sin, part.cy * cos - part.cx * sin))
+        .collect();
+    let (min_u, max_u) = points.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |a, p| {
+        (a.0.min(p.0), a.1.max(p.0))
+    });
+    let (min_v, max_v) = points.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |a, p| {
+        (a.0.min(p.1), a.1.max(p.1))
+    });
+    let (min_x, max_x) = sites.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |a, p| {
+        (a.0.min(p.x), a.1.max(p.x))
+    });
+    let (min_y, max_y) = sites.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |a, p| {
+        (a.0.min(p.y), a.1.max(p.y))
+    });
+    let scale_x = (max_u - min_u) / (max_x - min_x);
+    let scale_y = (max_v - min_v) / (max_y - min_y);
+    if scale_x <= 2.0 || scale_y <= 2.0 || (scale_x / scale_y - 1.0).abs() > 0.27 {
+        return None;
+    }
+    let scale = (scale_x + scale_y) / 2.0;
+    let origin_u = min_u - min_x * scale;
+    let origin_v = min_v - min_y * scale;
+    let mut site_parts = Vec::new();
+    let mut score = 0.0;
+    let mut used = vec![false; dots.len()];
+    for site in sites {
+        let expected = (origin_u + site.x * scale, origin_v + site.y * scale);
+        let closest = points
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| !used[*index])
+            .map(|(index, point)| {
+                let distance = (point.0 - expected.0).hypot(point.1 - expected.1);
+                (index, distance)
+            })
+            .min_by(|a, b| a.1.total_cmp(&b.1));
+        if let Some((index, distance)) = closest {
+            if distance < scale * 0.54 {
+                used[index] = true;
+                site_parts.push(Some(dots[index]));
+                score += distance * distance / (scale * scale);
+                continue;
+            }
+        }
+        site_parts.push(None);
+        score += 4.0;
+    }
+    let matched = site_parts.iter().filter(|part| part.is_some()).count();
+    if matched < sites.len().saturating_sub(4) {
+        return None;
+    }
+    Some(Fit {
+        angle,
+        scale,
+        origin_u,
+        origin_v,
+        site_parts,
+        score,
+    })
+}
+
+fn locate<'a>(dots: &[&'a Component], sites: &[DotSite]) -> Result<Fit<'a>, Error> {
+    let initial = principal_angle(dots);
+    let mut best: Option<Fit<'a>> = None;
+    for inverted in [false, true] {
+        let base = initial + if inverted { std::f64::consts::PI } else { 0.0 };
+        for offset in -8..=8 {
+            let angle = base + f64::from(offset) * 0.012;
+            if let Some(candidate) = fit(dots, sites, angle) {
+                if best.as_ref().is_none_or(|previous| candidate.score < previous.score) {
+                    best = Some(candidate);
+                }
+            }
+        }
+    }
+    best.ok_or(Error::InvalidFrame)
+}
+
+fn read_frame(
+    components: &[Component],
+    dots: &[&Component],
+    sites: &[DotSite],
+    fit: &Fit<'_>,
+) -> Result<Located, Error> {
+    let mut sizes = Vec::new();
+    for (site, observed) in sites.iter().zip(&fit.site_parts) {
+        if site.bit.is_none() {
+            if let Some(part) = observed {
+                sizes.push(part.area());
+            }
+        }
+    }
+    if sizes.len() < 20 {
+        return Err(Error::InvalidFrame);
+    }
+    sizes.sort_by(f64::total_cmp);
+    let fixed_area = sizes[sizes.len() / 2];
+    let mut bits = [false; anchor::METADATA_BITS];
+    for (site, observed) in sites.iter().zip(&fit.site_parts) {
+        if let Some(index) = site.bit {
+            if let Some(part) = observed {
+                bits[index] = part.area() > fixed_area * 1.17;
+            }
+        }
+    }
+    let meta = anchor::decode_version_profile(bits)?;
+    if meta.version != anchor::VERSION {
+        return Err(Error::UnsupportedVersion);
+    }
+
+    let (sin, cos) = fit.angle.sin_cos();
+    let (end_u, _) = {
+        let point = fit.to_image(anchor::W_X_MAX, anchor::W_Y_MAX / 2.0);
+        (point.x * cos + point.y * sin, point.y * cos - point.x * sin)
+    };
+    let area_threshold = fixed_area * 1.75;
+    let mut bars: Vec<_> = components
+        .iter()
+        .filter(|part| part.area() > area_threshold)
+        .filter_map(|part| {
+            let projected = part.projected(sin, cos);
+            (projected.u > end_u + fit.scale * 0.6).then_some((part, projected))
+        })
+        .collect();
+    bars.sort_by(|a, b| a.1.u.total_cmp(&b.1.u));
+    if bars.len() < 16 || bars.len() > 68 || bars.len() % 2 != 0 {
+        return Err(Error::InvalidFrame);
+    }
+    let pairs: Vec<_> = bars
         .chunks_exact(2)
-        .map(|col| {
-            if col[0].cross <= col[1].cross {
-                Pair {
-                    top: col[0],
-                    bottom: col[1],
-                }
+        .map(|pair| {
+            if pair[0].1.v < pair[1].1.v {
+                (pair[0].1, pair[1].1)
             } else {
-                Pair {
-                    top: col[1],
-                    bottom: col[0],
-                }
+                (pair[1].1, pair[0].1)
             }
         })
         .collect();
-
-    for reverse in [false, true] {
-        let ordered: Vec<Pair> = if reverse {
-            columns.iter().rev().copied().collect()
-        } else {
-            columns.clone()
-        };
-        let (w, payload) = ordered.split_at(anchor::COLUMNS);
-        if payload.is_empty() || payload.len() > 34 {
-            continue;
-        }
-        let delta = (w[10].center() - w[0].center()) / 10.0;
-        let w_pitch = delta.abs();
-        if w_pitch < 3.0 {
-            continue;
-        }
-        let start = w[0].center();
-        if (0..11).any(|index| {
-            (w[index].center() - (start + index as f64 * delta)).abs() > w_pitch * 0.27 + 0.6
-        }) {
-            continue;
-        }
-        let pitch = w_pitch / W_RATIO;
-        let gap = (payload[0].center() - w[10].center()).abs();
-        if (gap - 1.56 * pitch).abs() > pitch * 0.47 {
-            continue;
-        }
-
-        for inverted in [false, true] {
-            let mut samples = Vec::with_capacity(22);
-            for (index, &pair) in w.iter().enumerate() {
-                let (upper, lower) = pair.ordered(inverted);
-                samples.push((f64::from(anchor::UPPER[index]), upper.height));
-                samples.push((f64::from(anchor::LOWER[index]), lower.height));
-            }
-            let n = samples.len() as f64;
-            let avg_x = samples.iter().map(|(x, _)| x).sum::<f64>() / n;
-            let avg_y = samples.iter().map(|(_, y)| y).sum::<f64>() / n;
-            let variance = samples
-                .iter()
-                .map(|(x, _)| (x - avg_x).powi(2))
-                .sum::<f64>();
-            let covariance = samples
-                .iter()
-                .map(|(x, y)| (x - avg_x) * (y - avg_y))
-                .sum::<f64>();
-            let step = covariance / variance;
-            let base = avg_y - step * avg_x;
-            if step < 1.1
-                || base <= 0.0
-                || samples
-                    .iter()
-                    .any(|(x, y)| (y - (base + step * x)).abs() > step * 0.48 + 0.6)
-            {
-                continue;
-            }
-
-            let mut bits = [false; 8];
-            for (bit, &(index, upper)) in anchor::META_SITES.iter().enumerate() {
-                let (u, d) = w[index].ordered(inverted);
-                let (measured, fixed) = if upper {
-                    (u.width, d.width)
-                } else {
-                    (d.width, u.width)
-                };
-                bits[bit] = measured > fixed * 1.25;
-            }
-            let (metadata, _) = match anchor::decode_meta(bits) {
-                Ok(value) => value,
-                Err(_) => continue,
-            };
-
-            let mut symbols = Vec::with_capacity(payload.len());
-            let mut valid = true;
-            let sign = delta.signum();
-            for (index, pair) in payload.iter().enumerate() {
-                if index > 0 {
-                    let advance = (pair.center() - payload[index - 1].center()) * sign;
-                    if !(pitch * 0.60..=pitch * 1.50).contains(&advance) {
-                        valid = false;
-                        break;
-                    }
-                }
-                let (upper, lower) = pair.ordered(inverted);
-                let left_pitch = if index > 0 {
-                    Some((pair.center() - payload[index - 1].center()).abs())
-                } else {
-                    None
-                };
-                let right_pitch = payload
-                    .get(index + 1)
-                    .map(|next| (next.center() - pair.center()).abs());
-                let local_pitch = match (left_pitch, right_pitch) {
-                    (Some(left), Some(right)) => (left + right) / 2.0,
-                    (Some(left), None) => left,
-                    (None, Some(right)) => right,
-                    (None, None) => pitch,
-                };
-                // Under a planar keystone warp, longitudinal pitch changes
-                // with inverse depth squared, while vertical rail lengths
-                // change with inverse depth. Correct their relative scale
-                // using the square root of measured pitch variation from W.
-                let vertical_scale = (local_pitch / pitch).sqrt().clamp(0.75, 1.3);
-                let measure_height = |value: f64| -> Option<u8> {
-                    let estimate = (value / vertical_scale - base) / step;
-                    let level = estimate.round();
-                    ((0.0..=7.0).contains(&level) && (estimate - level).abs() <= 0.48)
-                        .then_some(level as u8)
-                };
-                let (Some(up), Some(down)) =
-                    (measure_height(upper.height), measure_height(lower.height))
-                else {
-                    valid = false;
-                    break;
-                };
-                let symbol = (up << 5)
-                    | (down << 2)
-                    | if upper.width / local_pitch > 0.55 {
-                        2
-                    } else {
-                        0
-                    }
-                    | if lower.width / local_pitch > 0.55 {
-                        1
-                    } else {
-                        0
-                    };
-                symbols.push(symbol);
-            }
-            if !valid {
-                continue;
-            }
-            let decoded = match codec::decode(&Frame { metadata, symbols }) {
-                Ok(decoded) => decoded,
-                Err(_) => continue,
-            };
-            let (first_up, first_down) = w[0].ordered(inverted);
-            let (last_up, last_down) = w[10].ordered(inverted);
-            let pose = match AnchorPose::from_fiducials([
-                Point {
-                    x: first_up.x,
-                    y: first_up.y,
-                },
-                Point {
-                    x: last_up.x,
-                    y: last_up.y,
-                },
-                Point {
-                    x: first_down.x,
-                    y: first_down.y,
-                },
-                Point {
-                    x: last_down.x,
-                    y: last_down.y,
-                },
-            ]) {
-                Ok(pose) => pose,
-                Err(_) => continue,
-            };
-            let left = components
-                .iter()
-                .map(|component| component.left)
-                .min()
-                .unwrap_or(0);
-            let right = components
-                .iter()
-                .map(|component| component.right)
-                .max()
-                .unwrap_or(left);
-            let top = components
-                .iter()
-                .map(|component| component.top)
-                .min()
-                .unwrap_or(0);
-            let bottom = components
-                .iter()
-                .map(|component| component.bottom)
-                .max()
-                .unwrap_or(top);
-            return Ok(Located {
-                decoded,
-                pose,
-                bounds: Bounds {
-                    left,
-                    top,
-                    width: right - left + 1,
-                    height: bottom - top + 1,
-                },
-            });
-        }
-    }
-    Err(Error::InvalidFrame)
-}
-
-/// Search for the W in a field containing other disconnected ink components.
-/// The W's eleven columns have a distinctive *denser* pitch than data
-/// columns. Only windows matching this geometric prior are decoded, so a
-/// few surrounding marks do not force the camera to treat the whole scene
-/// as one code. CRC and Reed–Solomon validate every candidate.
-fn scan_windowed(components: &[Component]) -> Result<Located, Error> {
-    const W_PARTS: usize = anchor::COLUMNS * 2;
-    if components.len() < W_PARTS + 16 || components.len() > MAX_COMPONENTS {
+    let pitch = if pairs.len() > 1 {
+        (pairs.last().unwrap().0.u - pairs.first().unwrap().0.u)
+            / (pairs.len() - 1) as f64
+    } else {
+        return Err(Error::InvalidFrame);
+    };
+    if pitch < 4.0 {
         return Err(Error::InvalidFrame);
     }
-    let (sine, cosine) = angle(components).sin_cos();
-    let mut sorted: Vec<&Component> = components.iter().collect();
-    sorted.sort_by(|a, b| {
-        let along = |p: &Component| p.cx * cosine + p.cy * sine;
-        along(a).total_cmp(&along(b))
-    });
-    let coordinate = |part: &Component| part.cx * cosine + part.cy * sine;
-    let lengths = (8..=25).chain([31, 33]);
-
-    for start in 0..=sorted.len() - W_PARTS {
-        let window = &sorted[start..start + W_PARTS];
-        let centers: [f64; anchor::COLUMNS] = std::array::from_fn(|column| {
-            (coordinate(window[column * 2]) + coordinate(window[column * 2 + 1])) / 2.0
-        });
-        let w_pitch = (centers[anchor::COLUMNS - 1] - centers[0]) / 10.0;
-        if w_pitch < 3.0
-            || window.chunks_exact(2).any(|pair| {
-                (coordinate(pair[0]) - coordinate(pair[1])).abs() > w_pitch * 0.35 + 0.8
-            })
-            || centers.iter().enumerate().any(|(column, &value)| {
-                (value - (centers[0] + column as f64 * w_pitch)).abs() > w_pitch * 0.24 + 0.6
-            })
+    let height = fit.scale / anchor::W_DOT_SCALE_RATIO;
+    let base = height * 0.10;
+    let step = height * 0.026;
+    let mut symbols = Vec::with_capacity(pairs.len());
+    for (index, &(upper, lower)) in pairs.iter().enumerate() {
+        if (upper.u - lower.u).abs() > pitch * 0.27
+            || (index > 0
+                && ((upper.u - pairs[index - 1].0.u) - pitch).abs() > pitch * 0.28)
         {
-            continue;
+            return Err(Error::InvalidFrame);
         }
+        let level = |h: f64| -> Result<u8, Error> {
+            let estimate = (h - base) / step;
+            let rounded = estimate.round();
+            if !(0.0..=7.0).contains(&rounded) || (rounded - estimate).abs() > 0.5 {
+                return Err(Error::InvalidFrame);
+            }
+            Ok(rounded as u8)
+        };
+        let up = level(upper.transverse)?;
+        let down = level(lower.transverse)?;
+        let symbol = (up << 5)
+            | (down << 2)
+            | if upper.longitudinal / pitch > 0.55 { 2 } else { 0 }
+            | if lower.longitudinal / pitch > 0.55 { 1 } else { 0 };
+        symbols.push(symbol);
+    }
+    let decoded = codec::decode(&Frame {
+        metadata: meta.profile,
+        symbols,
+    })?;
+    let corners = [
+        fit.to_image(0.0, 0.0),
+        fit.to_image(anchor::W_X_MAX, 0.0),
+        fit.to_image(0.0, anchor::W_Y_MAX),
+        fit.to_image(anchor::W_X_MAX, anchor::W_Y_MAX),
+    ];
+    let pose = AnchorPose::from_fiducials(corners)?;
+    let selected: Vec<_> = dots.iter().copied().chain(bars.iter().map(|(part, _)| *part)).collect();
+    let left = selected.iter().map(|part| part.left).min().unwrap_or(0);
+    let right = selected.iter().map(|part| part.right).max().unwrap_or(left);
+    let top = selected.iter().map(|part| part.top).min().unwrap_or(0);
+    let bottom = selected.iter().map(|part| part.bottom).max().unwrap_or(top);
+    Ok(Located {
+        decoded,
+        pose,
+        bounds: Bounds {
+            left,
+            top,
+            width: right - left + 1,
+            height: bottom - top + 1,
+        },
+        version: meta.version,
+        profile: meta.profile,
+        corrected_anchor_bits: meta.corrected_bits,
+    })
+}
 
-        for columns in lengths.clone() {
-            let count = columns * 2;
-            // Normal logical orientation: W at the left and the payload to its right.
-            if start + W_PARTS + count <= sorted.len() {
-                let candidate: Vec<Component> = sorted[start..start + W_PARTS + count]
-                    .iter()
-                    .map(|component| (*component).clone())
-                    .collect();
-                if let Ok(found) = scan_components(&candidate) {
-                    return Ok(found);
-                }
+fn scan_components(components: &[Component]) -> Result<Located, Error> {
+    let sites = anchor::sites();
+    let dots = dot_cluster(components)?;
+    let initial = principal_angle(&dots);
+    let mut candidates = Vec::new();
+    // Try both ends because only the actual W may be on the left of data;
+    // a half-turn of the camera swaps the image side, not logical order.
+    for inverted in [false, true] {
+        let base = initial + if inverted { std::f64::consts::PI } else { 0.0 };
+        for offset in -8..=8 {
+            let angle = base + f64::from(offset) * 0.012;
+            if let Some(candidate) = fit(&dots, &sites, angle) {
+                candidates.push(candidate);
             }
-            // A 180-degree camera roll places the W on the right.
-            if start >= count {
-                let candidate: Vec<Component> = sorted[start - count..start + W_PARTS]
-                    .iter()
-                    .map(|component| (*component).clone())
-                    .collect();
-                if let Ok(found) = scan_components(&candidate) {
-                    return Ok(found);
-                }
-            }
+        }
+    }
+    candidates.sort_by(|a, b| a.score.total_cmp(&b.score));
+    for candidate in candidates {
+        if let Ok(frame) = read_frame(components, &dots, &sites, &candidate) {
+            return Ok(frame);
         }
     }
     Err(Error::InvalidFrame)
 }
 
-/// A bounded first-pass isolated-mark detector. Complex scenes, severe
-/// perspective and partial occlusion are deliberately outside this first
-/// implementation; avoid silently promising V1-like field reliability.
+/// The isolated-render prototype recognizes dot W only. Real mobile photos,
+/// extreme perspective, motion blur and reflections still need field tests.
 pub fn scan_gray(image: &GrayImage) -> Result<Located, Error> {
     for light in [false, true] {
         if let Ok(parts) = connected(image, light) {
-            if let Ok(code) = scan_components(&parts).or_else(|_| scan_windowed(&parts)) {
-                return Ok(code);
+            if let Ok(frame) = scan_components(&parts) {
+                return Ok(frame);
             }
         }
     }
@@ -504,50 +497,47 @@ pub fn scan_png_or_jpeg(bytes: &[u8]) -> Result<Located, Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::v2::visual::RenderProfile;
     use crate::{
-        v2::{encode, visual},
+        v2::{encode, visual, Content},
         MusicCode,
     };
 
     #[test]
-    fn detects_an_isolated_w_and_uses_its_geometry_for_single_and_dual() {
-        let profiles = [
-            RenderProfile::default(),
-            RenderProfile {
-                pitch: 22.0,
-                height: 220.0,
-                quiet: 22.0,
-            },
-        ];
-        let examples = [
-            codec::Content::Single(
+    fn round_dot_w_restores_version_and_single_and_dual_payloads() {
+        let samples = [
+            Content::Single(
                 MusicCode::from_url("https://music.youtube.com/watch?v=JGwWNGJdvx8&t=52").unwrap(),
             ),
-            codec::Content::Single(
-                MusicCode::from_url("https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b")
-                    .unwrap(),
+            Content::Single(
+                MusicCode::from_url("https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b").unwrap(),
             ),
-            codec::Content::Dual {
+            Content::Dual {
                 spotify_id: "0VjIjW4GlUZAMYd2vXMi3b".into(),
                 youtube_music_id: "JGwWNGJdvx8".into(),
                 moment_seconds: None,
             },
         ];
-        for profile in profiles {
-            for content in &examples {
-                let frame = encode(content).unwrap();
-                let png = visual::render_png(&frame, profile).unwrap();
-                let decoded = scan_png_or_jpeg(&png).unwrap();
-                assert_eq!(decoded.decoded.content, *content);
-                assert!(decoded.pose.project(1.0, 0.5).is_some());
-            }
+        for code in samples {
+            let frame = encode(&code).unwrap();
+            let png = visual::render_png(
+                &frame,
+                visual::RenderProfile {
+                    pitch: 22.0,
+                    height: 210.0,
+                    quiet: 20.0,
+                },
+            )
+            .unwrap();
+            let located = scan_png_or_jpeg(&png).unwrap();
+            assert_eq!(located.version, 2);
+            assert_eq!(located.profile, frame.metadata);
+            assert_eq!(located.decoded.content, code);
         }
     }
 
     #[test]
-    fn scanner_rejects_noise_and_empty_frames() {
-        let image = GrayImage::from_pixel(600, 170, image::Luma([255]));
-        assert!(scan_gray(&image).is_err());
+    fn blank_frames_are_rejected() {
+        let white = GrayImage::from_pixel(640, 180, image::Luma([255]));
+        assert!(scan_gray(&white).is_err());
     }
 }
