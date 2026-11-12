@@ -217,3 +217,33 @@ fn padding_slack_can_host_exact_short_moments_without_another_column() {
     assert_eq!(slack(64), 0);
     assert_eq!(columns(64 + 1), columns(64) + 1);
 }
+
+
+#[test]
+fn proposed_opt_in_w_headers_cover_six_legacy_and_ten_extensions() {
+    let legacy = [0_u8, 2, 4, 6, 8, 10];
+    let extensions = [
+        (1_u8, 64_usize, 14_usize),
+        (3, 64 + 8, 15),
+        (5, 2 + 32, 11),
+        (7, 2 + 32 + 8, 12),
+        (9, 128, 22),
+        (11, 131 + 8, 24),
+        (12, 128 + 8, 23),
+        (13, 131 + 64 + 8, 32),
+        (14, 128 + 64, 30),
+        (15, 128 + 64 + 8, 31),
+    ];
+    let mut used = [false; 16];
+    for id in legacy {
+        assert!(!used[id as usize]);
+        used[id as usize] = true;
+    }
+    for (id, identity_and_time, expected_cols) in extensions {
+        assert!(!used[id as usize]);
+        assert!(id & 1 != 0 || id >= 12);
+        used[id as usize] = true;
+        assert_eq!(columns(identity_and_time), expected_cols);
+    }
+    assert!(used.into_iter().all(|slot| slot));
+}
