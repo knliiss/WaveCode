@@ -8,8 +8,8 @@
 <h1 align="center">WaveCode</h1>
 
 <p align="center">
-  <strong>Music links, made visible.</strong><br>
-  An open-source optical code for music tracks and moments.
+  <strong>Media links, made visible.</strong><br>
+  An open-source optical code for tracks, videos and moments.
 </p>
 
 <p align="center">
@@ -27,7 +27,7 @@
 
 ---
 
-WaveCode transforms a music-track URL — optionally with a starting timestamp — into a compact, two-sided pattern. The lengths of the vertical marks carry the data; a continuous horizontal gap gives the format its distinctive appearance.
+WaveCode transforms a supported track or video URL — optionally with a native starting timestamp — into a compact, two-sided pattern. The lengths of the vertical marks carry the data; a continuous horizontal gap gives the format its distinctive appearance.
 
 The encoder, decoder and command-line interface are written in **Rust**. No hosted lookup service is required to encode or resolve supported track IDs.
 
@@ -36,8 +36,8 @@ The encoder, decoder and command-line interface are written in **Rust**. No host
 - **Distinctive geometry.** Two rows of marks separated by an uninterrupted center gap, with rounded capsule ends by default.
 - **Compact, fixed-size V1.** 36 columns: two asymmetric orientation guards and 34 encoded symbols.
 - **Error correction.** Reed–Solomon RS(34,28) over GF(64), with CRC-16 verification.
-- **Track moments.** Optional timestamp from 0 to 65,535 seconds, stored directly in the code.
-- **Seven music services.** YouTube Music, Spotify, Apple Music, Deezer, TIDAL, Qobuz and Amazon Music.
+- **Native moments.** Optional timestamp from 0 to 65,535 seconds where direct platform links support seeking.
+- **Music and video.** Seven music services plus YouTube, YouTube Shorts, TikTok videos and Instagram Reels.
 - **Image decoding.** Read generated SVGs or scan PNG/JPEG raster images with automatic contrast and color handling.
 
 ## Gallery
@@ -108,7 +108,7 @@ cargo install wasm-pack
 wasm-pack build crates/wavecode-wasm --target web --release
 ```
 
-This repository remains the **format and SDK project**. A future web platform with a camera interface will live in a separate repository.
+This repository is the **format and SDK project**. The separate mobile scanner and creator lives in [WaveCode-Web](https://github.com/knliiss/WaveCode-Web).
 
 ## Quick start
 
@@ -145,7 +145,7 @@ cargo run --release -q -p wavecode -- encode \
   --svg moment.svg
 ```
 
-The `--time SECONDS` flag overrides any `t=` value in the URL. Timestamp information round-trips through WaveCode; **whether a music app actually seeks to that time depends on the service and client**.
+The `--time SECONDS` flag overrides any `t=` value in the URL on platforms supporting moments. TikTok and Instagram Reels reject timestamps, because no reliable native timestamp links are available.
 
 ### CLI reference
 
@@ -163,11 +163,15 @@ The `--time SECONDS` flag overrides any `t=` value in the URL. Timestamp informa
 
 For an optimized build, you can also run `cargo build --release -p wavecode` and use the binary at `target/release/wavecode`.
 
-## Supported music platforms
+## Supported media platforms
 
 | Service | Example URL shape |
 | --- | --- |
 | YouTube Music | `music.youtube.com/watch?v=<video-id>` |
+| YouTube | `youtube.com/watch?v=<video-id>` |
+| YouTube Shorts | `youtube.com/shorts/<video-id>` |
+| TikTok | `tiktok.com/@creator/video/<numeric-id>` |
+| Instagram Reels | `instagram.com/reel/<shortcode>/` |
 | Spotify | `open.spotify.com/track/<track-id>` |
 | Apple Music | `music.apple.com/<country>/song/<song-id>` |
 | Deezer | `deezer.com/track/<track-id>` |
@@ -175,7 +179,9 @@ For an optimized build, you can also run `cargo build --release -p wavecode` and
 | Qobuz | `open.qobuz.com/track/<track-id>` |
 | Amazon Music | `music.amazon.com/tracks/<track-asin>` |
 
-WaveCode stores a **platform-specific track identity**, not the audio, song title, artist, cover artwork or arbitrary URL text. Its encoding is deterministic and does not depend on a remote database.
+WaveCode stores a **platform-specific content identity**, not the recording, title, creator, cover artwork or arbitrary URL text. Its encoding is deterministic and does not depend on a remote database.
+
+YouTube and Shorts support native timestamps (timed Shorts open in the standard YouTube player). TikTok and Instagram Reels open the original platform without a timestamp. TikTok numeric IDs use the service's ID-only `/@/video/<id>` route, whose behavior can vary with TikTok clients. TikTok share-redirect URLs (`vt.tiktok.com` / `vm.tiktok.com`) must be expanded to a full video URL before offline encoding. No WaveCode-hosted player, redirect database or external API is required.
 
 ## How the format works
 
@@ -188,7 +194,7 @@ WaveCode stores a **platform-specific track identity**, not the audio, song titl
 
 The illustration above is schematic. The files in the gallery are actual, decodable V1 instances.
 
-1. A supported track URL is converted to a deterministic numeric identity.
+1. A supported music or video URL is converted to a deterministic numeric identity.
 2. V1 adds a format version, an optional timestamp and a CRC-16 checksum.
 3. The payload is whitened and Reed–Solomon parity is appended.
 4. Each six-bit symbol becomes a pair of upper/lower height levels; asymmetric end guards aid orientation recovery.

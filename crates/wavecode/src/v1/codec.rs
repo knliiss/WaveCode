@@ -236,6 +236,7 @@ fn from_sextets(data: &[u8; DATA_SYMBOLS]) -> [u8; PACKED_BYTES] {
 }
 
 pub fn encode(code: &MusicCode) -> Result<Vec<u8>, Error> {
+    code.validate_moment()?;
     let rank = identity::encode(&code.track)?;
     let mut bytes = [0_u8; PACKED_BYTES];
     let rank_bytes = rank.to_bytes(17).ok_or(Error::InvalidCodeword)?;
@@ -297,11 +298,15 @@ pub fn decode_with_erasures(symbols: &[u8], erasures: &[usize]) -> Result<Decode
         _ => return Err(Error::InvalidCodeword),
     };
 
+    let code = MusicCode {
+        track: identity::decode(rank)?,
+        moment_seconds,
+    };
+    if code.validate_moment().is_err() {
+        return Err(Error::InvalidCodeword);
+    }
     Ok(Decoded {
-        code: MusicCode {
-            track: identity::decode(rank)?,
-            moment_seconds,
-        },
+        code,
         corrected_symbols,
     })
 }
@@ -309,7 +314,8 @@ pub fn decode_with_erasures(symbols: &[u8], erasures: &[usize]) -> Result<Decode
 #[cfg(test)]
 mod tests {
     use super::{
-        checksum, decode, encode, from_sextets, to_sextets, whitening, FORMAT_VERSION, PACKED_BYTES,
+        checksum, decode, encode, from_sextets, to_sextets, whitening, FORMAT_VERSION,
+        PACKED_BYTES, SYMBOL_COUNT,
     };
     use crate::{Error, MusicCode, Track};
 
@@ -343,6 +349,10 @@ mod tests {
         let tracks = [
             Track::YouTubeMusic("AAAAAAAAAAA".into()),
             Track::YouTubeMusic("___________".into()),
+            Track::YouTubeVideo("AAAAAAAAAAA".into()),
+            Track::YouTubeVideo("___________".into()),
+            Track::YouTubeShort("AAAAAAAAAAA".into()),
+            Track::YouTubeShort("___________".into()),
             Track::Spotify("0000000000000000000000".into()),
             Track::Spotify("zzzzzzzzzzzzzzzzzzzzzz".into()),
             Track::AppleMusic {
@@ -373,6 +383,46 @@ mod tests {
                 assert!(symbols.iter().all(|value| *value < 64));
                 assert_eq!(decode(&symbols).unwrap().code, code);
             }
+        }
+    }
+
+    #[test]
+    fn legacy_v1_symbols_are_unchanged_and_new_ranges_fit_the_same_frame() {
+        let legacy = MusicCode {
+            track: Track::YouTubeMusic("JGwWNGJdvx8".into()),
+            moment_seconds: Some(187),
+        };
+        let original = encode(&legacy).unwrap();
+        assert_eq!(decode(&original).unwrap().code, legacy);
+        assert_eq!(original.len(), SYMBOL_COUNT);
+
+        for track in [
+            Track::YouTubeVideo("JGwWNGJdvx8".into()),
+            Track::YouTubeShort("JGwWNGJdvx8".into()),
+            Track::TikTokVideo(7_300_873_037_530_795_272),
+            Track::InstagramReel("DIPPWkUh7Rj".into()),
+        ] {
+            let code = MusicCode {
+                track,
+                moment_seconds: None,
+            };
+            let symbols = encode(&code).unwrap();
+            assert_eq!(symbols.len(), SYMBOL_COUNT);
+            assert_eq!(decode(&symbols).unwrap().code, code);
+        }
+    }
+
+    #[test]
+    fn unsupported_native_moments_cannot_be_written() {
+        for track in [
+            Track::TikTokVideo(7_300_873_037_530_795_272),
+            Track::InstagramReel("DIPPWkUh7Rj".into()),
+        ] {
+            let code = MusicCode {
+                track,
+                moment_seconds: Some(12),
+            };
+            assert_eq!(encode(&code), Err(Error::InvalidTimestamp));
         }
     }
 
