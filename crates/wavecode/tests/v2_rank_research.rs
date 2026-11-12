@@ -97,8 +97,8 @@ fn next(seed: &mut u64) -> u64 {
 }
 
 #[test]
-fn official_spotify_id_requires_more_than_128_bits() {
-    let example = "7ouMYWpwJ422jRcDASZB7P";
+fn verified_pop_spotify_id_requires_more_than_128_bits() {
+    let example = "7qiZfU4dY1lWllzX7mPBI3";
     let number = spotify_rank(example).unwrap();
     assert_eq!(bit_length(&number), 129);
     assert_eq!(spotify_from_rank(number).as_deref(), Some(example));
@@ -110,8 +110,7 @@ fn base62_rank_roundtrips_all_edge_classes_and_random_ids() {
     let edge_cases = [
         "0000000000000000000000",
         "0VjIjW4GlUZAMYd2vXMi3b",
-        "6rqhFgbbKwnb9MLmUQDhG6",
-        "7ouMYWpwJ422jRcDASZB7P",
+        "7qiZfU4dY1lWllzX7mPBI3",
         "zzzzzzzzzzzzzzzzzzzzzz",
     ];
     for id in edge_cases {

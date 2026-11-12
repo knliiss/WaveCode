@@ -28,8 +28,8 @@ Therefore `N<=2^b`, so the tight lower bound is
 For arbitrary 22-character Spotify Base62 strings,
 `N_S=62^22`, `log2(N_S)=130.9923188285...`, hence **131 bits**.
 The Spotify developer documentation describes Base62 IDs but does **not**
-promise that every valid ID is 128-bit. Indeed, the Spotify API's own example
-`7ouMYWpwJ422jRcDASZB7P`, interpreted with the repository's Base62
+promise that every valid ID is 128-bit. Indeed, a documented popular Spotify track ID
+`7qiZfU4dY1lWllzX7mPBI3`, interpreted with the repository's Base62
 alphabet, has numeric bit length **129**. Never unconditionally assume 128 bits,
 UUIDv4 structure, or six fixed UUID bits.
 
@@ -314,7 +314,7 @@ four bits **before** subtracting the mandatory layout metadata.
 ## Background sources
 
 - Spotify developer docs: https://developer.spotify.com/documentation/web-api/concepts/spotify-uris-ids
-- Spotify official API track ID example: https://developer.spotify.com/documentation/web-api/reference/get-several-tracks
+- Independent popular track ID reference: https://www.kworb.net/spotify/track/7qiZfU4dY1lWllzX7mPBI3.html
 - YouTube canonical video ID notes: https://wiki.archiveteam.org/index.php/YouTube/Technical_details
 - Base64URL representation: https://www.rfc-editor.org/rfc/rfc4648
 - Reed-Solomon shortening and correction: https://www.cs.cmu.edu/~realworld/reedsolomon/reed_solomon_codes.html
