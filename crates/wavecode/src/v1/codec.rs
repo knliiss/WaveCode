@@ -314,8 +314,8 @@ pub fn decode_with_erasures(symbols: &[u8], erasures: &[usize]) -> Result<Decode
 #[cfg(test)]
 mod tests {
     use super::{
-        checksum, decode, encode, from_sextets, to_sextets, whitening, FORMAT_VERSION, PACKED_BYTES,
-        SYMBOL_COUNT,
+        checksum, decode, encode, from_sextets, to_sextets, whitening, FORMAT_VERSION,
+        PACKED_BYTES, SYMBOL_COUNT,
     };
     use crate::{Error, MusicCode, Track};
 
