@@ -42,7 +42,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             geometry.width,
             geometry.height
         );
-        println!("W metadata (protected): {:04b}", frame.metadata);
+        println!("Round-dot W version: {} (12-bit BCH field)", v2::anchor::VERSION);
+        println!("W payload profile (protected): {:06b}", frame.metadata);
         println!(
             "Payload columns saved against original V2: {}",
             original.symbols.len() - frame.symbols.len()
@@ -87,6 +88,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(point) = found.pose.project(0.5, 0.5) {
                 println!("W local center at ({:.1}, {:.1})", point.x, point.y);
             }
+            println!(
+                "W version: {}, profile: {}, BCH repaired: {} dots",
+                found.version, found.profile, found.corrected_anchor_bits
+            );
             println!(
                 "mode: {:?}, RS repaired: {} symbols",
                 found.decoded.layout, found.decoded.corrected_symbols
