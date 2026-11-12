@@ -17,9 +17,8 @@ pub const DOT_SMALL_RADIUS: f64 = 0.30;
 pub const DOT_LARGE_RADIUS: f64 = 0.45;
 pub const DOT_FIXED_RADIUS: f64 = 0.38;
 
-/// Polynomial x^18 + x^17 + x^16 + x^15 + x^10 + x^8 + x^7 + x^6
-/// + x^3 + x^2 + x + 1, obtained from primitive narrow-sense BCH(63,45,>=7)
-/// over GF(64) with primitive polynomial x^6+x+1, shortened by 23 positions.
+// BCH generator: x^18+x^17+x^16+x^15+x^9+x^7+x^6+x^3+x^2+x+1.
+// Minimal factors are 0x43, 0x57 and 0x67 over GF(64) (x^6+x+1).
 const GENERATOR: u64 = 0x782cf;
 const PARITY_BITS: usize = 18;
 const CODEWORD_MASK: u64 = (1_u64 << METADATA_BITS) - 1;
@@ -176,8 +175,8 @@ fn syndrome_table() -> &'static HashMap<u32, (u64, u8)> {
                 let pair_mask =
                     (1_u64 << (METADATA_BITS - 1 - i)) | (1_u64 << (METADATA_BITS - 1 - j));
                 result.insert(pair, (pair_mask, 2));
-                for k in (j + 1)..METADATA_BITS {
-                    let triple = pair ^ signatures[k];
+                for (k, &signature) in signatures.iter().enumerate().skip(j + 1) {
+                    let triple = pair ^ signature;
                     let triple_mask = pair_mask | (1_u64 << (METADATA_BITS - 1 - k));
                     result.insert(triple, (triple_mask, 3));
                 }
