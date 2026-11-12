@@ -51,11 +51,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Track::YouTubeMusic(id) => id,
                 _ => return Err(input_error("expected YouTube Music watch URL").into()),
             };
-            write_frame(Content::Dual {
-                spotify_id,
-                youtube_music_id,
-                moment_seconds: None,
-            }, &args[4])?
+            write_frame(
+                Content::Dual {
+                    spotify_id,
+                    youtube_music_id,
+                    moment_seconds: None,
+                },
+                &args[4],
+            )?
         }
         Some("scan") if args.len() == 3 => {
             let bytes = std::fs::read(&args[2])?;
@@ -69,12 +72,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             println!(
                 "mode: {:?}, RS repaired: {} symbols",
-                found.decoded.layout,
-                found.decoded.corrected_symbols
+                found.decoded.layout, found.decoded.corrected_symbols
             );
             match found.decoded.content {
                 Content::Single(code) => println!("{}", code.to_url()?),
-                Content::Dual { spotify_id, youtube_music_id, moment_seconds } => {
+                Content::Dual {
+                    spotify_id,
+                    youtube_music_id,
+                    moment_seconds,
+                } => {
                     let moment = moment_seconds
                         .map(|seconds| format!("&t={seconds}"))
                         .unwrap_or_default();
