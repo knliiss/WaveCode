@@ -221,6 +221,6 @@ mod tests {
         let mut frame = v2::encode(&content).unwrap();
         assert!(verified_frame(frame.metadata, &frame.symbols).is_ok());
         frame.metadata |= 2;
-        assert!(verified_frame(frame.metadata, &frame.symbols).is_err());
+        assert!(v2::decode(&frame).is_err());
     }
 }
