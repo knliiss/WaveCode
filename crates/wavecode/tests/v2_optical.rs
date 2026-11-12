@@ -127,3 +127,71 @@ fn tiny_resampled_codes_do_not_claim_guaranteed_readability() {
         assert_eq!(code.decoded.content, content);
     }
 }
+
+#[test]
+fn logo_is_found_even_with_disconnected_marks_outside_the_code() {
+    for content in samples() {
+        let input = frame_image(&content);
+        let mut scene = GrayImage::from_pixel(
+            input.width() + 160,
+            input.height() + 100,
+            Luma([255]),
+        );
+        for (x, y, pixel) in input.enumerate_pixels() {
+            scene.put_pixel(x + 80, y + 50, *pixel);
+        }
+        for &(x0, y0) in &[
+            (8, 65),
+            (input.width() + 125, 90),
+        ] {
+            for y in y0..y0 + 5 {
+                for x in x0..x0 + 5 {
+                    scene.put_pixel(x, y, Luma([0]));
+                }
+            }
+        }
+        let found = raster::scan_gray(&scene).unwrap();
+        assert_eq!(found.decoded.content, content);
+    }
+}
+
+fn keystone(input: &GrayImage, factor: f64) -> GrayImage {
+    let width = input.width() + 150;
+    let height = input.height() + 150;
+    let mut scene = GrayImage::from_pixel(width, height, Luma([255]));
+    let source_w = f64::from(input.width());
+    let middle = f64::from(input.height()) / 2.0;
+    for y in 0..height {
+        for x in 0..width {
+            let dx = f64::from(x) - 45.0;
+            let dy = f64::from(y) - 75.0;
+            let inverse = 1.0 - factor * dx / source_w;
+            if inverse <= 0.0 {
+                continue;
+            }
+            let sx = (dx / inverse).round() as i64;
+            let sy = (middle + (dy - middle) / inverse).round() as i64;
+            if sx >= 0
+                && sx < i64::from(input.width())
+                && sy >= 0
+                && sy < i64::from(input.height())
+            {
+                scene.put_pixel(x, y, *input.get_pixel(sx as u32, sy as u32));
+            }
+        }
+    }
+    scene
+}
+
+#[test]
+fn w_pose_and_payload_are_consistent_under_mild_keystone() {
+    for content in samples() {
+        let code = frame_image(&content);
+        for factor in [0.06, -0.06] {
+            let photo = keystone(&code, factor);
+            let recovered = raster::scan_gray(&photo).unwrap();
+            assert_eq!(recovered.decoded.content, content);
+            assert!(recovered.pose.project(1.0, 0.5).is_some());
+        }
+    }
+}
