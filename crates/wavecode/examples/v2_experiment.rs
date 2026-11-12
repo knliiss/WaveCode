@@ -53,13 +53,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args: Vec<String> = std::env::args().collect();
     match args.get(1).map(String::as_str) {
-        Some("encode" | "encode-adaptive") if args.len() == 4 => {
-            write_frame(
-                Content::Single(MusicCode::from_url(&args[2])?),
-                &args[3],
-                args[1] == "encode-adaptive",
-            )?
-        }
+        Some("encode" | "encode-adaptive") if args.len() == 4 => write_frame(
+            Content::Single(MusicCode::from_url(&args[2])?),
+            &args[3],
+            args[1] == "encode-adaptive",
+        )?,
         Some("dual" | "dual-adaptive") if args.len() == 5 => {
             let spotify_id = match MusicCode::from_url(&args[2])?.track {
                 Track::Spotify(id) => id,
