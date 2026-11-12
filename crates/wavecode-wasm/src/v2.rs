@@ -20,7 +20,9 @@ fn layout_name(layout: v2::Layout) -> &'static str {
 fn encoded_json(frame: &v2::Frame) -> Result<String, JsValue> {
     let decoded = v2::decode(frame).map_err(js_error)?;
     serde_json::to_string(&json!({
-        "format": "v2-experimental",
+        "format": "v2-dot-bch",
+        "version": v2::anchor::VERSION,
+        "anchor": "round-dot-w-bch40",
         "layout": layout_name(decoded.layout),
         "metadata": frame.metadata,
         "symbols": &frame.symbols,
@@ -49,7 +51,9 @@ fn decoded_value(decoded: &v2::Decoded) -> Result<Value, wavecode::Error> {
         ],
     };
     Ok(json!({
-        "format": "v2-experimental",
+        "format": "v2-dot-bch",
+        "version": v2::anchor::VERSION,
+        "anchor": "round-dot-w-bch40",
         "layout": layout_name(decoded.layout),
         "urls": urls,
         "corrected_symbols": decoded.corrected_symbols,
@@ -83,7 +87,7 @@ pub fn v2_encode_url(url: &str, moment_override: Option<u16>) -> Result<String, 
     if let Some(moment) = moment_override {
         code.moment_seconds = Some(moment);
     }
-    let frame = v2::encode(&v2::Content::Single(code)).map_err(js_error)?;
+    let frame = v2::encode_adaptive(&v2::Content::Single(code)).map_err(js_error)?;
     encoded_json(&frame)
 }
 
@@ -99,7 +103,7 @@ pub fn v2_encode_dual(
         youtube_music_id: youtube_music_id.to_owned(),
         moment_seconds,
     };
-    encoded_json(&v2::encode(&content).map_err(js_error)?)
+    encoded_json(&v2::encode_adaptive(&content).map_err(js_error)?)
 }
 
 /// Validate the CRC/RS-protected frame before generating output geometry.
@@ -171,6 +175,9 @@ pub fn v2_scan_image(image: &[u8]) -> Result<String, JsValue> {
     if !norm.is_finite() || norm < 1.0e-7 {
         return Err(js_error("degenerate W anchor direction"));
     }
+    result["version"] = json!(located.version);
+    result["metadata"] = json!(located.profile);
+    result["anchor_corrected_bits"] = json!(located.corrected_anchor_bits);
     result["bounds"] = json!({
         "left": located.bounds.left,
         "top": located.bounds.top,
