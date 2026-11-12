@@ -194,3 +194,26 @@ fn proposed_column_budgets_preserve_crc16_and_four_rs_bytes() {
     assert_eq!(columns(2 + 32), 11);
     assert_eq!(columns(74), 16);
 }
+
+
+#[test]
+fn padding_slack_can_host_exact_short_moments_without_another_column() {
+    fn slack(identity_bits: usize) -> usize {
+        let information_and_crc = identity_bits + 16;
+        8 * information_and_crc.div_ceil(8) - information_and_crc
+    }
+
+    for (identity_bits, time_bits, expected_columns) in [
+        (131, 5, 23),
+        (131 + 64, 5, 31),
+        (2 + 32, 6, 11),
+        (74, 6, 16),
+    ] {
+        assert_eq!(slack(identity_bits), time_bits);
+        assert_eq!(columns(identity_bits), expected_columns);
+        assert_eq!(columns(identity_bits + time_bits), expected_columns);
+        assert_eq!(columns(identity_bits + time_bits + 1), expected_columns + 1);
+    }
+    assert_eq!(slack(64), 0);
+    assert_eq!(columns(64 + 1), columns(64) + 1);
+}
