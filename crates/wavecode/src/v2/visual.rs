@@ -1,6 +1,6 @@
 //! Deterministic black/white W + dual-rail rendering for the V2 experiment.
-use crate::Error;
 use super::{anchor, Frame};
+use crate::Error;
 
 const W_PITCH_RATIO: f64 = 0.52;
 const W_NARROW: f64 = 0.27;
@@ -17,7 +17,11 @@ pub struct RenderProfile {
 
 impl Default for RenderProfile {
     fn default() -> Self {
-        Self { pitch: 18.0, height: 180.0, quiet: 18.0 }
+        Self {
+            pitch: 18.0,
+            height: 180.0,
+            quiet: 18.0,
+        }
     }
 }
 
@@ -37,9 +41,14 @@ pub struct Metrics {
 
 impl RenderProfile {
     pub fn metrics(self, symbols: usize) -> Result<Metrics, Error> {
-        if symbols == 0 || symbols > 34
-            || ![self.pitch, self.height, self.quiet].iter().all(|n| n.is_finite())
-            || self.pitch < 6.0 || self.height < 90.0 || self.quiet < 0.0
+        if symbols == 0
+            || symbols > 34
+            || ![self.pitch, self.height, self.quiet]
+                .iter()
+                .all(|n| n.is_finite())
+            || self.pitch < 6.0
+            || self.height < 90.0
+            || self.quiet < 0.0
         {
             return Err(Error::InvalidGeometry);
         }
@@ -80,7 +89,10 @@ impl Rect {
     }
 }
 
-fn rectangles(frame: &Frame, profile: RenderProfile) -> Result<(Metrics, Vec<(Rect, &'static str)>), Error> {
+fn rectangles(
+    frame: &Frame,
+    profile: RenderProfile,
+) -> Result<(Metrics, Vec<(Rect, &'static str)>), Error> {
     let metrics = profile.metrics(frame.symbols.len())?;
     let metadata = anchor::encode_meta(frame.metadata)?;
     let mut list = Vec::with_capacity(anchor::COLUMNS * 2 + frame.symbols.len() * 2);
@@ -96,7 +108,11 @@ fn rectangles(frame: &Frame, profile: RenderProfile) -> Result<(Metrics, Vec<(Re
             } else {
                 profile.pitch * W_NARROW
             };
-            let level = if upper { anchor::UPPER[index] } else { anchor::LOWER[index] };
+            let level = if upper {
+                anchor::UPPER[index]
+            } else {
+                anchor::LOWER[index]
+            };
             let height = metrics.base_height + f64::from(level) * metrics.height_step;
             let y = if upper {
                 metrics.upper_baseline - height
@@ -104,7 +120,12 @@ fn rectangles(frame: &Frame, profile: RenderProfile) -> Result<(Metrics, Vec<(Re
                 metrics.lower_baseline
             };
             list.push((
-                Rect { x: center - width / 2.0, y, width, height },
+                Rect {
+                    x: center - width / 2.0,
+                    y,
+                    width,
+                    height,
+                },
                 if upper { "w-upper" } else { "w-lower" },
             ));
         }
@@ -128,7 +149,12 @@ fn rectangles(frame: &Frame, profile: RenderProfile) -> Result<(Metrics, Vec<(Re
                 metrics.lower_baseline
             };
             list.push((
-                Rect { x: center - width / 2.0, y, width, height },
+                Rect {
+                    x: center - width / 2.0,
+                    y,
+                    width,
+                    height,
+                },
                 if upper { "data-upper" } else { "data-lower" },
             ));
         }
@@ -190,13 +216,16 @@ pub fn render_png(frame: &Frame, profile: RenderProfile) -> Result<Vec<u8>, Erro
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{MusicCode, v2::{encode, Content}};
+    use crate::{
+        v2::{encode, Content},
+        MusicCode,
+    };
 
     #[test]
     fn every_layout_renders_a_w_left_of_data_without_v1_guards() {
-        let single = Content::Single(MusicCode::from_url(
-            "https://music.youtube.com/watch?v=JGwWNGJdvx8",
-        ).unwrap());
+        let single = Content::Single(
+            MusicCode::from_url("https://music.youtube.com/watch?v=JGwWNGJdvx8").unwrap(),
+        );
         let dual = Content::Dual {
             spotify_id: "0VjIjW4GlUZAMYd2vXMi3b".into(),
             youtube_music_id: "JGwWNGJdvx8".into(),
@@ -207,17 +236,25 @@ mod tests {
             let svg = render_svg(&frame, RenderProfile::default()).unwrap();
             assert_eq!(svg.matches("class=\"w-upper\"").count(), 11);
             assert_eq!(svg.matches("class=\"w-lower\"").count(), 11);
-            assert_eq!(svg.matches("class=\"data-upper\"").count(), frame.symbols.len());
-            assert!(svg.find("class=\"w-upper\"").unwrap() < svg.find("class=\"data-upper\"").unwrap());
+            assert_eq!(
+                svg.matches("class=\"data-upper\"").count(),
+                frame.symbols.len()
+            );
+            assert!(
+                svg.find("class=\"w-upper\"").unwrap() < svg.find("class=\"data-upper\"").unwrap()
+            );
         }
     }
 
     #[test]
     fn compact_is_smaller_than_old_36_column_code_at_fixed_pitch() {
-        let frame = encode(&Content::Single(MusicCode::from_url(
-            "https://music.youtube.com/watch?v=JGwWNGJdvx8",
-        ).unwrap())).unwrap();
-        let metrics = RenderProfile::default().metrics(frame.symbols.len()).unwrap();
+        let frame = encode(&Content::Single(
+            MusicCode::from_url("https://music.youtube.com/watch?v=JGwWNGJdvx8").unwrap(),
+        ))
+        .unwrap();
+        let metrics = RenderProfile::default()
+            .metrics(frame.symbols.len())
+            .unwrap();
         let old_code = 36.0 * 18.0 / 0.89;
         assert!(metrics.width < old_code * 0.75);
     }
