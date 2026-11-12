@@ -29,7 +29,7 @@ No camera permission is requested by this library. Camera capture, video frames 
 The public JS functions match their equivalents in `include/wavecode.h`.
 
 
-## Experimental V2 W-anchor API
+## Experimental V2 round-dot W-anchor API
 
 V1 exports above remain unchanged. The V2 functions are opt-in and are **not yet
 production camera-scanning APIs**. Every new V2 frame contains the W locator on
@@ -56,9 +56,12 @@ const png = v2_render_png(frame.metadata, symbols, 18, 180, 18);
 const decoded = JSON.parse(v2_scan_image(png));
 
 console.log(frame.layout); // compact
+console.log(frame.version); // 2, stored explicitly as 12 BCH-protected W bits
+console.log(frame.anchor); // round-dot-w-bch40
 console.log(decoded.urls); // original music URL
 console.log(decoded.anchor.towards_payload); // image-space direction
-console.log(decoded.anchor.corners); // four W locator fiducials
+console.log(decoded.anchor.corners); // four corners of fitted W coordinate frame
+console.log(decoded.anchor_corrected_bits); // repaired dot classification errors
 
 const dual = JSON.parse(v2_encode_dual(
   '0VjIjW4GlUZAMYd2vXMi3b', 'JGwWNGJdvx8', 59
@@ -70,9 +73,9 @@ console.log(recovered.urls); // both independent platform URLs
 ```
 
 The rendering arguments are **pitch, height, and quiet zone in pixels**.
-The encoder returns a JSON object with `format`, `layout`, `metadata`, and
+The encoder uses the shortest available safe adaptive V2 payload mode and returns a JSON object with `format`, `version`, `anchor`, `layout`, `metadata`, and
 `symbols`; the symbols must be passed as a `Uint8Array`. The scanner returns
-JSON with `format`, `layout`, `urls`, `corrected_symbols`, `bounds`, and
+JSON with `format`, `version`, `metadata`, `anchor_corrected_bits`, `layout`, `urls`, `corrected_symbols`, `bounds`, and
 `anchor` (`corners`, `center`, and `towards_payload`, including angle in
 radians). `towards_payload` is the logical W-to-data direction even when the
 printed mark is rotated.
@@ -82,3 +85,11 @@ Real phone photographs with perspective, glare, crowded backgrounds, or
 low-resolution printing need more experiments. **Do not replace the V1
 production scanner with V2 automatically.** V2 functions and JSON objects are
 experimental and may change before the optical format is frozen.
+
+The **W itself contains no rectangles or capsules**: its fixed outer circular
+mosaic and 40 variable-size interior circles form the finder and routing
+header. The BCH-protected metadata is exactly 12-bit version (`2` in V2),
+6-bit adaptive payload profile, and 4-bit visual-choice selector. Legacy
+rectangular V2 W anchors are intentionally not recognized by the V2 image
+scanner. This does not affect V1. The source-only V2 profile fallback still
+supports arbitrary platform IDs and long timestamps with the new round-dot W.
