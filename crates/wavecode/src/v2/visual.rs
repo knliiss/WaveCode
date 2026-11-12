@@ -254,29 +254,60 @@ mod tests {
         ] {
             let frame = encode(&Content::Single(MusicCode::from_url(input).unwrap())).unwrap();
             let svg = render_svg(&frame, RenderProfile::default()).unwrap();
-            let fixed = anchor::sites().iter().filter(|site| site.bit.is_none()).count();
+            let fixed = anchor::sites()
+                .iter()
+                .filter(|site| site.bit.is_none())
+                .count();
             assert_eq!(svg.matches("class=\"w-fixed-dot\"").count(), fixed);
             assert_eq!(svg.matches("class=\"w-data-dot\"").count(), 40);
             assert!(!svg.contains("w-upper"));
             assert!(!svg.contains("w-lower"));
             assert!(svg.contains("data-version=\"2\""));
-            assert_eq!(svg.matches("class=\"data-upper\"").count(), frame.symbols.len());
-            assert!(svg.find("class=\"w-fixed-dot\"").unwrap() < svg.find("class=\"data-upper\"").unwrap());
+            assert_eq!(
+                svg.matches("class=\"data-upper\"").count(),
+                frame.symbols.len()
+            );
+            assert!(
+                svg.find("class=\"w-fixed-dot\"").unwrap()
+                    < svg.find("class=\"data-upper\"").unwrap()
+            );
         }
     }
 
     #[test]
     fn changing_profile_never_changes_the_w_centers_or_outer_silhouette() {
         let a = marks(
-            &Frame { metadata: 1, symbols: vec![0; 14] },
+            &Frame {
+                metadata: 1,
+                symbols: vec![0; 14],
+            },
             RenderProfile::default(),
-        ).unwrap().1;
+        )
+        .unwrap()
+        .1;
         let b = marks(
-            &Frame { metadata: 15, symbols: vec![0; 14] },
+            &Frame {
+                metadata: 15,
+                symbols: vec![0; 14],
+            },
             RenderProfile::default(),
-        ).unwrap().1;
-        let dots_a: Vec<_> = a.iter().filter_map(|mark| match mark { Mark::Dot(dot) => Some(dot), _ => None }).collect();
-        let dots_b: Vec<_> = b.iter().filter_map(|mark| match mark { Mark::Dot(dot) => Some(dot), _ => None }).collect();
+        )
+        .unwrap()
+        .1;
+        let dots_a: Vec<_> = a
+            .iter()
+            .filter_map(|mark| match mark {
+                Mark::Dot(dot) => Some(dot),
+                _ => None,
+            })
+            .collect();
+        let dots_b: Vec<_> = b
+            .iter()
+            .filter_map(|mark| match mark {
+                Mark::Dot(dot) => Some(dot),
+                _ => None,
+            })
+            .collect();
         assert_eq!(dots_a.len(), dots_b.len());
         for (x, y) in dots_a.into_iter().zip(dots_b) {
             assert_eq!((x.cx, x.cy), (y.cx, y.cy));

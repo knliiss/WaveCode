@@ -94,7 +94,11 @@ fn connected(image: &GrayImage, light: bool) -> Result<Vec<Component>, Error> {
             seen[pixel_index] = true;
             let ink = |px: usize, py: usize| {
                 let gray = image.get_pixel(px as u32, py as u32).0[0];
-                if light { gray >= 128 } else { gray < 128 }
+                if light {
+                    gray >= 128
+                } else {
+                    gray < 128
+                }
             };
             if !ink(x, y) {
                 continue;
@@ -170,9 +174,7 @@ fn dot_cluster<'a>(components: &'a [Component]) -> Result<Vec<&'a Component>, Er
     let median_area = areas[areas.len() / 2];
     let candidates: Vec<_> = components
         .iter()
-        .filter(|part| {
-            part.area() >= median_area * 0.25 && part.area() <= median_area * 1.75
-        })
+        .filter(|part| part.area() >= median_area * 0.25 && part.area() <= median_area * 1.75)
         .collect();
     if candidates.len() < 68 {
         return Err(Error::InvalidFrame);
@@ -241,18 +243,26 @@ fn fit<'a>(dots: &[&'a Component], sites: &[DotSite], angle: f64) -> Option<Fit<
         .iter()
         .map(|part| (part.cx * cos + part.cy * sin, part.cy * cos - part.cx * sin))
         .collect();
-    let (min_u, max_u) = points.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |a, p| {
-        (a.0.min(p.0), a.1.max(p.0))
-    });
-    let (min_v, max_v) = points.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |a, p| {
-        (a.0.min(p.1), a.1.max(p.1))
-    });
-    let (min_x, max_x) = sites.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |a, p| {
-        (a.0.min(p.x), a.1.max(p.x))
-    });
-    let (min_y, max_y) = sites.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |a, p| {
-        (a.0.min(p.y), a.1.max(p.y))
-    });
+    let (min_u, max_u) = points
+        .iter()
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |a, p| {
+            (a.0.min(p.0), a.1.max(p.0))
+        });
+    let (min_v, max_v) = points
+        .iter()
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |a, p| {
+            (a.0.min(p.1), a.1.max(p.1))
+        });
+    let (min_x, max_x) = sites
+        .iter()
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |a, p| {
+            (a.0.min(p.x), a.1.max(p.x))
+        });
+    let (min_y, max_y) = sites
+        .iter()
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |a, p| {
+            (a.0.min(p.y), a.1.max(p.y))
+        });
     let scale_x = (max_u - min_u) / (max_x - min_x);
     let scale_y = (max_v - min_v) / (max_y - min_y);
     if scale_x <= 2.0 || scale_y <= 2.0 || (scale_x / scale_y - 1.0).abs() > 0.27 {
@@ -361,8 +371,7 @@ fn read_frame(
         })
         .collect();
     let pitch = if pairs.len() > 1 {
-        (pairs.last().unwrap().0.u - pairs.first().unwrap().0.u)
-            / (pairs.len() - 1) as f64
+        (pairs.last().unwrap().0.u - pairs.first().unwrap().0.u) / (pairs.len() - 1) as f64
     } else {
         return Err(Error::InvalidFrame);
     };
@@ -375,8 +384,7 @@ fn read_frame(
     let mut symbols = Vec::with_capacity(pairs.len());
     for (index, &(upper, lower)) in pairs.iter().enumerate() {
         if (upper.u - lower.u).abs() > pitch * 0.27
-            || (index > 0
-                && ((upper.u - pairs[index - 1].0.u) - pitch).abs() > pitch * 0.28)
+            || (index > 0 && ((upper.u - pairs[index - 1].0.u) - pitch).abs() > pitch * 0.28)
         {
             return Err(Error::InvalidFrame);
         }
@@ -392,8 +400,16 @@ fn read_frame(
         let down = level(lower.transverse)?;
         let symbol = (up << 5)
             | (down << 2)
-            | if upper.longitudinal / pitch > 0.55 { 2 } else { 0 }
-            | if lower.longitudinal / pitch > 0.55 { 1 } else { 0 };
+            | if upper.longitudinal / pitch > 0.55 {
+                2
+            } else {
+                0
+            }
+            | if lower.longitudinal / pitch > 0.55 {
+                1
+            } else {
+                0
+            };
         symbols.push(symbol);
     }
     let decoded = codec::decode(&Frame {
@@ -407,7 +423,11 @@ fn read_frame(
         fit.to_image(anchor::W_X_MAX, anchor::W_Y_MAX),
     ];
     let pose = AnchorPose::from_fiducials(corners)?;
-    let selected: Vec<_> = dots.iter().copied().chain(bars.iter().map(|(part, _)| *part)).collect();
+    let selected: Vec<_> = dots
+        .iter()
+        .copied()
+        .chain(bars.iter().map(|(part, _)| *part))
+        .collect();
     let left = selected.iter().map(|part| part.left).min().unwrap_or(0);
     let right = selected.iter().map(|part| part.right).max().unwrap_or(left);
     let top = selected.iter().map(|part| part.top).min().unwrap_or(0);
@@ -492,7 +512,8 @@ mod tests {
                 MusicCode::from_url("https://music.youtube.com/watch?v=JGwWNGJdvx8&t=52").unwrap(),
             ),
             Content::Single(
-                MusicCode::from_url("https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b").unwrap(),
+                MusicCode::from_url("https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b")
+                    .unwrap(),
             ),
             Content::Dual {
                 spotify_id: "0VjIjW4GlUZAMYd2vXMi3b".into(),

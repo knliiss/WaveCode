@@ -62,9 +62,8 @@ pub fn sites() -> Vec<DotSite> {
                     let (bx, by) = segment[1];
                     let dx = bx - ax;
                     let dy = by - ay;
-                    let projected = (((x - ax) * dx + (y - ay) * dy)
-                        / (dx * dx + dy * dy))
-                        .clamp(0.0, 1.0);
+                    let projected =
+                        (((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy)).clamp(0.0, 1.0);
                     (x - ax - projected * dx).hypot(y - ay - projected * dy)
                 })
                 .fold(f64::INFINITY, f64::min);
@@ -146,10 +145,7 @@ fn visual_cost(bits: &[bool; METADATA_BITS], dots: &[DotSite]) -> i32 {
 
 /// Exactly 12 version bits, 6 profile bits and 4 freely chosen visual bits.
 /// The 16 valid aesthetic alternatives all decode to the same routing metadata.
-pub fn encode_version_profile(
-    version: u16,
-    profile: u8,
-) -> Result<[bool; METADATA_BITS], Error> {
+pub fn encode_version_profile(version: u16, profile: u8) -> Result<[bool; METADATA_BITS], Error> {
     let dots = sites();
     let mut best = None;
     for shape in 0..16_u8 {
@@ -177,8 +173,8 @@ fn syndrome_table() -> &'static HashMap<u32, (u64, u8)> {
             result.insert(signatures[i], (1_u64 << (METADATA_BITS - 1 - i), 1));
             for j in (i + 1)..METADATA_BITS {
                 let pair = signatures[i] ^ signatures[j];
-                let pair_mask = (1_u64 << (METADATA_BITS - 1 - i))
-                    | (1_u64 << (METADATA_BITS - 1 - j));
+                let pair_mask =
+                    (1_u64 << (METADATA_BITS - 1 - i)) | (1_u64 << (METADATA_BITS - 1 - j));
                 result.insert(pair, (pair_mask, 2));
                 for k in (j + 1)..METADATA_BITS {
                     let triple = pair ^ signatures[k];
@@ -336,7 +332,10 @@ mod tests {
                     let mut double = single;
                     double[b] = !double[b];
                     let meta = decode_version_profile(double).unwrap();
-                    assert_eq!((meta.version, meta.profile, meta.corrected_bits), (version, profile, 2));
+                    assert_eq!(
+                        (meta.version, meta.profile, meta.corrected_bits),
+                        (version, profile, 2)
+                    );
                 }
             }
         }
@@ -349,7 +348,10 @@ mod tests {
                     damaged[b] = !damaged[b];
                     damaged[c] = !damaged[c];
                     let restored = decode_version_profile(damaged).unwrap();
-                    assert_eq!((restored.version, restored.profile, restored.corrected_bits), (VERSION, 41, 3));
+                    assert_eq!(
+                        (restored.version, restored.profile, restored.corrected_bits),
+                        (VERSION, 41, 3)
+                    );
                 }
             }
         }
@@ -371,7 +373,10 @@ mod tests {
     fn dot_layout_has_fixed_contour_and_exactly_40_information_sites() {
         let dots = sites();
         assert!(dots.len() >= 70);
-        assert_eq!(dots.iter().filter(|dot| dot.bit.is_some()).count(), METADATA_BITS);
+        assert_eq!(
+            dots.iter().filter(|dot| dot.bit.is_some()).count(),
+            METADATA_BITS
+        );
         let mut indexes = dots.iter().filter_map(|dot| dot.bit).collect::<Vec<_>>();
         indexes.sort_unstable();
         assert_eq!(indexes, (0..METADATA_BITS).collect::<Vec<_>>());
@@ -400,9 +405,10 @@ mod tests {
             Point { x: 290.0, y: 201.0 },
         ];
         let pose = AnchorPose::from_fiducials(expected).unwrap();
-        for (point, &(x, y)) in expected
-            .iter()
-            .zip(&[(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)])
+        for (point, &(x, y)) in
+            expected
+                .iter()
+                .zip(&[(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)])
         {
             let projected = pose.project(x, y).unwrap();
             assert!((projected.x - point.x).hypot(projected.y - point.y) < 1.0e-5);
