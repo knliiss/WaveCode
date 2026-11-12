@@ -175,6 +175,45 @@ assign disjoint reserved version values with fewer available profiles, or
 introduce a recognizably new format and run dual-format readers during
 migration. Maintain compatibility with already printed V1.
 
+### A concrete 16-entry W codebook candidate (not yet frozen)
+
+The existing V2 decoder accepts only the six even headers
+`0,2,4,6,8,10`: Compact/Full/Dual, each without or with a 16-bit
+moment. We can **retain those six byte-for-byte**, using only the ten
+currently rejected header words for experiments:
+
+| W header | Prototype payload class | No-moment / time limit | Columns |
+| ---: | --- | --- | ---: |
+| 0 | Existing Compact fallback | None | Existing formula |
+| 2 | Existing Compact fallback | 16-bit time | Existing formula |
+| 4 | Existing Full fallback | None | 23 |
+| 6 | Existing Full fallback | 16-bit time | 25 |
+| 8 | Existing Dual fallback | None | 31 |
+| 10 | Existing Dual fallback | 16-bit time | 33 |
+| 1 | Canonical YouTube Music 64-bit | None | 14 |
+| 3 | Canonical YouTube Music 64-bit | 0..255 seconds | 15 |
+| 5 | Four numeric services, 2-bit tag, 32-bit ID | None | 11 |
+| 7 | Three moment-capable numeric services, 2-bit tag, 32-bit ID | 0..255 seconds | 12 |
+| 9 | Spotify Base62 rank fitting 128 bits | None | 22 |
+| 11 | Spotify full 131-bit rank | 0..255 seconds | 24 |
+| 12 | Spotify rank fitting 128 bits | 0..255 seconds | 23 |
+| 13 | Spotify 131-bit + canonical YouTube 64-bit | 0..255 seconds | 32 |
+| 14 | Spotify rank fitting 128 bits + canonical YouTube 64-bit | None | 30 |
+| 15 | Spotify rank fitting 128 bits + canonical YouTube 64-bit | 0..255 seconds | 31 |
+
+Headers 1,3,5,7,9,11 all have the previously reserved bit set and
+12..15 were previously unsupported layouts, so **existing experimental
+V2 readers reject rather than misinterpret them**. The new reader still
+validates the CRC over `[metadata, message]`, RS and exact ID ranges.
+
+This is only **one allocation candidate** under a scarce 16-entry budget:
+it favors YouTube Music, small numeric IDs and short moments. It does not
+yet allocate a header for small timestamp packing into spare alignment
+bits, Apple/numeric domain unification, or YouTube Video/Short-specific
+specialized codebooks. Those remain eligible candidates, and selecting
+the final 10 extensions requires measured workload and optical costs.
+No new header is implemented by these research tests.
+
 ## Column budgets: same CRC-16 + 4 RS bytes
 
 For `B` information bits, with the entire logical mode available via W:
