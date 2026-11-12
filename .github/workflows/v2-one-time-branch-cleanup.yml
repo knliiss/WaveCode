@@ -1,0 +1,42 @@
+name: V2 one-time branch cleanup
+
+on:
+  push:
+    branches:
+      - experiment/v2
+
+permissions:
+  contents: write
+
+jobs:
+  remove-superseded-branches:
+    if: github.repository == 'knliiss/WaveCode' && github.ref == 'refs/heads/experiment/v2'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Remove only known superseded experimental refs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          current="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/experiment/v2" --jq '.object.sha')"
+          if [[ "${current}" != "${GITHUB_SHA}" ]]; then
+            echo "Not cleaning branches on a stale workflow revision" >&2
+            exit 1
+          fi
+          for branch in \
+            experiment/v2-adaptive-codec \
+            experiment/v2-adaptive-rank-research \
+            experiment/v2-dot-w-bch \
+            experiment/v2-w-anchor-pose-compact \
+            experiment/v2-w-anchor-wasm \
+            experiment/v3-dot-w-bch
+          do
+            endpoint="repos/${GITHUB_REPOSITORY}/git/refs/heads/${branch}"
+            if gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/${branch}" >/dev/null 2>&1; then
+              gh api --method DELETE "${endpoint}"
+              echo "Deleted superseded branch: ${branch}"
+            else
+              echo "Already absent: ${branch}"
+            fi
+          done
