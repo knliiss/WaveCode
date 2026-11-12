@@ -182,6 +182,24 @@ If `T` is an arbitrary 16-bit timestamp, worst-case time takes 16 bits.
 An explicit "short moment" profile can represent exactly 0..255 seconds in
 8 bits, with a 16-bit fallback. Do not quantize or silently lose seconds.
 
+## A practical impossibility bound: 13-column universal YouTube
+
+Suppose a **single** W layout must encode any of the `2^64` canonical
+YouTube identities in 13 byte-carrying payload columns, without weakening
+CRC-16 or four RS parity bytes. Only `13-4-2=7` data bytes remain: at most
+`2^56` distinct IDs fit, which is just **1/256** of the required domain.
+Therefore **13 payload columns cannot cover all 64-bit YouTube IDs** with
+the same protection and the current eight-bit optical alphabet.
+
+Even generously allocating **all 16** distinguishable W metawords to
+different 13-column routing classes yields at most
+`16 * 2^56 = 2^60 < 2^64` identities, and that would leave no metadata
+states for any other layout or timestamp. With no ID data permitted in W,
+a 14-column specialized canonical-YouTube frame is the firm lower bound
+**within the present CRC+RS byte-frame construction**. This is not a claim
+that every conceivable nonlinear channel code needs 14 symbols: the
+claim expressly assumes unchanged CRC-16 and four systematic RS bytes.
+
 ## Another bound: variable optical length is not free storage
 
 If a decoder reliably distinguishes length classes `b_1,..,b_k` and their
