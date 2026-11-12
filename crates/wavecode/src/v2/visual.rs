@@ -89,10 +89,12 @@ impl Rect {
     }
 }
 
+type NamedRect = (Rect, &'static str);
+
 fn rectangles(
     frame: &Frame,
     profile: RenderProfile,
-) -> Result<(Metrics, Vec<(Rect, &'static str)>), Error> {
+) -> Result<(Metrics, Vec<NamedRect>), Error> {
     let metrics = profile.metrics(frame.symbols.len())?;
     let metadata = anchor::encode_meta(frame.metadata)?;
     let mut list = Vec::with_capacity(anchor::COLUMNS * 2 + frame.symbols.len() * 2);
