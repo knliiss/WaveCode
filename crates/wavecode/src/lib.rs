@@ -30,6 +30,10 @@ pub struct OrientedDecoded {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Track {
     YouTubeMusic(String),
+    YouTubeVideo(String),
+    YouTubeShort(String),
+    TikTokVideo(u64),
+    InstagramReel(String),
     Spotify(String),
     AppleMusic { id: u64, storefront: String },
     Deezer(u64),
@@ -42,7 +46,7 @@ impl Track {
     pub fn from_url(url: &str) -> Result<Self, Error> {
         let rest = url.strip_prefix("https://").ok_or(Error::UnsupportedUrl)?;
         let (host, rest) = rest.split_once('/').ok_or(Error::UnsupportedUrl)?;
-        if rest.contains('@') || host.contains(':') {
+        if host.contains('@') || host.contains(':') {
             return Err(Error::UnsupportedUrl);
         }
         let fragment_free = rest.split('#').next().unwrap_or(rest);
@@ -50,16 +54,54 @@ impl Track {
         let segments: Vec<&str> = path.split('/').filter(|part| !part.is_empty()).collect();
 
         match host {
-            "music.youtube.com" | "www.youtube.com" | "youtube.com"
-                if segments.as_slice() == ["watch"] =>
-            {
+            "music.youtube.com" if segments.as_slice() == ["watch"] => {
                 let id = parameter(query, "v").ok_or(Error::InvalidIdentifier)?;
                 let track = Self::YouTubeMusic(id.to_owned());
                 identity::encode(&track)?;
                 Ok(track)
             }
+            "www.youtube.com" | "youtube.com" | "m.youtube.com"
+                if segments.as_slice() == ["watch"] =>
+            {
+                let id = parameter(query, "v").ok_or(Error::InvalidIdentifier)?;
+                let track = Self::YouTubeVideo(id.to_owned());
+                identity::encode(&track)?;
+                Ok(track)
+            }
+            "www.youtube.com" | "youtube.com" | "m.youtube.com"
+                if segments.len() == 2 && segments[0] == "shorts" =>
+            {
+                let track = Self::YouTubeShort(segments[1].to_owned());
+                identity::encode(&track)?;
+                Ok(track)
+            }
             "youtu.be" if segments.len() == 1 => {
-                let track = Self::YouTubeMusic(segments[0].to_owned());
+                let track = Self::YouTubeVideo(segments[0].to_owned());
+                identity::encode(&track)?;
+                Ok(track)
+            }
+            "www.tiktok.com" | "tiktok.com"
+                if segments.len() == 3 && segments[1] == "video" =>
+            {
+                let handle = segments[0];
+                if !handle.starts_with('@')
+                    || !handle[1..].bytes().all(|c| {
+                        c.is_ascii_alphanumeric() || c == b'_' || c == b'.'
+                    })
+                    || handle.len() > 25
+                {
+                    return Err(Error::InvalidIdentifier);
+                }
+                let id = segments[2].parse::<u64>().map_err(|_| Error::InvalidIdentifier)?;
+                if id == 0 {
+                    return Err(Error::InvalidIdentifier);
+                }
+                Ok(Self::TikTokVideo(id))
+            }
+            "www.instagram.com" | "instagram.com"
+                if segments.len() == 2 && (segments[0] == "reel" || segments[0] == "reels") =>
+            {
+                let track = Self::InstagramReel(segments[1].to_owned());
                 identity::encode(&track)?;
                 Ok(track)
             }
@@ -132,6 +174,12 @@ impl Track {
         identity::encode(self)?;
         Ok(match self {
             Self::YouTubeMusic(id) => format!("https://music.youtube.com/watch?v={id}"),
+            Self::YouTubeVideo(id) => format!("https://www.youtube.com/watch?v={id}"),
+            Self::YouTubeShort(id) => format!("https://www.youtube.com/shorts/{id}"),
+            Self::TikTokVideo(id) => format!("https://www.tiktok.com/@/video/{id}"),
+            Self::InstagramReel(shortcode) => {
+                format!("https://www.instagram.com/reel/{shortcode}/")
+            },
             Self::Spotify(id) => format!("https://open.spotify.com/track/{id}"),
             Self::AppleMusic { id, storefront } => {
                 format!("https://music.apple.com/{storefront}/song/{id}")
@@ -141,6 +189,10 @@ impl Track {
             Self::Qobuz(id) => format!("https://open.qobuz.com/track/{id}"),
             Self::AmazonMusic(asin) => format!("https://music.amazon.com/tracks/{asin}"),
         })
+    }
+
+    pub(crate) fn supports_moment(&self) -> bool {
+        !matches!(self, Self::TikTokVideo(_) | Self::InstagramReel(_))
     }
 }
 
@@ -175,14 +227,29 @@ impl MusicCode {
                 }
             }
         }
-        Ok(Self {
+        let code = Self {
             track,
             moment_seconds,
-        })
+        };
+        code.validate_moment()?;
+        Ok(code)
+    }
+
+    pub(crate) fn validate_moment(&self) -> Result<(), Error> {
+        if self.moment_seconds.is_some() && !self.track.supports_moment() {
+            return Err(Error::InvalidTimestamp);
+        }
+        Ok(())
     }
 
     pub fn to_url(&self) -> Result<String, Error> {
-        let mut url = self.track.to_url()?;
+        self.validate_moment()?;
+        let mut url = match (&self.track, self.moment_seconds) {
+            (Track::YouTubeShort(id), Some(_)) => {
+                format!("https://www.youtube.com/watch?v={id}")
+            }
+            _ => self.track.to_url()?,
+        };
         if let Some(seconds) = self.moment_seconds {
             if url.contains('?') {
                 url.push_str("&t=");
@@ -248,6 +315,7 @@ impl std::fmt::Display for Error {
 impl std::error::Error for Error {}
 
 pub fn encode_symbols(code: &MusicCode) -> Result<Vec<u8>, Error> {
+    code.validate_moment()?;
     let mut value = identity::encode(&code.track)?;
     let data_length = match code.moment_seconds {
         None => TRACK_SYMBOLS - PARITY_SYMBOLS,
@@ -299,11 +367,15 @@ pub fn decode_symbols_with_erasures(symbols: &[u8], erasures: &[usize]) -> Resul
     if identity >= identity::capacity() {
         return Err(Error::InvalidCodeword);
     }
+    let code = MusicCode {
+        track: identity::decode(identity)?,
+        moment_seconds,
+    };
+    if code.validate_moment().is_err() {
+        return Err(Error::InvalidCodeword);
+    }
     Ok(Decoded {
-        code: MusicCode {
-            track: identity::decode(identity)?,
-            moment_seconds,
-        },
+        code,
         corrected_symbols,
     })
 }
