@@ -7,6 +7,8 @@ const AMAZON_ALPHABET: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const INSTAGRAM_ALPHABET: &[u8] =
     b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 const MAX_INSTAGRAM_SHORTCODE: usize = 16;
+const TIKTOK_SHORT_ALPHABET: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+const MAX_TIKTOK_SHORTCODE: usize = 16;
 
 fn youtube_space() -> Rank {
     Rank::pow(64, 11)
@@ -68,8 +70,20 @@ fn instagram_length_start(length: usize) -> Rank {
     (1..length).fold(Rank::zero(), |sum, n| sum.add(Rank::pow(64, n)))
 }
 
-pub(crate) fn capacity() -> Rank {
+fn tiktok_short_start() -> Rank {
     instagram_start().add(instagram_space())
+}
+
+fn tiktok_short_space() -> Rank {
+    (1..=MAX_TIKTOK_SHORTCODE).fold(Rank::zero(), |sum, length| sum.add(Rank::pow(62, length)))
+}
+
+fn tiktok_short_length_start(length: usize) -> Rank {
+    (1..length).fold(Rank::zero(), |sum, n| sum.add(Rank::pow(62, n)))
+}
+
+pub(crate) fn capacity() -> Rank {
+    tiktok_short_start().add(tiktok_short_space())
 }
 
 fn storefront_rank(storefront: &str) -> Result<u64, Error> {
@@ -118,6 +132,16 @@ pub(crate) fn encode(track: &Track) -> Result<Rank, Error> {
             Ok(amazon_start().add(number))
         }
         Track::TikTokVideo(id) => Ok(tiktok_start().add(Rank::from_u64(*id))),
+        Track::TikTokShort(shortcode) => {
+            if shortcode.is_empty() || shortcode.len() > MAX_TIKTOK_SHORTCODE {
+                return Err(Error::InvalidIdentifier);
+            }
+            let number = Rank::from_digits(shortcode, TIKTOK_SHORT_ALPHABET)
+                .ok_or(Error::InvalidIdentifier)?;
+            Ok(tiktok_short_start()
+                .add(tiktok_short_length_start(shortcode.len()))
+                .add(number))
+        }
         Track::InstagramReel(shortcode) => {
             if shortcode.is_empty() || shortcode.len() > MAX_INSTAGRAM_SHORTCODE {
                 return Err(Error::InvalidIdentifier);
@@ -202,14 +226,29 @@ pub(crate) fn decode(number: Rank) -> Result<Track, Error> {
         return Err(Error::InvalidCodeword);
     }
 
-    let mut remaining = number.sub(instagram_start());
-    for length in 1..=MAX_INSTAGRAM_SHORTCODE {
-        let space = Rank::pow(64, length);
+    if number < tiktok_short_start() {
+        let mut remaining = number.sub(instagram_start());
+        for length in 1..=MAX_INSTAGRAM_SHORTCODE {
+            let space = Rank::pow(64, length);
+            if remaining < space {
+                let shortcode = remaining
+                    .to_digits(INSTAGRAM_ALPHABET, length)
+                    .ok_or(Error::InvalidCodeword)?;
+                return Ok(Track::InstagramReel(shortcode));
+            }
+            remaining = remaining.sub(space);
+        }
+        return Err(Error::InvalidCodeword);
+    }
+
+    let mut remaining = number.sub(tiktok_short_start());
+    for length in 1..=MAX_TIKTOK_SHORTCODE {
+        let space = Rank::pow(62, length);
         if remaining < space {
             let shortcode = remaining
-                .to_digits(INSTAGRAM_ALPHABET, length)
+                .to_digits(TIKTOK_SHORT_ALPHABET, length)
                 .ok_or(Error::InvalidCodeword)?;
-            return Ok(Track::InstagramReel(shortcode));
+            return Ok(Track::TikTokShort(shortcode));
         }
         remaining = remaining.sub(space);
     }
@@ -232,6 +271,10 @@ mod tests {
             Track::YouTubeShort("___________".into()),
             Track::TikTokVideo(0),
             Track::TikTokVideo(u64::MAX),
+            Track::TikTokShort("ZSp94BeDn".into()),
+            Track::TikTokShort("0".into()),
+            Track::TikTokShort("000".into()),
+            Track::TikTokShort("zzzzzzzzzzzzzzzz".into()),
             Track::InstagramReel("A".into()),
             Track::InstagramReel("C1234567890".into()),
             Track::InstagramReel("_______________".into()),
