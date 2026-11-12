@@ -302,8 +302,27 @@ fn scan_components(components: &[Component]) -> Result<Located, Error> {
                     }
                 }
                 let (upper, lower) = pair.ordered(inverted);
+                let left_pitch = if index > 0 {
+                    Some((pair.center() - payload[index - 1].center()).abs())
+                } else {
+                    None
+                };
+                let right_pitch = payload
+                    .get(index + 1)
+                    .map(|next| (next.center() - pair.center()).abs());
+                let local_pitch = match (left_pitch, right_pitch) {
+                    (Some(left), Some(right)) => (left + right) / 2.0,
+                    (Some(left), None) => left,
+                    (None, Some(right)) => right,
+                    (None, None) => pitch,
+                };
+                // Under a planar keystone warp, longitudinal pitch changes
+                // with inverse depth squared, while vertical rail lengths
+                // change with inverse depth. Correct their relative scale
+                // using the square root of measured pitch variation from W.
+                let vertical_scale = (local_pitch / pitch).sqrt().clamp(0.75, 1.3);
                 let measure_height = |value: f64| -> Option<u8> {
-                    let estimate = (value - base) / step;
+                    let estimate = (value / vertical_scale - base) / step;
                     let level = estimate.round();
                     ((0.0..=7.0).contains(&level) && (estimate - level).abs() <= 0.48)
                         .then_some(level as u8)
@@ -313,14 +332,6 @@ fn scan_components(components: &[Component]) -> Result<Located, Error> {
                 else {
                     valid = false;
                     break;
-                };
-                let local_pitch = if index == 0 {
-                    payload
-                        .get(1)
-                        .map(|next| (next.center() - pair.center()).abs())
-                        .unwrap_or(pitch)
-                } else {
-                    (pair.center() - payload[index - 1].center()).abs()
                 };
                 let symbol = (up << 5)
                     | (down << 2)
