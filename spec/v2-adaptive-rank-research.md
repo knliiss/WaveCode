@@ -268,6 +268,21 @@ a 14-column specialized canonical-YouTube frame is the firm lower bound
 that every conceivable nonlinear channel code needs 14 symbols: the
 claim expressly assumes unchanged CRC-16 and four systematic RS bytes.
 
+### Convert symbol savings to realistic render width
+
+With the existing V2 research renderer's default `quiet=pitch`,
+the 11 W rails at `0.52*pitch` and W-to-data gap `0.8*pitch`,
+normalized SVG width is
+
+`W_total/pitch = N_payload + 11*0.52 + 0.8 + 2 = N_payload + 8.52`.
+
+Thus one payload column saved for YouTube Music (15 -> 14) decreases
+**total rendered width by `1/23.52 = 4.25%`**, not by 6.67%.
+For a 32-bit numeric family (15 -> 11), total rendered width decreases
+by `4/23.52 = 17.01%`. These are deterministic **renderer dimensions**,
+not minimum phone-readable sizes. An actual physical scanner might require
+a larger pitch for the narrower code and negate these gains.
+
 ## Another bound: variable optical length is not free storage
 
 If a decoder reliably distinguishes length classes `b_1,..,b_k` and their
