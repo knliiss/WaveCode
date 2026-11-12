@@ -167,7 +167,8 @@ fn all_opt_in_headers_keep_two_byte_error_correction() {
         let mut frame = v2::encode_adaptive(&content).unwrap();
         headers.push(frame.metadata);
         frame.symbols[0] ^= 0x5b;
-        frame.symbols[frame.symbols.len() - 1] ^= 0xa7;
+        let last = frame.symbols.len() - 1;
+        frame.symbols[last] ^= 0xa7;
         let decoded = v2::decode(&frame).unwrap();
         assert_eq!(decoded.content, content);
         assert_eq!(decoded.corrected_symbols, 2);
