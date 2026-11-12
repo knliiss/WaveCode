@@ -116,6 +116,35 @@ specified model (not a lookup table of songs). A mode selector can choose
 the shortest admissible representation **after accounting for all headers,
 CRC, RS, column rounding and W overhead**.
 
+## Theorem 3a: harvest byte-alignment slack for **free moments**
+
+A byte-aligned Reed-Solomon block wastes some of its final data byte.
+For `b` source bits, fixed CRC-16 and four parity bytes, the number of
+unused pre-RS bits is exactly:
+
+`slack(b) = 8*ceil((b+16)/8) - (b+16)`, in `[0,7]`.
+
+A separately designated W time-width profile may put a `t`-bit moment
+inside these unused positions with **zero change in payload column count**
+whenever `t<=slack(b)`. The moment is still part of the CRC-covered source
+message. The decoder learns its exact width from mode metadata; values
+outside the window use a longer fallback.
+
+Examples under the research profiles:
+- Full 131-bit Spotify rank: `slack(131)=5`, so times 0..31 seconds
+  can be represented **inside the same 23 payload columns** as no moment.
+- Canonical independent Spotify+YouTube pair: `slack(195)=5`, giving
+  an exact 0..31-second moment **inside the same 31 columns**.
+- Four-service 32-bit numeric mode: `b=2+32=34`, `slack(34)=6`,
+  so up to 63 seconds can be represented in the same **11 columns**.
+- Canonical YouTube Music, `b=64`, `slack(64)=0`: there is no
+  extra room without an additional column.
+
+This is a measurable **bit-allocation optimization**, not a compression of
+uniformly random data. A W mode explicitly marking tiny time is necessary:
+without it, a decoder would mistake those bits for zero padding.
+W continues to hold *only* routing metadata.
+
 ## Theorem 4: the W codebook is a scarce resource
 
 The current 4 logical W bits give **16 optically protected metadata words**
