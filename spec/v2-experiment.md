@@ -1,4 +1,15 @@
-# Experimental V2: W-anchored compact / full / dual WaveCode
+# Archived V2 research: superseded capsule W design
+
+> **Historical document only.** Its 11-pair rounded-rectangle W geometry is
+> **no longer used or accepted by the V2 optical renderer/scanner**. The
+> current V2 format is the **round-dot W with BCH(40,22), explicit 12-bit
+> version and 6-bit profile** described in
+> [v2-dot-w-anchor.md](v2-dot-w-anchor.md). V1 remains untouched.
+>
+> The legacy payload layouts discussed below may still be represented using
+> the **new dot W**; none of the old W optical geometry is authoritative.
+
+## Historical format description
 
 **Status:** research prototype, **not a production optical standard**. The default
 V1 scanner, generator, checksums, RS implementation, physical geometry and old
