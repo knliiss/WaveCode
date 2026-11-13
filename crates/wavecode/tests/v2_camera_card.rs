@@ -22,7 +22,8 @@ fn framed_camera_photo(content: &Content, output_width: u32) -> GrayImage {
     .unwrap();
     let source = image::load_from_memory(&png).unwrap().to_luma8();
     let output_height = (f64::from(source.height()) * f64::from(output_width)
-        / f64::from(source.width())).round() as u32;
+        / f64::from(source.width()))
+    .round() as u32;
     let code = imageops::resize(
         &source,
         output_width,
