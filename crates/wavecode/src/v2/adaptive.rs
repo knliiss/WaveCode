@@ -474,9 +474,7 @@ pub(super) fn decode(code: &Frame) -> Result<Decoded, Error> {
     if code.metadata == PACKED_DUAL_PROFILE && code.symbols.len() != 31 {
         return Err(Error::InvalidLength);
     }
-    if (22..=33).contains(&code.metadata)
-        && code.symbols.len() != usize::from(code.metadata) - 7
-    {
+    if (22..=33).contains(&code.metadata) && code.symbols.len() != usize::from(code.metadata) - 7 {
         return Err(Error::InvalidLength);
     }
     if code.metadata == 34 && code.symbols.len() != 14 {
@@ -585,7 +583,7 @@ pub(super) fn decode(code: &Frame) -> Result<Decoded, Error> {
                 youtube_music_id,
                 moment_seconds,
             }
-        },
+        }
         SHORT_FULL_DUAL_PROFILE | LONG_FULL_DUAL_PROFILE => {
             read_full_dual(code.metadata, &mut bits)?
         }
