@@ -366,7 +366,6 @@ fn encode_dual_links(first: &MusicCode, second: &MusicCode) -> Result<Frame, Err
     })
 }
 
-
 /// A full-range numeric ID often needs only 32 of its 64 possible bits.
 /// YouTube's usual 11-character ID similarly has 64 rather than 66 free
 /// bits. Use separate V2 profile 37 only when this actually reduces columns;
@@ -448,8 +447,10 @@ fn encode_short_dual_links(first: &MusicCode, second: &MusicCode) -> Result<Opti
 }
 
 fn decode_dual_links(frame: &Frame) -> Result<Decoded, Error> {
-    if !matches!(frame.metadata, GENERIC_DUAL_PROFILE | SHORT_GENERIC_DUAL_PROFILE)
-        || frame.symbols.len() < PARITY_BYTES + 6
+    if !matches!(
+        frame.metadata,
+        GENERIC_DUAL_PROFILE | SHORT_GENERIC_DUAL_PROFILE
+    ) || frame.symbols.len() < PARITY_BYTES + 6
         || frame.symbols.len() > MAX_GENERIC_COLUMNS
     {
         return Err(Error::InvalidLength);
@@ -681,7 +682,10 @@ pub fn encode_with_layout(content: &Content, layout: Layout) -> Result<Frame, Er
 }
 
 pub fn decode(frame: &Frame) -> Result<Decoded, Error> {
-    if matches!(frame.metadata, GENERIC_DUAL_PROFILE | SHORT_GENERIC_DUAL_PROFILE) {
+    if matches!(
+        frame.metadata,
+        GENERIC_DUAL_PROFILE | SHORT_GENERIC_DUAL_PROFILE
+    ) {
         return decode_dual_links(frame);
     }
     if !matches!(frame.metadata, 0 | 2 | 4 | 6 | 8 | 10) {

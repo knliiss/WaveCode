@@ -201,9 +201,7 @@ fn canonical_youtube_modes_recover_platform_variants_without_truncation() {
     let before = v2::encode(&content).unwrap();
     let frame = v2::encode_adaptive(&content).unwrap();
     assert_eq!(frame.metadata, 37);
-    assert!(
-        v2::optical_column_count(&frame) < v2::optical_column_count(&before)
-    );
+    assert!(v2::optical_column_count(&frame) < v2::optical_column_count(&before));
     assert_eq!(v2::decode(&frame).unwrap().content, content);
 }
 
