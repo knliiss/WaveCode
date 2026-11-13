@@ -347,45 +347,49 @@ fn classify_version(fit: &ShellFit<'_>) -> [bool; anchor::VERSION_SITES] {
     bits
 }
 
+/// A self-delimiting Dual class may occupy the same number of columns as an
+/// explicit profile (notably generic V2 Dual profile 36). RS and CRC verify
+/// both candidate framings rather than trusting the first source byte.
+/// Ambiguous successful decodes are rejected instead of silently misrouting.
+fn decode_ambiguous_framing(
+    symbols: &[u8],
+    implicit_metadata: u8,
+) -> Result<(u8, Decoded), Error> {
+    let implicit = codec::decode(&Frame {
+        metadata: implicit_metadata,
+        symbols: symbols.to_vec(),
+    });
+    let explicit = if symbols[0] <= 63 {
+        codec::decode(&Frame {
+            metadata: symbols[0],
+            symbols: symbols[1..].to_vec(),
+        })
+        .ok()
+        .map(|decoded| (symbols[0], decoded))
+    } else {
+        None
+    };
+    match (implicit, explicit) {
+        (Ok(decoded), None) => Ok((implicit_metadata, decoded)),
+        (Err(_), Some(decoded)) => Ok(decoded),
+        (Ok(_), Some(_)) | (Err(_), None) => Err(Error::InvalidFrame),
+    }
+}
+
 /// Framing is derived from actual optical symbols, never visual spacing.
-/// 27-31 columns are reserved self-delimiting Dual classes. For 32/33
-/// columns both the marker-bearing implicit frame and the explicit-profile
-/// alternative are independently CRC+RS checked. A conflicting decode
-/// is rejected rather than silently choosing the wrong music identity.
-/// Trying the implicit interpretation regardless of the observed first
-/// byte lets RS recover up to two damaged symbols, including its marker.
+/// Existing 27–31-column inferred profiles and the 15–26/32–33 marked
+/// profiles are protected even when they overlap the explicit profile 36.
+/// The RS word can repair damaged implicit markers independently of the
+/// original first-byte value.
 fn decode_payload_symbols(mut symbols: Vec<u8>) -> Result<(u8, Decoded), Error> {
     if symbols.len() < 2 {
         return Err(Error::InvalidFrame);
     }
     if let Some(metadata) = codec::implicit_dual_profile(symbols.len()) {
-        let decoded = codec::decode(&Frame { metadata, symbols })?;
-        return Ok((metadata, decoded));
+        return decode_ambiguous_framing(&symbols, metadata);
     }
-    // For 15–26 and 32–33 columns, the RS-protected high-bit marker
-    // disambiguates compact Dual from conventional explicit profile glyphs.
-    // Both candidates are checked; no raw first-byte heuristic is trusted.
-    if let Some(implicit_metadata) = codec::marked_dual_profile(symbols.len()) {
-        let implicit = codec::decode(&Frame {
-            metadata: implicit_metadata,
-            symbols: symbols.clone(),
-        });
-        let explicit = if symbols[0] <= 63 {
-            codec::decode(&Frame {
-                metadata: symbols[0],
-                symbols: symbols[1..].to_vec(),
-            })
-            .ok()
-            .map(|decoded| (symbols[0], decoded))
-        } else {
-            None
-        };
-        return match (implicit, explicit) {
-            (Ok(decoded), None) => Ok((implicit_metadata, decoded)),
-            (Err(_), Some(decoded)) => Ok(decoded),
-            (Ok(_), Some(_)) => Err(Error::InvalidFrame),
-            (Err(_), None) => Err(Error::InvalidFrame),
-        };
+    if let Some(metadata) = codec::marked_dual_profile(symbols.len()) {
+        return decode_ambiguous_framing(&symbols, metadata);
     }
     let metadata = symbols.remove(0);
     if metadata > 63 {
