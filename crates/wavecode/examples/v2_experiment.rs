@@ -43,15 +43,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let geometry = profile.metrics(frame.symbols.len())?;
         println!(
             "Experimental V2: {} payload columns + mandatory W, total {:.0} × {:.0}px",
-            frame.symbols.len(),
+            frame.symbols.len() + 1,
             geometry.width,
             geometry.height
         );
         println!(
-            "Capsule-hole W version: {} (12-bit BCH field)",
+            "Version-only W: {} (12-bit BCH field)",
             v2::anchor::VERSION
         );
-        println!("W payload profile (protected): {:06b}", frame.metadata);
+        println!("First optical payload column: profile {}", frame.metadata);
         println!(
             "Payload columns saved against original V2: {}",
             original.symbols.len() - frame.symbols.len()
@@ -99,7 +99,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("W local center at ({:.1}, {:.1})", point.x, point.y);
             }
             println!(
-                "W version: {}, profile: {}, BCH repaired: {} dots",
+                "W version: {}, profile: {}, BCH repaired: {} capsule lengths",
                 found.version, found.profile, found.corrected_anchor_bits
             );
             println!(
