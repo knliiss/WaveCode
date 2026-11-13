@@ -1,10 +1,8 @@
-//! V2 reader for the BCH-protected, round-dot W locator. The former
-//! eleven-pair rectangular anchor is deliberately not recognized here.
-//! First identify the fixed circular W contour; it determines orientation, scale
-//! and a CRC-protected metadata profile before decoding the payload rails.
+//! V2 original-cap­­sule W finder: locate 22 fixed silhouettes before reading
+//! 60 interior BCH-coded holes and the independent dual-rail byte payload.
 use image::{GrayImage, RgbImage};
 
-use super::anchor::{self, AnchorPose, DotSite, Point};
+use super::anchor::{self, AnchorPose, Point};
 use super::codec::{self, Decoded, Frame};
 use crate::Error;
 
@@ -165,197 +163,212 @@ fn principal_angle(parts: &[&Component]) -> f64 {
     0.5 * (2.0 * xy).atan2(xx - yy)
 }
 
-fn dot_cluster(components: &[Component]) -> Result<Vec<&Component>, Error> {
-    if components.len() < 70 {
-        return Err(Error::InvalidFrame);
-    }
-    let mut areas: Vec<f64> = components.iter().map(Component::area).collect();
-    areas.sort_by(f64::total_cmp);
-    let median_area = areas[areas.len() / 2];
-    let candidates: Vec<_> = components
-        .iter()
-        .filter(|part| part.area() >= median_area * 0.25 && part.area() <= median_area * 1.75)
-        .collect();
-    if candidates.len() < 68 {
-        return Err(Error::InvalidFrame);
-    }
-    // Dot centers form one connected geometric cluster. Ignore detached
-    // specks instead of stretching the W bounds to unrelated marks.
-    let median_diameter = (median_area / std::f64::consts::PI).sqrt() * 2.0;
-    let link_radius = 3.5 * median_diameter;
-    let mut seen = vec![false; candidates.len()];
-    let mut largest = Vec::new();
-    for start in 0..candidates.len() {
-        if seen[start] {
-            continue;
-        }
-        seen[start] = true;
-        let mut members = vec![start];
-        let mut cursor = 0;
-        while cursor < members.len() {
-            let i = members[cursor];
-            cursor += 1;
-            for j in 0..candidates.len() {
-                if !seen[j]
-                    && (candidates[i].cx - candidates[j].cx)
-                        .hypot(candidates[i].cy - candidates[j].cy)
-                        <= link_radius
-                {
-                    seen[j] = true;
-                    members.push(j);
-                }
-            }
-        }
-        if members.len() > largest.len() {
-            largest = members;
-        }
-    }
-    if largest.len() < 68 {
-        return Err(Error::InvalidFrame);
-    }
-    Ok(largest.into_iter().map(|index| candidates[index]).collect())
-}
-
-struct Fit<'a> {
+// The shell has 11 regularly spaced x-centers with two rounded capsules
+// per center. Locate that known silhouette before considering the holes.
+#[derive(Clone)]
+struct ShellFit<'a> {
     angle: f64,
     scale: f64,
     origin_u: f64,
     origin_v: f64,
-    site_parts: Vec<Option<&'a Component>>,
+    capsules: Vec<&'a Component>,
     score: f64,
 }
 
-impl Fit<'_> {
+impl ShellFit<'_> {
     fn to_image(&self, x: f64, y: f64) -> Point {
         let u = self.origin_u + x * self.scale;
         let v = self.origin_v + y * self.scale;
         let (sin, cos) = self.angle.sin_cos();
-        Point {
-            x: u * cos - v * sin,
-            y: u * sin + v * cos,
-        }
+        Point { x: u * cos - v * sin, y: u * sin + v * cos }
     }
 }
 
-fn fit<'a>(dots: &[&'a Component], sites: &[DotSite], angle: f64) -> Option<Fit<'a>> {
-    let (sin, cos) = angle.sin_cos();
-    let points: Vec<_> = dots
-        .iter()
-        .map(|part| (part.cx * cos + part.cy * sin, part.cy * cos - part.cx * sin))
-        .collect();
-    let (min_u, max_u) = points
-        .iter()
-        .fold((f64::INFINITY, f64::NEG_INFINITY), |a, p| {
-            (a.0.min(p.0), a.1.max(p.0))
-        });
-    let (min_v, max_v) = points
-        .iter()
-        .fold((f64::INFINITY, f64::NEG_INFINITY), |a, p| {
-            (a.0.min(p.1), a.1.max(p.1))
-        });
-    let (min_x, max_x) = sites
-        .iter()
-        .fold((f64::INFINITY, f64::NEG_INFINITY), |a, p| {
-            (a.0.min(p.x), a.1.max(p.x))
-        });
-    let (min_y, max_y) = sites
-        .iter()
-        .fold((f64::INFINITY, f64::NEG_INFINITY), |a, p| {
-            (a.0.min(p.y), a.1.max(p.y))
-        });
-    let scale_x = (max_u - min_u) / (max_x - min_x);
-    let scale_y = (max_v - min_v) / (max_y - min_y);
-    if scale_x <= 2.0 || scale_y <= 2.0 || (scale_x / scale_y - 1.0).abs() > 0.27 {
-        return None;
-    }
-    let scale = (scale_x + scale_y) / 2.0;
-    let origin_u = min_u - min_x * scale;
-    let origin_v = min_v - min_y * scale;
-    let mut site_parts = Vec::new();
-    let mut score = 0.0;
-    let mut used = vec![false; dots.len()];
-    for site in sites {
-        let expected = (origin_u + site.x * scale, origin_v + site.y * scale);
-        let closest = points
-            .iter()
-            .enumerate()
-            .filter(|(index, _)| !used[*index])
-            .map(|(index, point)| {
-                let distance = (point.0 - expected.0).hypot(point.1 - expected.1);
-                (index, distance)
-            })
-            .min_by(|a, b| a.1.total_cmp(&b.1));
-        if let Some((index, distance)) = closest {
-            if distance < scale * 0.54 {
-                used[index] = true;
-                site_parts.push(Some(dots[index]));
-                score += distance * distance / (scale * scale);
-                continue;
-            }
+fn estimate_roll(components: &[Component]) -> f64 {
+    let (mut cos_sum, mut sin_sum) = (0.0, 0.0);
+    for component in components {
+        if component.pixels.len() < 80 {
+            continue;
         }
-        site_parts.push(None);
-        score += 4.0;
+        let (mut xx, mut xy, mut yy) = (0.0, 0.0, 0.0);
+        for &(px, py) in &component.pixels {
+            let dx = f64::from(px) - component.cx;
+            let dy = f64::from(py) - component.cy;
+            xx += dx * dx;
+            xy += dx * dy;
+            yy += dy * dy;
+        }
+        let anisotropy = (xx - yy).hypot(2.0 * xy);
+        if anisotropy / (xx + yy).max(1.0) < 0.20 {
+            continue;
+        }
+        // Largest principal axis is vertical in the W local coordinate
+        // system, so subtract pi/2 to obtain the reading direction.
+        let reading_angle = 0.5 * (2.0 * xy).atan2(xx - yy)
+            - std::f64::consts::FRAC_PI_2;
+        cos_sum += anisotropy.sqrt() * (2.0 * reading_angle).cos();
+        sin_sum += anisotropy.sqrt() * (2.0 * reading_angle).sin();
     }
-    let matched = site_parts.iter().filter(|part| part.is_some()).count();
-    if matched < sites.len().saturating_sub(16) {
+    if cos_sum == 0.0 && sin_sum == 0.0 {
+        return 0.0;
+    }
+    0.5 * sin_sum.atan2(cos_sum)
+}
+
+fn fit_shell<'a>(parts: &[&'a Component], angle: f64) -> Option<ShellFit<'a>> {
+    if parts.len() != 22 {
         return None;
     }
-    Some(Fit {
-        angle,
-        scale,
-        origin_u,
-        origin_v,
-        site_parts,
+    let (sin, cos) = angle.sin_cos();
+    let mut paired = Vec::with_capacity(11);
+    for pair in parts.chunks_exact(2) {
+        let one = pair[0].projected(sin, cos);
+        let two = pair[1].projected(sin, cos);
+        if (one.u - two.u).abs() > (one.longitudinal + two.longitudinal) / 4.0 {
+            return None;
+        }
+        let (upper, lower) = if one.v < two.v {
+            ((pair[0], one), (pair[1], two))
+        } else {
+            ((pair[1], two), (pair[0], one))
+        };
+        paired.push((upper, lower));
+    }
+    let first_u = (paired[0].0.1.u + paired[0].1.1.u) / 2.0;
+    let last_u = (paired[10].0.1.u + paired[10].1.1.u) / 2.0;
+    let scale = (last_u - first_u) / 340.0;
+    if !(0.2..=12.0).contains(&scale) {
+        return None;
+    }
+    let shell = anchor::capsules();
+    let origin_u = paired.iter().enumerate().map(|(i, p)| {
+        (p.0.1.u + p.1.1.u) / 2.0 - (shell[i].x + 10.0) * scale
+    }).sum::<f64>() / 11.0;
+    let origin_v = paired.iter().enumerate().map(|(i, pair)| {
+        let upper = shell[i];
+        let lower = shell[i + 11];
+        (pair.0.1.v - (upper.y + upper.height / 2.0) * scale
+          + pair.1.1.v - (lower.y + lower.height / 2.0) * scale) / 2.0
+    }).sum::<f64>() / 11.0;
+    let mut score = 0.0;
+    for (index, pair) in paired.iter().enumerate() {
+        for (component, projected, capsule) in [
+            (pair.0.0, pair.0.1, shell[index]),
+            (pair.1.0, pair.1.1, shell[index + 11]),
+        ] {
+            let expected_u = origin_u + (capsule.x + 10.0) * scale;
+            let expected_v = origin_v + (capsule.y + capsule.height / 2.0) * scale;
+            let error_u = (projected.u - expected_u).abs();
+            let error_v = (projected.v - expected_v).abs();
+            if error_u > 4.5 * scale + 1.2
+                || error_v > 8.0 * scale + 1.2
+                || (projected.longitudinal - capsule.width * scale).abs()
+                    > 6.5 * scale + 1.0
+                || (projected.transverse - capsule.height * scale).abs()
+                    > 8.0 * scale + 1.5
+            {
+                return None;
+            }
+            score += (error_u / scale).powi(2) + (error_v / scale).powi(2);
+            let _ = component;
+        }
+    }
+    if score > 450.0 {
+        return None;
+    }
+    Some(ShellFit {
+        angle, scale, origin_u, origin_v,
+        capsules: parts.to_vec(),
         score,
     })
 }
 
-fn read_frame(
-    components: &[Component],
-    dots: &[&Component],
-    sites: &[DotSite],
-    fit: &Fit<'_>,
-) -> Result<Located, Error> {
-    let mut sizes = Vec::new();
-    for (site, observed) in sites.iter().zip(&fit.site_parts) {
-        if site.bit.is_none() {
-            if let Some(part) = observed {
-                sizes.push(part.area());
+fn locate_shell<'a>(components: &'a [Component]) -> Vec<ShellFit<'a>> {
+    let roll = estimate_roll(components);
+    let mut candidates = Vec::new();
+    for flipped in [false, true] {
+        let base = roll + if flipped { std::f64::consts::PI } else { 0.0 };
+        for step in -6..=6 {
+            let angle = base + f64::from(step) * 0.012;
+            let (sin, cos) = angle.sin_cos();
+            let mut sorted: Vec<_> = components.iter()
+                .filter(|part| part.pixels.len() >= 40)
+                .collect();
+            sorted.sort_by(|a, b| {
+                let first = a.cx * cos + a.cy * sin;
+                let second = b.cx * cos + b.cy * sin;
+                first.total_cmp(&second)
+            });
+            for window in sorted.windows(22) {
+                if let Some(fitted) = fit_shell(window, angle) {
+                    candidates.push(fitted);
+                }
             }
         }
     }
-    if sizes.len() < 20 {
-        return Err(Error::InvalidFrame);
-    }
-    sizes.sort_by(f64::total_cmp);
-    let fixed_area = sizes[sizes.len() / 2];
+    candidates.sort_by(|a, b| a.score.total_cmp(&b.score));
+    candidates.truncate(24);
+    candidates
+}
+
+fn classify_holes(
+    image: &GrayImage,
+    light_ink: bool,
+    fit: &ShellFit<'_>,
+) -> [bool; anchor::METADATA_BITS] {
     let mut bits = [false; anchor::METADATA_BITS];
-    for (site, observed) in sites.iter().zip(&fit.site_parts) {
-        if let Some(index) = site.bit {
-            if let Some(part) = observed {
-                let small_area = (anchor::DOT_SMALL_RADIUS / anchor::DOT_FIXED_RADIUS).powi(2);
-                let large_area = (anchor::DOT_LARGE_RADIUS / anchor::DOT_FIXED_RADIUS).powi(2);
-                bits[index] = part.area() > fixed_area * (small_area + large_area) / 2.0;
+    let sample_radius = anchor::DOT_LARGE_RADIUS * fit.scale + 0.6;
+    let threshold = std::f64::consts::PI
+        * (anchor::DOT_SMALL_RADIUS.powi(2) + anchor::DOT_LARGE_RADIUS.powi(2))
+        * fit.scale.powi(2) / 2.0;
+    for site in anchor::sites() {
+        let point = fit.to_image(site.x, site.y);
+        let mut opening_area = 0_u32;
+        let min_x = (point.x - sample_radius).floor().max(0.0) as u32;
+        let max_x = (point.x + sample_radius)
+            .ceil().min(f64::from(image.width())) as u32;
+        let min_y = (point.y - sample_radius).floor().max(0.0) as u32;
+        let max_y = (point.y + sample_radius)
+            .ceil().min(f64::from(image.height())) as u32;
+        for y in min_y..max_y {
+            for x in min_x..max_x {
+                let dx = f64::from(x) + 0.5 - point.x;
+                let dy = f64::from(y) + 0.5 - point.y;
+                if dx * dx + dy * dy <= sample_radius * sample_radius {
+                    let ink = image.get_pixel(x, y).0[0] < 128;
+                    if ink != light_ink {
+                        opening_area += 1;
+                    }
+                }
             }
         }
+        if let Some(bit) = site.bit {
+            bits[bit] = f64::from(opening_area) > threshold;
+        }
     }
+    bits
+}
+
+fn read_shell_frame(
+    image: &GrayImage,
+    light_ink: bool,
+    parts: &[Component],
+    fit: &ShellFit<'_>,
+) -> Result<Located, Error> {
+    let bits = classify_holes(image, light_ink, fit);
     let meta = anchor::decode_version_profile(bits)?;
     if meta.version != anchor::VERSION {
         return Err(Error::UnsupportedVersion);
     }
-
     let (sin, cos) = fit.angle.sin_cos();
-    let (end_u, _) = {
-        let point = fit.to_image(anchor::W_X_MAX, anchor::W_Y_MAX / 2.0);
-        (point.x * cos + point.y * sin, point.y * cos - point.x * sin)
-    };
-    let area_threshold = fixed_area * 1.75;
-    let mut bars: Vec<_> = components
+    let end_u = fit.origin_u + anchor::SHELL_WIDTH * fit.scale;
+    let lower_area = (fit.scale * fit.scale * 85.0).max(15.0);
+    let mut bars: Vec<_> = parts
         .iter()
-        .filter(|part| part.area() > area_threshold)
+        .filter(|part| part.area() > lower_area)
         .filter_map(|part| {
-            let projected = part.projected(sin, cos);
-            (projected.u > end_u + fit.scale * 0.6).then_some((part, projected))
+            let projection = part.projected(sin, cos);
+            (projection.u > end_u + fit.scale * 8.0).then_some((part, projection))
         })
         .collect();
     bars.sort_by(|a, b| a.1.u.total_cmp(&b.1.u));
@@ -372,11 +385,8 @@ fn read_frame(
             }
         })
         .collect();
-    let pitch = if pairs.len() > 1 {
-        (pairs.last().unwrap().0.u - pairs.first().unwrap().0.u) / (pairs.len() - 1) as f64
-    } else {
-        return Err(Error::InvalidFrame);
-    };
+    let pitch = (pairs.last().ok_or(Error::InvalidFrame)?.0.u - pairs[0].0.u)
+        / (pairs.len() - 1) as f64;
     if pitch < 4.0 {
         return Err(Error::InvalidFrame);
     }
@@ -389,10 +399,10 @@ fn read_frame(
     }
     let mut symbols = Vec::with_capacity(pairs.len());
     for (index, &(upper, lower)) in pairs.iter().enumerate() {
-        let left_pitch = index
-            .checked_sub(1)
+        let left_pitch = index.checked_sub(1)
             .map(|previous| (upper.u - pairs[previous].0.u).abs());
-        let right_pitch = pairs.get(index + 1).map(|next| (next.0.u - upper.u).abs());
+        let right_pitch = pairs.get(index + 1)
+            .map(|next| (next.0.u - upper.u).abs());
         let local_pitch = match (left_pitch, right_pitch) {
             (Some(left), Some(right)) => (left + right) / 2.0,
             (Some(left), None) => left,
@@ -404,9 +414,6 @@ fn read_frame(
         {
             return Err(Error::InvalidFrame);
         }
-        // Under projective keystone the horizontal spacing scales as the
-        // square of the vertical rail height. Use a local pitch estimate
-        // to normalize each column independently before quantizing levels.
         let vertical_scale = (local_pitch / reference_pitch).sqrt().clamp(0.7, 1.3);
         let level = |observed_height: f64| -> Result<u8, Error> {
             let estimate = (observed_height / vertical_scale - base) / step;
@@ -418,24 +425,14 @@ fn read_frame(
         };
         let up = level(upper.transverse)?;
         let down = level(lower.transverse)?;
-        let symbol = (up << 5)
-            | (down << 2)
-            | if upper.longitudinal / local_pitch > 0.55 {
-                2
-            } else {
-                0
-            }
-            | if lower.longitudinal / local_pitch > 0.55 {
-                1
-            } else {
-                0
-            };
-        symbols.push(symbol);
+        symbols.push(
+            (up << 5)
+                | (down << 2)
+                | if upper.longitudinal / local_pitch > 0.55 { 2 } else { 0 }
+                | if lower.longitudinal / local_pitch > 0.55 { 1 } else { 0 },
+        );
     }
-    let decoded = codec::decode(&Frame {
-        metadata: meta.profile,
-        symbols,
-    })?;
+    let decoded = codec::decode(&Frame { metadata: meta.profile, symbols })?;
     let corners = [
         fit.to_image(0.0, 0.0),
         fit.to_image(anchor::W_X_MAX, 0.0),
@@ -443,61 +440,36 @@ fn read_frame(
         fit.to_image(anchor::W_X_MAX, anchor::W_Y_MAX),
     ];
     let pose = AnchorPose::from_fiducials(corners)?;
-    let selected: Vec<_> = dots
-        .iter()
-        .copied()
-        .chain(bars.iter().map(|(part, _)| *part))
-        .collect();
-    let left = selected.iter().map(|part| part.left).min().unwrap_or(0);
-    let right = selected.iter().map(|part| part.right).max().unwrap_or(left);
-    let top = selected.iter().map(|part| part.top).min().unwrap_or(0);
-    let bottom = selected.iter().map(|part| part.bottom).max().unwrap_or(top);
+    let selected: Vec<_> = fit.capsules.iter().copied()
+        .chain(bars.iter().map(|(part, _)| *part)).collect();
+    let left = selected.iter().map(|part| part.left).min().ok_or(Error::InvalidFrame)?;
+    let right = selected.iter().map(|part| part.right).max().ok_or(Error::InvalidFrame)?;
+    let top = selected.iter().map(|part| part.top).min().ok_or(Error::InvalidFrame)?;
+    let bottom = selected.iter().map(|part| part.bottom).max().ok_or(Error::InvalidFrame)?;
     Ok(Located {
-        decoded,
-        pose,
-        bounds: Bounds {
-            left,
-            top,
-            width: right - left + 1,
-            height: bottom - top + 1,
-        },
-        version: meta.version,
-        profile: meta.profile,
+        decoded, pose,
+        bounds: Bounds { left, top, width: right-left+1, height: bottom-top+1 },
+        version: meta.version, profile: meta.profile,
         corrected_anchor_bits: meta.corrected_bits,
     })
 }
 
-fn scan_components(components: &[Component]) -> Result<Located, Error> {
-    let sites = anchor::sites();
-    let dots = dot_cluster(components)?;
-    let initial = principal_angle(&dots);
-    let mut candidates = Vec::new();
-    // Try both ends because only the actual W may be on the left of data;
-    // a half-turn of the camera swaps the image side, not logical order.
-    for inverted in [false, true] {
-        let base = initial + if inverted { std::f64::consts::PI } else { 0.0 };
-        for offset in -8..=8 {
-            let angle = base + f64::from(offset) * 0.012;
-            if let Some(candidate) = fit(&dots, &sites, angle) {
-                candidates.push(candidate);
-            }
-        }
-    }
-    candidates.sort_by(|a, b| a.score.total_cmp(&b.score));
-    for candidate in candidates {
-        if let Ok(frame) = read_frame(components, &dots, &sites, &candidate) {
-            return Ok(frame);
+fn scan_components(image: &GrayImage, light_ink: bool, parts: &[Component]) -> Result<Located, Error> {
+    for fit in locate_shell(parts) {
+        if let Ok(located) = read_shell_frame(image, light_ink, parts, &fit) {
+            return Ok(located);
         }
     }
     Err(Error::InvalidFrame)
 }
 
-/// The isolated-render prototype recognizes dot W only. Real mobile photos,
+/// The prototype recognizes the original capsule-shell with 60 interior holes.
+/// Real mobile photos,
 /// extreme perspective, motion blur and reflections still need field tests.
 pub fn scan_gray(image: &GrayImage) -> Result<Located, Error> {
     for light in [false, true] {
         if let Ok(parts) = connected(image, light) {
-            if let Ok(frame) = scan_components(&parts) {
+            if let Ok(frame) = scan_components(image, light, &parts) {
                 return Ok(frame);
             }
         }
