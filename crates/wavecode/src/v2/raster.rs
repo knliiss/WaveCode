@@ -351,10 +351,7 @@ fn classify_version(fit: &ShellFit<'_>) -> [bool; anchor::VERSION_SITES] {
 /// explicit profile (notably generic V2 Dual profile 36). RS and CRC verify
 /// both candidate framings rather than trusting the first source byte.
 /// Ambiguous successful decodes are rejected instead of silently misrouting.
-fn decode_ambiguous_framing(
-    symbols: &[u8],
-    implicit_metadata: u8,
-) -> Result<(u8, Decoded), Error> {
+fn decode_ambiguous_framing(symbols: &[u8], implicit_metadata: u8) -> Result<(u8, Decoded), Error> {
     let implicit = codec::decode(&Frame {
         metadata: implicit_metadata,
         symbols: symbols.to_vec(),
