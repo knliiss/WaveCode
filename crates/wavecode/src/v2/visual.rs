@@ -350,7 +350,10 @@ mod tests {
             // The white slit center is the midpoint of y=242 and y=274
             // in the original 512-unit logo SVG, not its bounding center.
             assert!((anchor::SLIT_CENTER_Y - 258.0).abs() < epsilon);
-            assert!((metrics.center_y - (metrics.upper_baseline + metrics.lower_baseline) / 2.0).abs() < epsilon);
+            assert!(
+                (metrics.center_y - (metrics.upper_baseline + metrics.lower_baseline) / 2.0).abs()
+                    < epsilon
+            );
             assert!((metrics.center_gap - 32.0 * metrics.w_pitch).abs() < epsilon);
 
             for index in 0..11 {
