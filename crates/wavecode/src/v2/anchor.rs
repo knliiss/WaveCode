@@ -406,7 +406,11 @@ mod tests {
     #[test]
     fn w_contour_gap_and_sixty_inner_sites_are_invariant() {
         let dots = sites();
-        assert_eq!(dots.len(), 117, "V2 optical geometry must be version-stable");
+        assert_eq!(
+            dots.len(),
+            117,
+            "V2 optical geometry must be version-stable"
+        );
         assert_eq!(
             dots.iter().filter(|dot| dot.bit.is_some()).count(),
             METADATA_BITS
@@ -417,7 +421,11 @@ mod tests {
 
         let fixed: Vec<_> = dots.iter().filter(|dot| dot.bit.is_none()).collect();
         let inner: Vec<_> = dots.iter().filter(|dot| dot.bit.is_some()).collect();
-        assert_eq!(fixed.len(), 57, "all fixed contour sites must remain unchanged");
+        assert_eq!(
+            fixed.len(),
+            57,
+            "all fixed contour sites must remain unchanged"
+        );
         for dot in &inner {
             let dist = distance_to_spine(dot.x - 2.0, dot.y - 1.2);
             assert!(dist - DOT_LARGE_RADIUS >= 0.35, "central gap violated");
