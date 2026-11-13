@@ -170,7 +170,7 @@ fn shorter_dual_classes_are_exact_at_every_bit_width_boundary() {
             assert_eq!(v2::decode(&frame).unwrap().content, content);
             let mut damaged = frame.clone();
             damaged.symbols[2] ^= 0x51;
-            damaged.symbols[frame.symbols.len()-2] ^= 0xa9;
+            damaged.symbols[frame.symbols.len() - 2] ^= 0xa9;
             let decoded = v2::decode(&damaged).unwrap();
             assert_eq!(decoded.content, content);
             assert_eq!(decoded.corrected_symbols, 2);
