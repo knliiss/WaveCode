@@ -266,6 +266,14 @@ fn small_dual_frame(
     youtube: u64,
     moment: Option<u16>,
 ) -> Result<Option<Frame>, Error> {
+    // A protected 1-bit marker plus 63 bits of YouTube rank exactly
+    // fills a 14-column word (64 source bits + CRC16 + RS32).
+    if moment.is_none() && spotify == Rank::zero() && youtube < (1_u64 << 63) {
+        let mut writer = BitWriter::default();
+        writer.push(1, 1);
+        writer.push(youtube, 63);
+        return Ok(Some(frame(34, writer)?));
+    }
     if moment.is_some_and(|value| value > 255) {
         return Ok(None);
     }
@@ -460,6 +468,7 @@ pub(super) fn decode(code: &Frame) -> Result<Decoded, Error> {
         19 => (Layout::Dual, 120, false),
         SHORT_FULL_DUAL_PROFILE | LONG_FULL_DUAL_PROFILE => (Layout::Dual, 0, false),
         22..=33 => (Layout::Dual, 0, false),
+        34 => (Layout::Dual, 0, false),
         _ => return Err(Error::UnsupportedVersion),
     };
     if code.metadata == PACKED_DUAL_PROFILE && code.symbols.len() != 31 {
@@ -468,6 +477,9 @@ pub(super) fn decode(code: &Frame) -> Result<Decoded, Error> {
     if (22..=33).contains(&code.metadata)
         && code.symbols.len() != usize::from(code.metadata) - 7
     {
+        return Err(Error::InvalidLength);
+    }
+    if code.metadata == 34 && code.symbols.len() != 14 {
         return Err(Error::InvalidLength);
     }
     if matches!(
@@ -538,6 +550,16 @@ pub(super) fn decode(code: &Frame) -> Result<Decoded, Error> {
             })
         }
         PACKED_DUAL_PROFILE => unpack_packed_dual(payload)?,
+        34 => {
+            if bits.take(1)? != 1 {
+                return Err(Error::InvalidCodeword);
+            }
+            Content::Dual {
+                spotify_id: "0000000000000000000000".into(),
+                youtube_music_id: youtube_id(bits.take(63)?)?,
+                moment_seconds: None,
+            }
+        }
         22..=33 => {
             if bits.take(1)? != 1 {
                 return Err(Error::InvalidCodeword);
