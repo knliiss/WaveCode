@@ -1,4 +1,6 @@
-use wavecode::v2::{self, visual, Content, Layout};
+use wavecode::v2::{self, Content, Layout};
+#[cfg(feature = "raster")]
+use wavecode::v2::visual;
 use wavecode::MusicCode;
 
 const LINKS: &[&str] = &[
