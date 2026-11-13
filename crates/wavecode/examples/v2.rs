@@ -2,7 +2,7 @@
 //!
 //! cargo run -p wavecode --example v2 -- encode URL out.png
 //! cargo run -p wavecode --example v2 -- encode-adaptive URL out.png
-//! cargo run -p wavecode --example v2 -- dual SPOTIFY_URL YOUTUBE_MUSIC_URL out.png
+//! cargo run -p wavecode --example v2 -- dual-adaptive URL_A URL_B out.png
 //! cargo run -p wavecode --example v2 -- scan photo.png
 #![cfg_attr(not(feature = "raster"), allow(dead_code))]
 
@@ -123,31 +123,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             )?
         }
         Some("dual" | "dual-adaptive") if (5..=9).contains(&args.len()) => {
-            let spotify = MusicCode::from_url(&args[2])?;
-            let youtube = MusicCode::from_url(&args[3])?;
-            let spotify_id = match spotify.track {
-                Track::Spotify(id) => id,
-                _ => return Err(input_error("expected Spotify track URL").into()),
-            };
-            let youtube_music_id = match youtube.track {
-                Track::YouTubeMusic(id) => id,
-                _ => return Err(input_error("expected YouTube Music watch URL").into()),
-            };
-            let moment_seconds = match (spotify.moment_seconds, youtube.moment_seconds) {
-                (Some(a), Some(b)) if a != b => {
-                    return Err(input_error("Dual links contain conflicting start times").into());
+            let first = MusicCode::from_url(&args[2])?;
+            let second = MusicCode::from_url(&args[3])?;
+            let content = match (&first.track, &second.track) {
+                (Track::Spotify(spotify_id), Track::YouTubeMusic(youtube_music_id))
+                    if first.moment_seconds == second.moment_seconds
+                        || first.moment_seconds.is_none()
+                        || second.moment_seconds.is_none() =>
+                {
+                    Content::Dual {
+                        spotify_id: spotify_id.clone(),
+                        youtube_music_id: youtube_music_id.clone(),
+                        moment_seconds: first.moment_seconds.or(second.moment_seconds),
+                    }
                 }
-                (Some(seconds), _) | (_, Some(seconds)) => Some(seconds),
-                (None, None) => None,
+                _ => Content::DualLinks { first, second },
             };
             let style = visual_style(args.get(5))?;
             let spacing = visual_spacing(style, args.get(6), args.get(7))?;
             write_frame(
-                Content::Dual {
-                    spotify_id,
-                    youtube_music_id,
-                    moment_seconds,
-                },
+                content,
                 &args[4],
                 args[1] == "dual-adaptive",
                 style,
@@ -197,7 +192,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             return Err(input_error(
-                "usage: v2 (encode|encode-adaptive) <url> <out.png> [classic|compact] [middle-gap-px] [logo-gap-px] [logo-height-px] | (dual|dual-adaptive) <spotify-url> <youtube-music-url> <out.png> [classic|compact] [middle-gap-px] [logo-gap-px] [logo-height-px] | scan <image.png>",
+                "usage: v2 (encode|encode-adaptive) <url> <out.png> [classic|compact] [middle-gap-px] [logo-gap-px] [logo-height-px] | (dual|dual-adaptive) <url-a> <url-b> <out.png> [classic|compact] [middle-gap-px] [logo-gap-px] [logo-height-px] | scan <image.png>",
             ).into());
         }
     }
