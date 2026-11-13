@@ -54,10 +54,7 @@ fn full_dual_frame(
     }
 }
 
-fn read_full_dual(
-    header: u8,
-    bits: &mut BitReader<'_>,
-) -> Result<Content, Error> {
+fn read_full_dual(header: u8, bits: &mut BitReader<'_>) -> Result<Content, Error> {
     if bits.take(1)? != 1 {
         return Err(Error::InvalidCodeword);
     }
@@ -93,7 +90,6 @@ fn read_full_dual(
         moment_seconds: moment,
     })
 }
-
 
 fn packed_boundary() -> Result<[u8; 25], Error> {
     let high_spotify_count = Rank::pow(62, 22).sub(Rank::pow(2, 128));
@@ -417,12 +413,13 @@ pub(super) fn decode(code: &Frame) -> Result<Decoded, Error> {
     if code.metadata == PACKED_DUAL_PROFILE && code.symbols.len() != 31 {
         return Err(Error::InvalidLength);
     }
-    if matches!(code.metadata, SHORT_FULL_DUAL_PROFILE | LONG_FULL_DUAL_PROFILE)
-        && !matches!(
-            (code.metadata, code.symbols.len()),
-            (SHORT_FULL_DUAL_PROFILE, 32) | (LONG_FULL_DUAL_PROFILE, 33)
-        )
-    {
+    if matches!(
+        code.metadata,
+        SHORT_FULL_DUAL_PROFILE | LONG_FULL_DUAL_PROFILE
+    ) && !matches!(
+        (code.metadata, code.symbols.len()),
+        (SHORT_FULL_DUAL_PROFILE, 32) | (LONG_FULL_DUAL_PROFILE, 33)
+    ) {
         return Err(Error::InvalidLength);
     }
     let (corrected, corrected_symbols) = reed_solomon::decode(&code.symbols)?;
@@ -486,7 +483,7 @@ pub(super) fn decode(code: &Frame) -> Result<Decoded, Error> {
         PACKED_DUAL_PROFILE => unpack_packed_dual(payload)?,
         SHORT_FULL_DUAL_PROFILE | LONG_FULL_DUAL_PROFILE => {
             read_full_dual(code.metadata, &mut bits)?
-        },
+        }
         13..=15 | 17..=19 => {
             let spotify_id = bits
                 .rank(rank_width)?

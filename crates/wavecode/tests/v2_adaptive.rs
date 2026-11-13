@@ -244,7 +244,14 @@ fn full_dual_domain_uses_32_or_33_columns_without_losing_identifiers() {
                 let frame = v2::encode_adaptive(&input).unwrap();
                 let width = v2::optical_column_count(&frame);
                 assert_eq!(v2::decode(&frame).unwrap().content, input);
-                assert!(width <= if moment.is_some_and(|time| time > 255) { 33 } else { 32 });
+                assert!(
+                    width
+                        <= if moment.is_some_and(|time| time > 255) {
+                            33
+                        } else {
+                            32
+                        }
+                );
                 if moment.is_some_and(|time| time > 255) {
                     assert_eq!(frame.metadata, 21);
                     assert_eq!(width, 33);

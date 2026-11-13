@@ -331,10 +331,7 @@ pub fn implicit_dual_profile(optical_columns: usize) -> Option<u8> {
 /// so their on-wire first symbol is disjoint from this marker.
 pub fn implicit_dual_profile_for_frame(frame: &Frame) -> bool {
     implicit_dual_profile(frame.symbols.len()) == Some(frame.metadata)
-        || matches!(
-            (frame.symbols.len(), frame.metadata),
-            (32, 20) | (33, 21)
-        )
+        || matches!((frame.symbols.len(), frame.metadata), (32, 20) | (33, 21))
 }
 
 pub fn optical_column_count(frame: &Frame) -> usize {
