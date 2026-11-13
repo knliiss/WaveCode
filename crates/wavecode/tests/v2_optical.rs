@@ -176,7 +176,9 @@ fn perspective_reader_does_not_require_fixed_payload_gaps() {
 #[test]
 fn self_delimiting_dual_modes_scan_without_optical_header_or_layout_hints() {
     let scenarios = [
-        ("0000000000000000000000", None, 17, 27),
+        ("0000000000000000000000", None, 22, 15),
+        ("0000000000000000000000", Some(59), 23, 16),
+        ("0000000000000000000001", None, 22, 15),
         ("00006rS8oxBA9U5pIjyIaG", None, 18, 28),
         ("000SKiCQOM5vAG3pNoyji4", None, 19, 29),
         ("zzzzzzzzzzzzzzzzzzzzzz", None, 16, 31),
@@ -210,6 +212,37 @@ fn self_delimiting_dual_modes_scan_without_optical_header_or_layout_hints() {
                 assert_eq!(restored.version, v2::anchor::VERSION);
             }
         }
+    }
+}
+
+#[test]
+fn marker_protected_micro_dual_does_not_conflict_with_single_optical_profiles() {
+    // Single YouTube and Amazon may have 14–16 columns with explicit
+    // metadata. Micro-Dual uses the SAME lengths but a protected high
+    // marker as its first source bit. The scanner receives no mode hint.
+    let spotify_id = "0000000000000000000000";
+    let content = Content::Dual {
+        spotify_id: spotify_id.into(),
+        youtube_music_id: YOUTUBE.into(),
+        moment_seconds: None,
+    };
+    let frame = v2::encode_adaptive(&content).unwrap();
+    assert_eq!(v2::optical_column_count(&frame), 15);
+    for style in [visual::RenderStyle::Classic, visual::RenderStyle::Compact] {
+        let dual_png = visual::render_png_style(&frame, style).unwrap();
+        let scanned = raster::scan_png_or_jpeg(&dual_png).unwrap();
+        assert_eq!(scanned.decoded.content, content);
+        assert_eq!(scanned.profile, 22);
+
+        let single = Content::Single(
+            MusicCode::from_url("https://music.youtube.com/watch?v=JGwWNGJdvx8").unwrap(),
+        );
+        let single_frame = v2::encode_adaptive(&single).unwrap();
+        assert_eq!(v2::optical_column_count(&single_frame), 15);
+        let single_png = visual::render_png_style(&single_frame, style).unwrap();
+        let scanned_single = raster::scan_png_or_jpeg(&single_png).unwrap();
+        assert_eq!(scanned_single.decoded.content, single);
+        assert_eq!(scanned_single.profile, single_frame.metadata);
     }
 }
 
