@@ -383,15 +383,31 @@ fn read_frame(
     let height = fit.scale / anchor::W_DOT_SCALE_RATIO;
     let base = height * 0.10;
     let step = height * 0.026;
+    let reference_pitch = (pairs[1].0.u - pairs[0].0.u).abs();
+    if reference_pitch < 4.0 {
+        return Err(Error::InvalidFrame);
+    }
     let mut symbols = Vec::with_capacity(pairs.len());
     for (index, &(upper, lower)) in pairs.iter().enumerate() {
-        if (upper.u - lower.u).abs() > pitch * 0.27
-            || (index > 0 && ((upper.u - pairs[index - 1].0.u) - pitch).abs() > pitch * 0.28)
+        let left_pitch = (index > 0).then(|| (upper.u - pairs[index.saturating_sub(1)].0.u).abs());
+        let right_pitch = pairs.get(index + 1).map(|next| (next.0.u - upper.u).abs());
+        let local_pitch = match (left_pitch, right_pitch) {
+            (Some(left), Some(right)) => (left + right) / 2.0,
+            (Some(left), None) => left,
+            (None, Some(right)) => right,
+            (None, None) => pitch,
+        };
+        if (upper.u - lower.u).abs() > local_pitch * 0.27
+            || !(pitch * 0.70..=pitch * 1.30).contains(&local_pitch)
         {
             return Err(Error::InvalidFrame);
         }
-        let level = |h: f64| -> Result<u8, Error> {
-            let estimate = (h - base) / step;
+        // Under projective keystone the horizontal spacing scales as the
+        // square of the vertical rail height. Use a local pitch estimate
+        // to normalize each column independently before quantizing levels.
+        let vertical_scale = (local_pitch / reference_pitch).sqrt().clamp(0.7, 1.3);
+        let level = |observed_height: f64| -> Result<u8, Error> {
+            let estimate = (observed_height / vertical_scale - base) / step;
             let rounded = estimate.round();
             if !(0.0..=7.0).contains(&rounded) || (rounded - estimate).abs() > 0.5 {
                 return Err(Error::InvalidFrame);
@@ -402,12 +418,12 @@ fn read_frame(
         let down = level(lower.transverse)?;
         let symbol = (up << 5)
             | (down << 2)
-            | if upper.longitudinal / pitch > 0.55 {
+            | if upper.longitudinal / local_pitch > 0.55 {
                 2
             } else {
                 0
             }
-            | if lower.longitudinal / pitch > 0.55 {
+            | if lower.longitudinal / local_pitch > 0.55 {
                 1
             } else {
                 0
