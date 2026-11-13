@@ -347,6 +347,55 @@ fn classify_version(fit: &ShellFit<'_>) -> [bool; anchor::VERSION_SITES] {
     bits
 }
 
+/// Framing is derived from actual optical symbols, never visual spacing.
+/// 27-31 columns are reserved self-delimiting Dual classes. For 32/33
+/// columns both the marker-bearing implicit frame and the explicit-profile
+/// alternative are independently CRC+RS checked. A conflicting decode
+/// is rejected rather than silently choosing the wrong music identity.
+/// Trying the implicit interpretation regardless of the observed first
+/// byte lets RS recover up to two damaged symbols, including its marker.
+fn decode_payload_symbols(mut symbols: Vec<u8>) -> Result<(u8, Decoded), Error> {
+    if symbols.len() < 2 {
+        return Err(Error::InvalidFrame);
+    }
+    if let Some(metadata) = codec::implicit_dual_profile(symbols.len()) {
+        let decoded = codec::decode(&Frame { metadata, symbols })?;
+        return Ok((metadata, decoded));
+    }
+    if let Some(implicit_metadata) = match symbols.len() {
+        32 => Some(20),
+        33 => Some(21),
+        _ => None,
+    } {
+        let implicit = codec::decode(&Frame {
+            metadata: implicit_metadata,
+            symbols: symbols.clone(),
+        });
+        let explicit = if symbols[0] <= 63 {
+            codec::decode(&Frame {
+                metadata: symbols[0],
+                symbols: symbols[1..].to_vec(),
+            })
+            .ok()
+            .map(|decoded| (symbols[0], decoded))
+        } else {
+            None
+        };
+        return match (implicit, explicit) {
+            (Ok(decoded), None) => Ok((implicit_metadata, decoded)),
+            (Err(_), Some(decoded)) => Ok(decoded),
+            (Ok(_), Some(_)) => Err(Error::InvalidFrame),
+            (Err(_), None) => Err(Error::InvalidFrame),
+        };
+    }
+    let metadata = symbols.remove(0);
+    if metadata > 63 {
+        return Err(Error::InvalidFrame);
+    }
+    let decoded = codec::decode(&Frame { metadata, symbols })?;
+    Ok((metadata, decoded))
+}
+
 fn read_shell_frame(parts: &[Component], fit: &ShellFit<'_>) -> Result<Located, Error> {
     let (version, corrected_bits) = anchor::decode_version(classify_version(fit))?;
     if version != anchor::VERSION {
@@ -421,21 +470,7 @@ fn read_shell_frame(parts: &[Component], fit: &ShellFit<'_>) -> Result<Located, 
             .to_byte()?,
         );
     }
-    if symbols.len() < 2 {
-        return Err(Error::InvalidFrame);
-    }
-    // Mode is inferred solely from the observed number of payload columns
-    // for the two self-delimiting Dual classes. It is NOT encoded by the
-    // W-to-data distance, the central slit, the color or the render style.
-    let metadata = if let Some(inferred) = codec::implicit_dual_profile(symbols.len()) {
-        inferred
-    } else {
-        symbols.remove(0)
-    };
-    if metadata > 63 {
-        return Err(Error::InvalidFrame);
-    }
-    let decoded = codec::decode(&Frame { metadata, symbols })?;
+    let (metadata, decoded) = decode_payload_symbols(symbols)?;
     let corners = [
         fit.to_image(0.0, 0.0),
         fit.to_image(anchor::W_X_MAX, 0.0),
