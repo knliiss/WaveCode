@@ -423,11 +423,14 @@ mod tests {
         bit_order.sort_unstable();
         assert_eq!(bit_order, (0..METADATA_BITS).collect::<Vec<_>>());
         for site in &holes {
-            let owner = shell.iter().filter(|bar| {
-                site.x == bar.x + bar.width / 2.0
-                    && site.y >= bar.y + CAPSULE_RADIUS
-                    && site.y <= bar.y + bar.height - CAPSULE_RADIUS
-            }).collect::<Vec<_>>();
+            let owner = shell
+                .iter()
+                .filter(|bar| {
+                    site.x == bar.x + bar.width / 2.0
+                        && site.y >= bar.y + CAPSULE_RADIUS
+                        && site.y <= bar.y + bar.height - CAPSULE_RADIUS
+                })
+                .collect::<Vec<_>>();
             assert_eq!(owner.len(), 1, "hole outside a single opaque capsule");
             let bar = owner[0];
             assert!(site.y - bar.y > DOT_LARGE_RADIUS + 8.0);
@@ -438,8 +441,7 @@ mod tests {
         for (i, first) in holes.iter().enumerate() {
             for second in holes.iter().skip(i + 1) {
                 assert!(
-                    (first.x - second.x).hypot(first.y - second.y)
-                        > 2.0 * DOT_LARGE_RADIUS + 3.0
+                    (first.x - second.x).hypot(first.y - second.y) > 2.0 * DOT_LARGE_RADIUS + 3.0
                 );
             }
         }

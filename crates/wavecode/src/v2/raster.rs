@@ -166,7 +166,10 @@ impl ShellFit<'_> {
         let u = self.origin_u + x * self.scale;
         let v = self.origin_v + y * self.scale;
         let (sin, cos) = self.angle.sin_cos();
-        Point { x: u * cos - v * sin, y: u * sin + v * cos }
+        Point {
+            x: u * cos - v * sin,
+            y: u * sin + v * cos,
+        }
     }
 }
 
@@ -190,8 +193,7 @@ fn estimate_roll(components: &[Component]) -> f64 {
         }
         // Largest principal axis is vertical in the W local coordinate
         // system, so subtract pi/2 to obtain the reading direction.
-        let reading_angle = 0.5 * (2.0 * xy).atan2(xx - yy)
-            - std::f64::consts::FRAC_PI_2;
+        let reading_angle = 0.5 * (2.0 * xy).atan2(xx - yy) - std::f64::consts::FRAC_PI_2;
         cos_sum += anisotropy.sqrt() * (2.0 * reading_angle).cos();
         sin_sum += anisotropy.sqrt() * (2.0 * reading_angle).sin();
     }
@@ -220,27 +222,36 @@ fn fit_shell<'a>(parts: &[&'a Component], angle: f64) -> Option<ShellFit<'a>> {
         };
         paired.push((upper, lower));
     }
-    let first_u = (paired[0].0.1.u + paired[0].1.1.u) / 2.0;
-    let last_u = (paired[10].0.1.u + paired[10].1.1.u) / 2.0;
+    let first_u = (paired[0].0 .1.u + paired[0].1 .1.u) / 2.0;
+    let last_u = (paired[10].0 .1.u + paired[10].1 .1.u) / 2.0;
     let scale = (last_u - first_u) / 340.0;
     if !(0.2..=12.0).contains(&scale) {
         return None;
     }
     let shell = anchor::capsules();
-    let origin_u = paired.iter().enumerate().map(|(i, p)| {
-        (p.0.1.u + p.1.1.u) / 2.0 - (shell[i].x + 10.0) * scale
-    }).sum::<f64>() / 11.0;
-    let origin_v = paired.iter().enumerate().map(|(i, pair)| {
-        let upper = shell[i];
-        let lower = shell[i + 11];
-        (pair.0.1.v - (upper.y + upper.height / 2.0) * scale
-          + pair.1.1.v - (lower.y + lower.height / 2.0) * scale) / 2.0
-    }).sum::<f64>() / 11.0;
+    let origin_u = paired
+        .iter()
+        .enumerate()
+        .map(|(i, p)| (p.0 .1.u + p.1 .1.u) / 2.0 - (shell[i].x + 10.0) * scale)
+        .sum::<f64>()
+        / 11.0;
+    let origin_v = paired
+        .iter()
+        .enumerate()
+        .map(|(i, pair)| {
+            let upper = shell[i];
+            let lower = shell[i + 11];
+            (pair.0 .1.v - (upper.y + upper.height / 2.0) * scale + pair.1 .1.v
+                - (lower.y + lower.height / 2.0) * scale)
+                / 2.0
+        })
+        .sum::<f64>()
+        / 11.0;
     let mut score = 0.0;
     for (index, pair) in paired.iter().enumerate() {
         for (component, projected, capsule) in [
-            (pair.0.0, pair.0.1, shell[index]),
-            (pair.1.0, pair.1.1, shell[index + 11]),
+            (pair.0 .0, pair.0 .1, shell[index]),
+            (pair.1 .0, pair.1 .1, shell[index + 11]),
         ] {
             let expected_u = origin_u + (capsule.x + 10.0) * scale;
             let expected_v = origin_v + (capsule.y + capsule.height / 2.0) * scale;
@@ -248,10 +259,8 @@ fn fit_shell<'a>(parts: &[&'a Component], angle: f64) -> Option<ShellFit<'a>> {
             let error_v = (projected.v - expected_v).abs();
             if error_u > 4.5 * scale + 1.2
                 || error_v > 8.0 * scale + 1.2
-                || (projected.longitudinal - capsule.width * scale).abs()
-                    > 6.5 * scale + 1.0
-                || (projected.transverse - capsule.height * scale).abs()
-                    > 8.0 * scale + 1.5
+                || (projected.longitudinal - capsule.width * scale).abs() > 6.5 * scale + 1.0
+                || (projected.transverse - capsule.height * scale).abs() > 8.0 * scale + 1.5
             {
                 return None;
             }
@@ -263,7 +272,10 @@ fn fit_shell<'a>(parts: &[&'a Component], angle: f64) -> Option<ShellFit<'a>> {
         return None;
     }
     Some(ShellFit {
-        angle, scale, origin_u, origin_v,
+        angle,
+        scale,
+        origin_u,
+        origin_v,
         capsules: parts.to_vec(),
         score,
     })
@@ -277,7 +289,8 @@ fn locate_shell<'a>(components: &'a [Component]) -> Vec<ShellFit<'a>> {
         for step in -6..=6 {
             let angle = base + f64::from(step) * 0.012;
             let (sin, cos) = angle.sin_cos();
-            let mut sorted: Vec<_> = components.iter()
+            let mut sorted: Vec<_> = components
+                .iter()
                 .filter(|part| part.pixels.len() >= 40)
                 .collect();
             sorted.sort_by(|a, b| {
@@ -306,16 +319,19 @@ fn classify_holes(
     let sample_radius = anchor::DOT_LARGE_RADIUS * fit.scale + 0.6;
     let threshold = std::f64::consts::PI
         * (anchor::DOT_SMALL_RADIUS.powi(2) + anchor::DOT_LARGE_RADIUS.powi(2))
-        * fit.scale.powi(2) / 2.0;
+        * fit.scale.powi(2)
+        / 2.0;
     for site in anchor::sites() {
         let point = fit.to_image(site.x, site.y);
         let mut opening_area = 0_u32;
         let min_x = (point.x - sample_radius).floor().max(0.0) as u32;
         let max_x = (point.x + sample_radius)
-            .ceil().min(f64::from(image.width())) as u32;
+            .ceil()
+            .min(f64::from(image.width())) as u32;
         let min_y = (point.y - sample_radius).floor().max(0.0) as u32;
         let max_y = (point.y + sample_radius)
-            .ceil().min(f64::from(image.height())) as u32;
+            .ceil()
+            .min(f64::from(image.height())) as u32;
         for y in min_y..max_y {
             for x in min_x..max_x {
                 let dx = f64::from(x) + 0.5 - point.x;
@@ -371,8 +387,8 @@ fn read_shell_frame(
             }
         })
         .collect();
-    let pitch = (pairs.last().ok_or(Error::InvalidFrame)?.0.u - pairs[0].0.u)
-        / (pairs.len() - 1) as f64;
+    let pitch =
+        (pairs.last().ok_or(Error::InvalidFrame)?.0.u - pairs[0].0.u) / (pairs.len() - 1) as f64;
     if pitch < 4.0 {
         return Err(Error::InvalidFrame);
     }
@@ -385,10 +401,10 @@ fn read_shell_frame(
     }
     let mut symbols = Vec::with_capacity(pairs.len());
     for (index, &(upper, lower)) in pairs.iter().enumerate() {
-        let left_pitch = index.checked_sub(1)
+        let left_pitch = index
+            .checked_sub(1)
             .map(|previous| (upper.u - pairs[previous].0.u).abs());
-        let right_pitch = pairs.get(index + 1)
-            .map(|next| (next.0.u - upper.u).abs());
+        let right_pitch = pairs.get(index + 1).map(|next| (next.0.u - upper.u).abs());
         let local_pitch = match (left_pitch, right_pitch) {
             (Some(left), Some(right)) => (left + right) / 2.0,
             (Some(left), None) => left,
@@ -414,11 +430,22 @@ fn read_shell_frame(
         symbols.push(
             (up << 5)
                 | (down << 2)
-                | if upper.longitudinal / local_pitch > 0.55 { 2 } else { 0 }
-                | if lower.longitudinal / local_pitch > 0.55 { 1 } else { 0 },
+                | if upper.longitudinal / local_pitch > 0.55 {
+                    2
+                } else {
+                    0
+                }
+                | if lower.longitudinal / local_pitch > 0.55 {
+                    1
+                } else {
+                    0
+                },
         );
     }
-    let decoded = codec::decode(&Frame { metadata: meta.profile, symbols })?;
+    let decoded = codec::decode(&Frame {
+        metadata: meta.profile,
+        symbols,
+    })?;
     let corners = [
         fit.to_image(0.0, 0.0),
         fit.to_image(anchor::W_X_MAX, 0.0),
@@ -426,21 +453,52 @@ fn read_shell_frame(
         fit.to_image(anchor::W_X_MAX, anchor::W_Y_MAX),
     ];
     let pose = AnchorPose::from_fiducials(corners)?;
-    let selected: Vec<_> = fit.capsules.iter().copied()
-        .chain(bars.iter().map(|(part, _)| *part)).collect();
-    let left = selected.iter().map(|part| part.left).min().ok_or(Error::InvalidFrame)?;
-    let right = selected.iter().map(|part| part.right).max().ok_or(Error::InvalidFrame)?;
-    let top = selected.iter().map(|part| part.top).min().ok_or(Error::InvalidFrame)?;
-    let bottom = selected.iter().map(|part| part.bottom).max().ok_or(Error::InvalidFrame)?;
+    let selected: Vec<_> = fit
+        .capsules
+        .iter()
+        .copied()
+        .chain(bars.iter().map(|(part, _)| *part))
+        .collect();
+    let left = selected
+        .iter()
+        .map(|part| part.left)
+        .min()
+        .ok_or(Error::InvalidFrame)?;
+    let right = selected
+        .iter()
+        .map(|part| part.right)
+        .max()
+        .ok_or(Error::InvalidFrame)?;
+    let top = selected
+        .iter()
+        .map(|part| part.top)
+        .min()
+        .ok_or(Error::InvalidFrame)?;
+    let bottom = selected
+        .iter()
+        .map(|part| part.bottom)
+        .max()
+        .ok_or(Error::InvalidFrame)?;
     Ok(Located {
-        decoded, pose,
-        bounds: Bounds { left, top, width: right-left+1, height: bottom-top+1 },
-        version: meta.version, profile: meta.profile,
+        decoded,
+        pose,
+        bounds: Bounds {
+            left,
+            top,
+            width: right - left + 1,
+            height: bottom - top + 1,
+        },
+        version: meta.version,
+        profile: meta.profile,
         corrected_anchor_bits: meta.corrected_bits,
     })
 }
 
-fn scan_components(image: &GrayImage, light_ink: bool, parts: &[Component]) -> Result<Located, Error> {
+fn scan_components(
+    image: &GrayImage,
+    light_ink: bool,
+    parts: &[Component],
+) -> Result<Located, Error> {
     for fit in locate_shell(parts) {
         if let Ok(located) = read_shell_frame(image, light_ink, parts, &fit) {
             return Ok(located);

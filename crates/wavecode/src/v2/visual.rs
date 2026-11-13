@@ -266,19 +266,44 @@ mod tests {
             assert_eq!(svg.matches("class=\\\"w-capsule\\\"").count(), 22);
             assert_eq!(svg.matches("class=\\\"w-hole\\\"").count(), 60);
             assert!(svg.contains("data-version=\\\"2\\\""));
-            assert_eq!(svg.matches("class=\\\"data-upper\\\"").count(), frame.symbols.len());
-            assert!(svg.find("class=\\\"w-hole\\\"").unwrap() < svg.find("class=\\\"data-upper\\\"").unwrap());
+            assert_eq!(
+                svg.matches("class=\\\"data-upper\\\"").count(),
+                frame.symbols.len()
+            );
+            assert!(
+                svg.find("class=\\\"w-hole\\\"").unwrap()
+                    < svg.find("class=\\\"data-upper\\\"").unwrap()
+            );
         }
     }
 
     #[test]
     fn all_brand_capsules_and_hole_centers_remain_fixed_when_metadata_changes() {
-        let a = marks(&Frame { metadata: 1, symbols: vec![0; 14] }, RenderProfile::default()).unwrap().1;
-        let b = marks(&Frame { metadata: 15, symbols: vec![0; 14] }, RenderProfile::default()).unwrap().1;
+        let a = marks(
+            &Frame {
+                metadata: 1,
+                symbols: vec![0; 14],
+            },
+            RenderProfile::default(),
+        )
+        .unwrap()
+        .1;
+        let b = marks(
+            &Frame {
+                metadata: 15,
+                symbols: vec![0; 14],
+            },
+            RenderProfile::default(),
+        )
+        .unwrap()
+        .1;
         for (first, second) in a.iter().zip(&b) {
             match (first, second) {
                 (Mark::Capsule(one), Mark::Capsule(two)) => {
-                    assert_eq!((one.x, one.y, one.width, one.height), (two.x, two.y, two.width, two.height));
+                    assert_eq!(
+                        (one.x, one.y, one.width, one.height),
+                        (two.x, two.y, two.width, two.height)
+                    );
                 }
                 (Mark::Hole(one), Mark::Hole(two)) => {
                     assert_eq!((one.cx, one.cy), (two.cx, two.cy));
