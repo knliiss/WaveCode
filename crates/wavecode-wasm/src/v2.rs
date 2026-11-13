@@ -20,9 +20,9 @@ fn layout_name(layout: v2::Layout) -> &'static str {
 fn encoded_json(frame: &v2::Frame) -> Result<String, JsValue> {
     let decoded = v2::decode(frame).map_err(js_error)?;
     serde_json::to_string(&json!({
-        "format": "v2-capsule-holes-bch60",
+        "format": "v2-capsule-version-bch22",
         "version": v2::anchor::VERSION,
-        "anchor": "capsule-shell-60-holes-bch60",
+        "anchor": "capsule-version-bch22",
         "layout": layout_name(decoded.layout),
         "metadata": frame.metadata,
         "symbols": &frame.symbols,
@@ -51,9 +51,9 @@ fn decoded_value(decoded: &v2::Decoded) -> Result<Value, wavecode::Error> {
         ],
     };
     Ok(json!({
-        "format": "v2-capsule-holes-bch60",
+        "format": "v2-capsule-version-bch22",
         "version": v2::anchor::VERSION,
-        "anchor": "capsule-shell-60-holes-bch60",
+        "anchor": "capsule-version-bch22",
         "layout": layout_name(decoded.layout),
         "urls": urls,
         "corrected_symbols": decoded.corrected_symbols,
@@ -87,7 +87,8 @@ fn visual_style(name: &str) -> Result<v2::visual::RenderStyle, JsValue> {
     }
 }
 
-/// Return a JSON frame with metadata and full GF(256) symbols.
+/// Return a JSON frame. The routing header is transmitted as the FIRST
+/// visible payload column, never as part of the version-only W.
 #[wasm_bindgen]
 pub fn v2_encode_url(url: &str, moment_override: Option<u16>) -> Result<String, JsValue> {
     if url.len() > MAX_URL_BYTES {
