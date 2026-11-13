@@ -69,19 +69,21 @@ impl RenderProfile {
             return Err(Error::InvalidGeometry);
         }
         let w_pitch = self.height * anchor::W_DOT_SCALE_RATIO;
+        // Both outward extension directions need canvas clearance.
+        let vertical_padding = anchor::VERSION_EXTENSION * w_pitch;
         let anchor_width = anchor::SHELL_WIDTH * w_pitch;
         let payload_x = self.quiet + anchor_width + self.pitch * optical::PAYLOAD_GAP_PITCH_RATIO;
         let width = payload_x + (symbols + 1) as f64 * self.pitch + self.quiet;
         let gap = self.height * 0.060;
         Ok(Metrics {
             width,
-            height: self.height,
+            height: self.height + 2.0 * vertical_padding,
             anchor_width,
             payload_x,
             pitch: self.pitch,
             w_pitch,
-            upper_baseline: self.height / 2.0 - gap / 2.0,
-            lower_baseline: self.height / 2.0 + gap / 2.0,
+            upper_baseline: self.height / 2.0 + vertical_padding - gap / 2.0,
+            lower_baseline: self.height / 2.0 + vertical_padding + gap / 2.0,
             base_height: self.height * optical::BASE_HEIGHT_RATIO,
             height_step: self.height * optical::HEIGHT_STEP_RATIO,
         })
@@ -126,7 +128,7 @@ fn marks(frame: &Frame, profile: RenderProfile) -> Result<(Metrics, Vec<Mark>), 
     for capsule in anchor::capsules_for_version(anchor::VERSION)? {
         result.push(Mark::Capsule(Rect {
             x: profile.quiet + capsule.x * metrics.w_pitch,
-            y: capsule.y * metrics.w_pitch,
+            y: (capsule.y + anchor::VERSION_EXTENSION) * metrics.w_pitch,
             width: capsule.width * metrics.w_pitch,
             height: capsule.height * metrics.w_pitch,
         }));
