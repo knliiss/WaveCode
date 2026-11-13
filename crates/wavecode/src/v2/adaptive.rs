@@ -91,14 +91,32 @@ fn read_full_dual(header: u8, bits: &mut BitReader<'_>) -> Result<Content, Error
     })
 }
 
-fn packed_boundary() -> Result<[u8; 25], Error> {
-    let high_spotify_count = Rank::pow(62, 22).sub(Rank::pow(2, 128));
-    let prefix = high_spotify_count
-        .to_bytes(17)
-        .ok_or(Error::InvalidCodeword)?;
+/// Exact mixed-radix integer: Spotify * 2^66 + complete YouTube rank.
+/// The first 17 bytes contain (Spotify << 2) plus the top two YouTube
+/// bits; the last eight bytes contain the remaining 64 YouTube bits.
+fn full_no_time_ordinal(spotify: Rank, youtube: Rank) -> Result<[u8; 25], Error> {
+    if spotify > Rank::pow(62, 22) || youtube >= Rank::pow(2, 66) {
+        return Err(Error::InvalidIdentifier);
+    }
+    let spotify_bytes = spotify.to_bytes(17).ok_or(Error::InvalidIdentifier)?;
+    let youtube_bytes = youtube.to_bytes(9).ok_or(Error::InvalidIdentifier)?;
     let mut result = [0_u8; 25];
-    result[..17].copy_from_slice(&prefix);
+    let mut carry = 0_u16;
+    for index in (0..17).rev() {
+        let shifted = u16::from(spotify_bytes[index]) * 4 + carry;
+        result[index] = shifted as u8;
+        carry = shifted >> 8;
+    }
+    if carry != 0 || youtube_bytes[0] > 3 {
+        return Err(Error::InvalidIdentifier);
+    }
+    result[16] |= youtube_bytes[0];
+    result[17..].copy_from_slice(&youtube_bytes[1..]);
     Ok(result)
+}
+
+fn packed_boundary() -> Result<[u8; 25], Error> {
+    full_no_time_ordinal(Rank::pow(62, 22), Rank::zero())
 }
 
 fn add_ordinal(left: [u8; 25], right: [u8; 25]) -> Option<[u8; 25]> {
@@ -124,21 +142,6 @@ fn subtract_ordinal(left: [u8; 25], right: [u8; 25]) -> Option<[u8; 25]> {
         borrow = i16::from(diff < 0);
     }
     (borrow == 0).then_some(result)
-}
-
-fn packed_high_no_time(spotify: Rank, youtube: u64) -> Result<[u8; 25], Error> {
-    let minimum = Rank::pow(2, 128);
-    if spotify < minimum || spotify >= Rank::pow(62, 22) {
-        return Err(Error::InvalidIdentifier);
-    }
-    let offset = spotify
-        .sub(minimum)
-        .to_bytes(17)
-        .ok_or(Error::InvalidIdentifier)?;
-    let mut output = [0_u8; 25];
-    output[..17].copy_from_slice(&offset);
-    output[17..].copy_from_slice(&youtube.to_be_bytes());
-    Ok(output)
 }
 
 fn packed_short_moment(spotify: Rank, youtube: u64, moment: u8) -> Option<[u8; 25]> {
