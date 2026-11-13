@@ -178,6 +178,37 @@ fn shorter_dual_classes_are_exact_at_every_bit_width_boundary() {
 }
 
 #[test]
+fn all_no_time_dual_syntactic_domains_fit_at_most_31_optical_columns() {
+    for spotify_id in [
+        "0000000000000000000000",
+        "7n42DGM5Tflk9n8mt7Fhc7",
+        "7n42DGM5Tflk9n8mt7Fhc8",
+        "zzzzzzzzzzzzzzzzzzzzzz",
+    ] {
+        for youtube_music_id in ["AAAAAAAAAAA", "JGwWNGJdvx8", "___________"] {
+            let content = Content::Dual {
+                spotify_id: spotify_id.into(),
+                youtube_music_id: youtube_music_id.into(),
+                moment_seconds: None,
+            };
+            let frame = v2::encode_adaptive(&content).unwrap();
+            let n = v2::optical_column_count(&frame);
+            assert!(n <= 31, "{content:?}: {n} columns");
+            assert_eq!(v2::decode(&frame).unwrap().content, content);
+            if youtube_music_id == "___________" {
+                assert_eq!(frame.metadata, 16);
+                assert_eq!(n, 31);
+            }
+            let mut damaged = frame.clone();
+            damaged.symbols[0] ^= 0x53;
+            let last = damaged.symbols.len() - 1;
+            damaged.symbols[last] ^= 0xa7;
+            assert_eq!(v2::decode(&damaged).unwrap().content, content);
+        }
+    }
+}
+
+#[test]
 fn ranked_31_column_dual_modes_remain_lossless_at_boundaries() {
     for spotify_id in [
         "7n42DGM5Tflk9n8mt7Fhc8",
