@@ -63,8 +63,6 @@ impl Component {
             v: self.cy * cos - self.cx * sin,
             longitudinal: hi_u - lo_u + 1.0,
             transverse: hi_v - lo_v + 1.0,
-            edge_center_u: (lo_u + hi_u) / 2.0,
-            edge_center_v: (lo_v + hi_v) / 2.0,
         }
     }
 }
@@ -75,8 +73,6 @@ struct Projection {
     v: f64,
     longitudinal: f64,
     transverse: f64,
-    edge_center_u: f64,
-    edge_center_v: f64,
 }
 
 fn connected(image: &GrayImage, light: bool) -> Result<Vec<Component>, Error> {
