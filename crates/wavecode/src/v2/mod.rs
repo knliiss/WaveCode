@@ -5,6 +5,7 @@
 mod adaptive;
 pub mod anchor;
 mod codec;
+pub mod optical;
 #[cfg(feature = "raster")]
 pub mod raster;
 pub mod visual;
