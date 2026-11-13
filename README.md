@@ -236,10 +236,14 @@ PNG/JPEG support is enabled by default and can be disabled for smaller integrati
 
 WaveCode V2 is developed only on the `experiment/v2` branch. It has a fixed
 **original 22-capsule W shell** with only the protected 12-bit version in
-its subtly varied capsule lengths. There are **no microscopic holes**: the
-routing profile is an extra optical symbol at the beginning of the payload,
-followed by adaptive lossless content. All format details, mathematical proofs, optical limitations,
-migration requirements and test commands live in **[one V2 specification](spec/v2.md)**.
+its subtly varied capsule lengths. There are **no microscopic holes**.
+The payload supports explicit routing columns, exact-length implicit profiles,
+and RS-protected source markers for Dual. Lossless dual-adaptive encoding now
+uses 31 columns for **every** no-time Spotify22 + YouTube11 pair (or fewer
+for restricted ID ranges), 32 for any 0–255 s moment, and 33 for longer moments.
+Some extremely small Spotify IDs require only 14–26 columns. Styles and gaps
+never encode bits. All mathematical proofs, format details, optical limitations,
+and test commands live in **[one V2 specification](spec/v2.md)**.
 The stable V1 format and API remain unchanged; V2 is not yet merged into `main`.
 
 On Windows PowerShell, run the commands on separate lines:
@@ -252,6 +256,9 @@ cargo run -p wavecode --example v2_experiment -- scan compact.png
 # Optional: custom payload-center gap and logo-to-payload gap, in pixels
 cargo run -p wavecode --example v2_experiment -- encode-adaptive "https://music.youtube.com/watch?v=JGwWNGJdvx8&t=59" custom.png compact 8 120
 cargo run -p wavecode --example v2_experiment -- scan custom.png
+# Dual Spotify + YouTube Music in the smallest available V2 optical mode
+cargo run -p wavecode --example v2_experiment -- dual-adaptive "https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b" "https://music.youtube.com/watch?v=JGwWNGJdvx8" dual.png compact
+cargo run -p wavecode --example v2_experiment -- scan dual.png
 ```
 
 Each command generates a PNG and a matching SVG. Both **Classic** and **Compact**
