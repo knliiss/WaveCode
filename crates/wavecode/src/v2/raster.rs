@@ -608,6 +608,39 @@ fn scan_components(parts: &[Component]) -> Result<Located, Error> {
     Err(Error::InvalidFrame)
 }
 
+/// On a photo the W capsules can be surrounded by printed text, icons or
+/// decorations sharing the same X coordinates. Sorting every foreground
+/// component across the entire image then breaks the 22-component W window.
+/// If whole-frame detection fails, isolate candidate horizontal image bands
+/// before fitting. Coordinates stay in the original image: no photo resize
+/// or pose transformation is necessary for these candidates.
+fn scan_components_in_bands(parts: &[Component], height: u32) -> Result<Located, Error> {
+    if let Ok(frame) = scan_components(parts) {
+        return Ok(frame);
+    }
+
+    let h = f64::from(height);
+    for (top, bottom) in [
+        (0.20, 0.80),
+        (0.30, 0.70),
+        (0.0, 0.60),
+        (0.40, 1.0),
+    ] {
+        let subset: Vec<Component> = parts
+            .iter()
+            .filter(|part| part.cy >= top * h && part.cy <= bottom * h)
+            .cloned()
+            .collect();
+        if subset.len() < 40 || subset.len() == parts.len() {
+            continue;
+        }
+        if let Ok(frame) = scan_components(&subset) {
+            return Ok(frame);
+        }
+    }
+    Err(Error::InvalidFrame)
+}
+
 /// Otsu's between-class variance locates the ink/background boundary even
 /// when camera exposure places both tones above or below a fixed 128 cut.
 /// Compute the histogram once and try further masks only if the fast path
@@ -652,7 +685,7 @@ fn otsu_threshold(image: &GrayImage) -> u8 {
 pub fn scan_gray(image: &GrayImage) -> Result<Located, Error> {
     for (threshold, light) in [(128, false), (128, true)] {
         if let Ok(parts) = connected(image, threshold, light) {
-            if let Ok(frame) = scan_components(&parts) {
+            if let Ok(frame) = scan_components_in_bands(&parts, image.height()) {
                 return Ok(frame);
             }
         }
@@ -673,7 +706,7 @@ pub fn scan_gray(image: &GrayImage) -> Result<Located, Error> {
         }
         attempted.push((threshold, light));
         if let Ok(parts) = connected(image, threshold, light) {
-            if let Ok(frame) = scan_components(&parts) {
+            if let Ok(frame) = scan_components_in_bands(&parts, image.height()) {
                 return Ok(frame);
             }
         }
