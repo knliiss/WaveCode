@@ -142,6 +142,53 @@ pub fn v2_render_png(
     v2::visual::render_png(&frame, profile(pitch, height, quiet)).map_err(js_error)
 }
 
+/// Override two visual-only distances in physical output pixels.
+/// Neither value is written into the frame or needed by the scanner.
+#[wasm_bindgen]
+pub fn v2_render_svg_with_spacing(
+    metadata: u8,
+    symbols: &[u8],
+    pitch: f64,
+    height: f64,
+    quiet: f64,
+    payload_center_gap: f64,
+    logo_payload_gap: f64,
+) -> Result<String, JsValue> {
+    let frame = verified_frame(metadata, symbols)?;
+    v2::visual::render_svg_with_spacing(
+        &frame,
+        profile(pitch, height, quiet),
+        v2::visual::VisualSpacing {
+            payload_center_gap,
+            logo_payload_gap,
+        },
+    )
+    .map_err(js_error)
+}
+
+/// The same configurable layout as SVG, delivered as a raster PNG.
+#[wasm_bindgen]
+pub fn v2_render_png_with_spacing(
+    metadata: u8,
+    symbols: &[u8],
+    pitch: f64,
+    height: f64,
+    quiet: f64,
+    payload_center_gap: f64,
+    logo_payload_gap: f64,
+) -> Result<Vec<u8>, JsValue> {
+    let frame = verified_frame(metadata, symbols)?;
+    v2::visual::render_png_with_spacing(
+        &frame,
+        profile(pitch, height, quiet),
+        v2::visual::VisualSpacing {
+            payload_center_gap,
+            logo_payload_gap,
+        },
+    )
+    .map_err(js_error)
+}
+
 /// Render a named visual style without storing style data in the encoded frame.
 #[wasm_bindgen]
 pub fn v2_render_svg_style(metadata: u8, symbols: &[u8], style: &str) -> Result<String, JsValue> {
@@ -256,6 +303,29 @@ mod tests {
         assert!(first.contains("class=\"data-upper\""));
         assert!(second.contains("class=\"data-upper\""));
         assert_ne!(first, second);
+        assert_eq!(v2::decode(&frame).unwrap().content, content);
+    }
+
+    #[test]
+    fn custom_spacing_changes_svg_geometry_without_mutating_frame() {
+        let content = v2::Content::Single(
+            MusicCode::from_url("https://music.youtube.com/watch?v=JGwWNGJdvx8").unwrap(),
+        );
+        let frame = v2::encode(&content).unwrap();
+        let first = v2_render_svg_with_spacing(
+            frame.metadata,
+            &frame.symbols,
+            18.0, 210.0, 18.0, 4.0, 200.0,
+        )
+        .unwrap();
+        let second = v2_render_svg_with_spacing(
+            frame.metadata,
+            &frame.symbols,
+            18.0, 210.0, 18.0, 80.0, 4.0,
+        )
+        .unwrap();
+        assert_ne!(first, second);
+        assert!(first.contains("data-version=\\\"2\\\""));
         assert_eq!(v2::decode(&frame).unwrap().content, content);
     }
 
