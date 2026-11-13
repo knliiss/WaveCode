@@ -1,119 +1,95 @@
-# WaveCode SDK — Cross-Platform Integration
+# WaveCode SDK Integration
 
-WaveCode provides a stable **algorithm core** and several language-facing adapters.
-There is **no HTTP API and no hosted server**: encoding, rendering and decoding
-operate locally in the integrating application. A future website and camera
-scanner are separate products, not part of this repository.
+WaveCode provides a single **Rust codec** with versioned format APIs and thin platform adapters. Encoding, rendering and decoding are local: no HTTP service, account or track database is required.
 
-## Architecture
+## Architecture and compatibility
 
-\`\`\`text
-                  Rust wavecode (one V1 implementation)
-                     /                   \
-              wavecode-ffi           wavecode-wasm
-             Stable C ABI          wasm-bindgen exports
-            /     |       \                  |
-        Python  .NET  JVM  C/C++        JS/TypeScript
-          and any language with C FFI       browser / Node
-\`\`\`
+```text
+                  crates/wavecode
+                  Rust V1 + Rust V2
+                     /       \
+           wavecode-ffi       wavecode-wasm
+             C ABI          JavaScript/TypeScript
+            /  |  \
+         Python .NET Java/JVM
+```
 
-The core is the existing \`crates/wavecode\`. Platform crates contain only
-input conversion, memory ownership, and result formatting. They must **not**
-reimplement the versioned codec, parity, CRC, rendering, or scanner.
+| Interface | V1 | V2 |
+| --- | :---: | :---: |
+| Rust crate | ✓ | ✓ |
+| WASM / JS / TS | ✓ | ✓ |
+| Native C ABI | ✓ | — |
+| Python, .NET, JVM via C ABI | ✓ | — |
 
-## Native C ABI
+The ABI version and optical format version are **different concepts**. Existing C ABI version `1` and V1's 34-symbol payload stay compatible. Native bindings do **not** export V2 until explicitly versioned extensions are added; consuming V2 from Rust/WASM does not silently change older ABI calls.
 
-Build native binaries:
+## Rust
 
-\`\`\`bash
+```rust
+use wavecode::{MusicCode, v2};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let content = v2::Content::Single(MusicCode::from_url(
+        "https://music.youtube.com/watch?v=JGwWNGJdvx8&t=59"
+    )?);
+    let frame = v2::encode_adaptive(&content)?;
+    let png = v2::visual::render_png_style(
+        &frame, v2::visual::RenderStyle::Compact
+    )?;
+    let scanned = v2::raster::scan_png_or_jpeg(&png)?;
+    assert_eq!(scanned.decoded.content, content);
+    Ok(())
+}
+```
+
+For two independent destinations use `v2::Content::Dual { spotify_id, youtube_music_id, moment_seconds }`. For independent W and payload proportions, use `render_png_with_spacing_and_logo_height` or the SVG equivalent. A decoded V2 code does not require the renderer's style, gaps or heights.
+
+`wavecode::v1` remains the API for the fixed 36-column format. The `wavecode` binary preserves its existing V1 subcommands; see the [main README](../README.md) for the V2 CLI example.
+
+## C and C++
+
+Build the native shared library:
+
+```bash
 cargo build --release -p wavecode-ffi
-\`\`\`
+```
 
-- Linux: \`target/release/libwavecode_ffi.so\`
-- macOS: \`target/release/libwavecode_ffi.dylib\`
-- Windows: \`target/release/wavecode_ffi.dll\`
+| Platform | Output |
+| --- | --- |
+| Linux | `target/release/libwavecode_ffi.so` |
+| macOS | `target/release/libwavecode_ffi.dylib` |
+| Windows | `target/release/wavecode_ffi.dll` |
 
-Public header: [include/wavecode.h](../include/wavecode.h).
-Exported functions have a stable C calling convention and use a versioned
-\`WaveCodeBuffer { uint8_t* ptr; size_t len; }\` output type.
+Header: [`include/wavecode.h`](../include/wavecode.h).
 
-### ABI contract and safety
+The C ABI uses explicit sizes and version checks. Always call `wavecode_abi_version()` (currently `1`) and free each successful `WaveCodeBuffer` exactly once with `wavecode_free_buffer()`. Input bytes are UTF-8 slices without a NUL terminator; returned URL and SVG buffers are also **not** NUL-terminated. Functions return `WaveCodeStatus`, and an error clears the output buffer. Invalid non-null native pointers remain the caller's responsibility.
 
-- Call \`wavecode_abi_version()\` before using the binary. ABI version **1**.
-- The format version is separately available from \`wavecode_format_version()\`.
-- Input strings are UTF-8 **byte slices**, without a NUL terminator.
-- V1 symbols are **34 individual 6-bit bytes**, not packed binary.
-- Every successful output buffer must be released *once* by
-  \`wavecode_free_buffer\`. Never pass it to the language's own allocator.
-- API failures return a nonzero \`WaveCodeStatus\`; no Rust panic crosses the ABI.
-- A failed call clears its output pointer/length. Do not overwrite an
-  outstanding buffer before freeing it.
-- C pointers must reference valid, readable/writable memory for the lifetime
-  of the call. Invalid non-null pointers are undefined behavior.
-- SVG and URL buffers are UTF-8 but are **not NUL-terminated**.
-- \`scan_all\` returns a JSON array of objects with the keys \`url\`,
-  \`orientation\`, \`corrected_symbols\`, and \`bounds\`.
-- The native library embeds the image decoder for PNG/JPEG. The default
-  configuration limits input images to 16 MiB and 20 megapixels.
+V1 encodes 34 6-bit symbols as individual bytes; these are **not** V2 byte symbols. Native image scanning supports PNG and JPEG with bounded byte/pixel input. `scan_all` returns URL, orientation, correction count and bounds.
 
-C example: [samples/c/roundtrip.c](../samples/c/roundtrip.c). On Linux:
+C round trip: [`samples/c/roundtrip.c`](../samples/c/roundtrip.c).
 
-\`\`\`bash
-cc samples/c/roundtrip.c -I include -L target/release \
-  -Wl,-rpath,"$PWD/target/release" -lwavecode_ffi -o /tmp/wavecode-c
-/tmp/wavecode-c
-\`\`\`
+## Language bindings
 
-## Python
+- **Python:** [ctypes adapter](../bindings/python/README.md), imports `wavecode_native`.
+- **.NET 8:** [managed wrapper](../bindings/dotnet/README.md), maps native statuses to typed errors.
+- **Java 17 / Kotlin:** [JNA wrapper](../bindings/jvm/README.md), usable from Kotlin without another codec.
+- **Browser / JS / TS:** [WASM guide](../crates/wavecode-wasm/README.md), including V2 Single/Dual and image scanning.
+- **Other languages:** Swift, Go, Dart, C++ and other FFI consumers can use the existing C ABI for V1.
 
-See [bindings/python/README.md](../bindings/python/README.md).
+The native wrappers require a matching native library deployed for the target CPU and operating system. This repository does not itself provide platform-specific PyPI wheels, NuGet bundles or npm-published binary packages.
 
-\`\`\`python
-from wavecode_native import WaveCode
-sdk = WaveCode()
-symbols = sdk.encode("https://music.youtube.com/watch?v=dQw4w9WgXcQ&t=59")
-image = sdk.render_png(symbols, 960, 240)
-assert sdk.scan(image).endswith("t=59")
-\`\`\`
+## WebAssembly
 
-## .NET
-
-See [bindings/dotnet/README.md](../bindings/dotnet/README.md).
-\`WaveCode.Native\` targets .NET 8 and exposes strongly typed methods, native
-exception mapping, and scan results.
-
-## Java and Kotlin
-
-See [bindings/jvm/README.md](../bindings/jvm/README.md). The `wavecode-jvm`
-library uses JNA over the same C ABI; Kotlin consumes it like any Java library.
-The native library must be packaged for the target platform.
-
-## Browser and Node.js
-
-See [crates/wavecode-wasm/README.md](../crates/wavecode-wasm/README.md).
-Build the \`wavecode-wasm\` crate with \`wasm-pack\` and import the generated JS/TS
-bindings. The Rust algorithms run locally in the WASM sandbox.
-
-\`\`\`bash
+```bash
+rustup target add wasm32-unknown-unknown
+cargo install wasm-pack --locked
 wasm-pack build crates/wavecode-wasm --target web --release
-\`\`\`
+```
 
-## Other languages, platforms and distribution
+`wasm-pack` generates the JavaScript module, TypeScript declarations and `.wasm` binary. A consumer should keep the WASM initialization in a reusable module or Worker; capture and upload policy belong to the application. See the [WaveCode Web](https://github.com/knliiss/WaveCode-Web) implementation.
 
-C ABI enables integration via **Swift, C++, Go (cgo), Dart (FFI), Rust**,
-and other FFI-capable languages. Wrappers for those languages are not yet
-included. On mobile, compile a native library for each platform/CPU
-architecture and respect the host runtime's FFI restrictions.
+## Format evolution
 
-Python and .NET wrappers currently require a separately installed native
-binary; the repository does **not** yet publish platform-specific wheels,
-NuGet packages, or npm registry packages. Building and shipping those
-artifacts is a separate release-engineering task.
+V1 and V2 use separate optical frame readers and symbol alphabets. The V2 W anchor advertises the optical version through BCH-protected capsule extensions, not through a platform selector or its physical size. No V1 code is transformed by simply adding a W image.
 
-## Compatibility
-
-V1's 34-symbol payload and 36-column optical representation are unchanged.
-Old WaveCodes are unaffected. The V1 specification is in [spec/v1.md](../spec/v1.md).
-
-The C ABI is independently versioned; backward-incompatible memory layouts,
-function signatures or status codes require an ABI major version bump.
+For normative layouts, correction and optical constraints, see [V1](../spec/v1.md) and [V2](../spec/v2.md).

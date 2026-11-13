@@ -1,29 +1,96 @@
-# WaveCode WebAssembly
+# WaveCode WebAssembly SDK
 
-This package compiles the **same Rust V1 core** for JavaScript environments. No HTTP service is required.
+The `wavecode-wasm` crate exposes WaveCode's **Rust implementations** to browser and JavaScript applications. Rendering and scanning run locally; this SDK does not call a media resolver or hosted decoder.
+
+## Build
 
 ```bash
-cargo install wasm-pack
-wasm-pack build crates/wavecode-wasm --release --target web --out-dir pkg
+rustup target add wasm32-unknown-unknown
+cargo install wasm-pack --locked
+wasm-pack build crates/wavecode-wasm --target web --release --out-dir pkg
 ```
 
-From a frontend project, import the generated `crates/wavecode-wasm/pkg/wavecode_wasm.js` and initialize it:
+Import the generated `pkg/wavecode_wasm.js` and initialize it once:
 
 ```js
-import init, { encode_url, decode_symbols, render_svg, render_png, scan_image, scan_all }
-  from './crates/wavecode-wasm/pkg/wavecode_wasm.js';
+import init, {
+  encode_url, decode_symbols, render_png, scan_all,
+  v2_encode_url, v2_encode_dual, v2_render_png_with_geometry,
+  v2_decode_frame, v2_scan_image,
+} from "./crates/wavecode-wasm/pkg/wavecode_wasm.js";
 
 await init();
-const symbols = encode_url('https://music.youtube.com/watch?v=dQw4w9WgXcQ&t=59');
-const svg = render_svg(symbols, 960, 240);
-const pngBytes = render_png(symbols, 960, 240);
-console.log(decode_symbols(symbols));
-console.log(scan_image(pngBytes));
-console.log(JSON.parse(scan_all(pngBytes)));
 ```
 
-Typed JavaScript bindings are emitted by `wasm-pack`. Functions accept and return binary arrays (Uint8Array), not base64. For user-supplied images, convert a Blob/File to Uint8Array before calling `scan_image`.
+## V1 API
 
-No camera permission is requested by this library. Camera capture, video frames and UX belong to consumer applications.
+```js
+const code = encode_url("https://music.youtube.com/watch?v=JGwWNGJdvx8&t=59");
+const png = render_png(code, 960, 240);
+console.log(decode_symbols(code));
+console.log(JSON.parse(scan_all(png)));
+```
 
-The public JS functions match their equivalents in `include/wavecode.h`.
+The existing V1 exports (`encode_url`, `decode_symbols`, `render_svg`, `render_png`, `scan_image`, `scan_all`) remain unchanged. V1 has a separate ABI and symbol representation from V2.
+
+## V2 · Single
+
+```js
+const frame = JSON.parse(v2_encode_url(
+  "https://music.youtube.com/watch?v=JGwWNGJdvx8&t=59"
+));
+const symbols = Uint8Array.from(frame.symbols);
+const metadata = frame.metadata;
+
+const png = v2_render_png_with_geometry(
+  metadata, symbols,
+  18, 210, 18, // pitch, payload reference height, quiet zone
+  12, 60,      // payload middle gap, W-to-payload gap
+  110          // independent W reference height
+);
+const decoded = JSON.parse(v2_scan_image(png));
+console.log(decoded.urls, decoded.anchor.towards_payload);
+```
+
+V2 exposes `v2_render_svg` and `v2_render_png` (pitch, payload height, quiet margin); `v2_render_*_style` (`classic` or `compact`); `v2_render_*_with_spacing` (two independent gaps); and `v2_render_*_with_geometry` (gaps plus independent W height). Style, gap values and W-to-payload size ratio are **not part of the frame**.
+
+## V2 · Dual
+
+```js
+const dual = JSON.parse(v2_encode_dual(
+  "0VjIjW4GlUZAMYd2vXMi3b", // Spotify track ID
+  "JGwWNGJdvx8",            // YouTube Music video ID
+  59                        // optional shared moment, seconds
+));
+const restored = JSON.parse(v2_decode_frame(
+  dual.metadata, Uint8Array.from(dual.symbols)
+));
+console.log(restored.urls); // two original-platform URLs
+```
+
+Dual tracks are **independent**. No lookup or assumed same-song mapping is involved.
+
+## V2 frame and scan result
+
+The encode exports return a JSON object with `format`, `version`, `anchor`, `layout`, `metadata` and `symbols` (an array of unsigned byte values). Pass `symbols` to render/decode functions as `Uint8Array`.
+
+`v2_scan_image(imageBytes)` consumes PNG/JPEG encoded bytes and returns JSON containing:
+
+| Field | Meaning |
+| --- | --- |
+| `urls` | One URL for Single, two for Dual |
+| `version` / `metadata` / `layout` | Validated V2 framing |
+| `corrected_symbols` | RS symbol corrections |
+| `anchor_corrected_bits` | BCH-corrected version capsule bits |
+| `bounds` | Located pixel rectangle |
+| `anchor.corners` | W coordinate-plane corners in image space |
+| `anchor.center` | W reference position |
+| `anchor.towards_payload` | Unit direction and angle toward payload |
+
+The W carries **only version metadata** in 22 capsules. Its central slit identifies the alignment axis. Payload byte levels and their own scale are read independently from the W and its spacing.
+
+The V2 scanner currently targets one sufficiently isolated mark per image. Browser apps can attempt V2 and V1 separately; `v2_scan_image` is not a general multi-code detector. Distorted, tiny, reflective or severely occluded marks may be unreadable.
+
+Use a Web Worker for expensive scanning. The app owns camera permission, video capture, and safe URL navigation; the library does not request camera access.
+
+**Technical references:** [V2 format](../../spec/v2.md) · [SDK and native ABI](../../docs/sdk.md) · [Web app](https://github.com/knliiss/WaveCode-Web).

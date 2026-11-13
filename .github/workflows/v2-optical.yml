@@ -1,0 +1,58 @@
+name: V2 Optical Roundtrip
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, release/v2]
+    paths:
+      - '.github/workflows/v2-optical.yml'
+      - 'crates/wavecode/src/v2/**'
+      - 'crates/wavecode/examples/v2.rs'
+
+permissions:
+  contents: read
+
+jobs:
+  render-and-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Generate V2 Single and Dual optical vectors
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p previews
+          for style in classic compact; do
+            cargo run -p wavecode --example v2 -- encode-adaptive \
+              'https://music.youtube.com/watch?v=JGwWNGJdvx8&t=59' "previews/youtube-music-59s-${style}.png" "${style}"
+            cargo run -p wavecode --example v2 -- encode-adaptive \
+              'https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b' "previews/spotify-${style}.png" "${style}"
+            cargo run -p wavecode --example v2 -- dual-adaptive \
+              'https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b' \
+              'https://music.youtube.com/watch?v=JGwWNGJdvx8' "previews/dual-${style}.png" "${style}"
+            cargo run -p wavecode --example v2 -- encode-adaptive \
+              'https://music.youtube.com/watch?v=JGwWNGJdvx8&t=59' "previews/variable-wide-logo-${style}.png" "${style}" 6 240
+            cargo run -p wavecode --example v2 -- encode-adaptive \
+              'https://music.youtube.com/watch?v=JGwWNGJdvx8&t=59' "previews/variable-wide-slit-${style}.png" "${style}" 85 4
+            # The W size must not be a decoder hint for payload height.
+            cargo run -p wavecode --example v2 -- encode-adaptive \
+              'https://music.youtube.com/watch?v=JGwWNGJdvx8&t=59' "previews/small-w-${style}.png" "${style}" 12 45 110
+            cargo run -p wavecode --example v2 -- dual-adaptive \
+              'https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b' \
+              'https://music.youtube.com/watch?v=JGwWNGJdvx8' "previews/large-w-dual-${style}.png" "${style}" 28 75 370
+          done
+      - name: Optical scan the actual generated marks
+        shell: bash
+        run: |
+          set -euo pipefail
+          for png in previews/*.png; do
+            echo "Verifying ${png}"
+            cargo run -p wavecode --example v2 -- scan "${png}"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wavecode-v2-optical-vectors
+          path: previews/
+          if-no-files-found: error
+          retention-days: 30

@@ -3,6 +3,8 @@ use serde_json::json;
 use wasm_bindgen::prelude::*;
 use wavecode::{v1, MusicCode, Orientation};
 
+mod v2;
+
 fn js_error(error: impl std::fmt::Display) -> JsValue {
     JsValue::from_str(&error.to_string())
 }

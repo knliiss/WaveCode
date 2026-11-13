@@ -3,6 +3,7 @@ mod rank;
 mod reed_solomon;
 mod scrambling;
 pub mod v1;
+pub mod v2;
 mod visual;
 
 use rank::Rank;
