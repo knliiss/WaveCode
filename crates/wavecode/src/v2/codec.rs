@@ -310,10 +310,16 @@ pub fn encode(content: &Content) -> Result<Frame, Error> {
 /// fallback for every identifier and moment. This is opt-in: `encode` is unchanged.
 /// Metadata is normally one extra optical byte. Two V2 Dual classes are
 /// unambiguously self-delimiting by their Reed-Solomon codeword length:
-/// 30 columns -> compact no-time dual (profile 14), 31 -> mixed-radix
-/// dual domain (profile 16). This has no dependence on gaps or style.
+/// 27-29 columns -> canonical dual with 104, 112 or 120-bit Spotify
+/// rank. 30 columns -> 128-bit Spotify rank without timestamp.
+/// 31 columns -> mixed-radix no-time/short-time dual (profile 16).
+/// All are derived from the number of actual visible optical columns,
+/// independent of rendering gaps and style.
 pub fn implicit_dual_profile(optical_columns: usize) -> Option<u8> {
     match optical_columns {
+        27 => Some(17),
+        28 => Some(18),
+        29 => Some(19),
         30 => Some(14),
         31 => Some(16),
         _ => None,
