@@ -32,6 +32,9 @@ jobs:
               'https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b' \
               'https://music.youtube.com/watch?v=JGwWNGJdvx8' "previews/dual-${style}.png" "${style}"
             cargo run -p wavecode --example v2 -- dual-adaptive \
+              'https://www.deezer.com/track/12345?t=59' \
+              'https://tidal.com/browse/track/67890?t=95' "previews/numeric-dual-${style}.png" "${style}"
+            cargo run -p wavecode --example v2 -- dual-adaptive \
               'https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b?t=59' \
               'https://music.youtube.com/watch?v=JGwWNGJdvx8&t=59' "previews/timed-dual-${style}.png" "${style}"
             cargo run -p wavecode --example v2 -- encode-adaptive \
@@ -53,6 +56,10 @@ jobs:
             echo "Verifying ${png}"
             output=$(cargo run -q -p wavecode --example v2 -- scan "${png}")
             echo "${output}"
+            if [[ "${png}" == *numeric-dual* ]]; then
+              grep -Fq 'https://www.deezer.com/track/12345?t=59' <<< "${output}"
+              grep -Fq 'https://tidal.com/browse/track/67890?t=95' <<< "${output}"
+            fi
             if [[ "${png}" == *timed-dual* ]]; then
               grep -Fq 'https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b?t=59' <<< "${output}"
               grep -Fq 'https://music.youtube.com/watch?v=JGwWNGJdvx8&t=59' <<< "${output}"
