@@ -6,6 +6,8 @@ use crate::Error;
 
 /// Style affects geometry only; the optical alphabet is fixed for all styles.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+const MAX_SUPPORTED_COLUMNS: usize = 56;
+
 pub enum RenderStyle {
     Classic,
     Compact,
@@ -126,7 +128,7 @@ impl RenderProfile {
         spacing: VisualSpacing,
         logo_height: f64,
     ) -> Result<Metrics, Error> {
-        if !(1..=34).contains(&symbols)
+        if !(1..=MAX_SUPPORTED_COLUMNS).contains(&symbols)
             || ![
                 self.pitch,
                 self.height,

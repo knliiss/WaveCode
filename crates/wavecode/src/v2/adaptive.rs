@@ -370,6 +370,7 @@ pub(super) fn candidates(content: &Content) -> Result<Vec<Frame>, Error> {
                 }
             }
         }
+        Content::DualLinks { .. } => {}
         Content::Dual {
             spotify_id,
             youtube_music_id,
