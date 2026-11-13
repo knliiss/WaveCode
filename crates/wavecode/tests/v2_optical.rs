@@ -93,6 +93,63 @@ fn classic_and_compact_render_styles_roundtrip_without_style_information() {
 }
 
 #[test]
+fn decoder_ignores_independent_middle_and_logo_payload_gaps() {
+    // These are physical pixel distances, not bits or metadata fields.
+    // The scanner receives the image only: no pitch, gap or style argument.
+    for sample in [samples()[0].clone(), samples()[3].clone()] {
+        let frame = v2::encode_adaptive(&sample).unwrap();
+        let untouched = frame.clone();
+        for style in [visual::RenderStyle::Classic, visual::RenderStyle::Compact] {
+            let profile = style.profile();
+            for middle_gap in [4.0, 12.0, 28.0, 85.0] {
+                for logo_gap in [4.0, 22.0, 90.0, 360.0] {
+                    let spacing = visual::VisualSpacing {
+                        payload_center_gap: middle_gap,
+                        logo_payload_gap: logo_gap,
+                    };
+                    let png = visual::render_png_with_spacing(&frame, profile, spacing).unwrap();
+                    let recovered = raster::scan_png_or_jpeg(&png).unwrap_or_else(|error| {
+                        panic!(
+                            "scanner depends on layout: {style:?} middle={middle_gap} logo={logo_gap}: {error:?}"
+                        )
+                    });
+                    assert_eq!(recovered.decoded.content, sample);
+                    assert_eq!(recovered.profile, frame.metadata);
+                    assert_eq!(recovered.version, v2::anchor::VERSION);
+                }
+            }
+        }
+        assert_eq!(frame, untouched);
+    }
+}
+
+#[test]
+fn arbitrary_gaps_remain_scanable_when_rotated_and_inverted() {
+    let content = samples()[1].clone();
+    let frame = v2::encode_adaptive(&content).unwrap();
+    let style = visual::RenderStyle::Compact.profile();
+    for (middle, logo) in [(4.0, 320.0), (100.0, 4.0), (36.0, 140.0)] {
+        let png = visual::render_png_with_spacing(
+            &frame,
+            style,
+            visual::VisualSpacing {
+                payload_center_gap: middle,
+                logo_payload_gap: logo,
+            },
+        ).unwrap();
+        let image = image::load_from_memory(&png).unwrap().to_luma8();
+        for picture in [rotate90(&image), rotate180(&image), rotate270(&image)] {
+            let decoded = raster::scan_gray(&picture).unwrap();
+            assert_eq!(decoded.decoded.content, content);
+            let mut inverted = picture;
+            image::imageops::colorops::invert(&mut inverted);
+            let decoded_inverted = raster::scan_gray(&inverted).unwrap();
+            assert_eq!(decoded_inverted.decoded.content, content);
+        }
+    }
+}
+
+#[test]
 fn anchor_is_detected_and_payload_is_restored_at_cardinal_rotations() {
     for content in samples() {
         let picture = frame_image(&content);
