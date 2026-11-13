@@ -481,8 +481,7 @@ mod tests {
                 alpha ^= 0x43;
             }
         }
-        for exponent in 1..=12 {
-            let x = roots[exponent];
+        for (exponent, &x) in roots.iter().enumerate().take(13).skip(1) {
             let mut p = 0_u8;
             for bit in (0..=PARITY_BITS).rev() {
                 let mut product = 0_u8;
