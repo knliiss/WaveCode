@@ -152,7 +152,7 @@ fn connected(image: &GrayImage, light: bool) -> Result<Vec<Component>, Error> {
 }
 
 // The shell has 11 regularly spaced x-centers with two rounded capsules
-// per center. Locate that known silhouette before considering the holes.
+// per center. Locate the silhouette before decoding version modulation.
 #[derive(Clone)]
 struct ShellFit<'a> {
     angle: f64,
@@ -476,11 +476,7 @@ fn read_shell_frame(
     })
 }
 
-fn scan_components(
-    image: &GrayImage,
-    light_ink: bool,
-    parts: &[Component],
-) -> Result<Located, Error> {
+fn scan_components(parts: &[Component]) -> Result<Located, Error> {
     for fit in locate_shell(parts) {
         if let Ok(located) = read_shell_frame(parts, &fit) {
             return Ok(located);
