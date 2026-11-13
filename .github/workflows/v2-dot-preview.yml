@@ -1,4 +1,4 @@
-name: V2 capsule-shell preview
+name: V2 independent optical-style previews
 
 on:
   workflow_dispatch:
@@ -23,13 +23,15 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p previews
-          cargo run -p wavecode --example v2_experiment -- encode-adaptive \
-            'https://music.youtube.com/watch?v=JGwWNGJdvx8&t=59' previews/youtube-music-59s.png
-          cargo run -p wavecode --example v2_experiment -- encode-adaptive \
-            'https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b' previews/spotify.png
-          cargo run -p wavecode --example v2_experiment -- dual-adaptive \
-            'https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b' \
-            'https://music.youtube.com/watch?v=JGwWNGJdvx8' previews/dual.png
+          for style in classic compact; do
+            cargo run -p wavecode --example v2_experiment -- encode-adaptive \
+              'https://music.youtube.com/watch?v=JGwWNGJdvx8&t=59' "previews/youtube-music-59s-${style}.png" "${style}"
+            cargo run -p wavecode --example v2_experiment -- encode-adaptive \
+              'https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b' "previews/spotify-${style}.png" "${style}"
+            cargo run -p wavecode --example v2_experiment -- dual-adaptive \
+              'https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b' \
+              'https://music.youtube.com/watch?v=JGwWNGJdvx8' "previews/dual-${style}.png" "${style}"
+          done
       - name: Optical scan the actual generated marks
         shell: bash
         run: |
@@ -40,7 +42,7 @@ jobs:
           done
       - uses: actions/upload-artifact@v4
         with:
-          name: wavecode-v2-capsule-shell-previews
+          name: wavecode-v2-classic-compact-previews
           path: previews/
           if-no-files-found: error
           retention-days: 30
