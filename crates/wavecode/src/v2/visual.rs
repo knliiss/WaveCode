@@ -119,9 +119,7 @@ impl Mark {
 
 fn marks(frame: &Frame, profile: RenderProfile) -> Result<(Metrics, Vec<Mark>), Error> {
     let metrics = profile.metrics(frame.symbols.len())?;
-    let mut result = Vec::with_capacity(
-        anchor::VERSION_SITES + (frame.symbols.len() + 1) * 2,
-    );
+    let mut result = Vec::with_capacity(anchor::VERSION_SITES + (frame.symbols.len() + 1) * 2);
 
     // The W carries ONLY the version. The original 32-unit center
     // channel and every horizontal capsule center remain unchanged.
@@ -245,28 +243,43 @@ mod tests {
     fn w_uses_twenty_two_solid_capsules_with_no_microholes() {
         let frame = encode(&Content::Single(
             MusicCode::from_url("https://music.youtube.com/watch?v=JGwWNGJdvx8").unwrap(),
-        )).unwrap();
+        ))
+        .unwrap();
         let svg = render_svg(&frame, RenderStyle::Classic.profile()).unwrap();
         assert_eq!(svg.matches("class=\"w-capsule\"").count(), 22);
         assert!(!svg.contains("w-hole"));
         assert!(!svg.contains("<circle"));
         assert!(svg.contains("data-version=\"2\""));
-        assert_eq!(svg.matches("class=\"data-upper\"").count(), frame.symbols.len() + 1);
-        assert_eq!(svg.matches("class=\"data-lower\"").count(), frame.symbols.len() + 1);
+        assert_eq!(
+            svg.matches("class=\"data-upper\"").count(),
+            frame.symbols.len() + 1
+        );
+        assert_eq!(
+            svg.matches("class=\"data-lower\"").count(),
+            frame.symbols.len() + 1
+        );
     }
 
     #[test]
     fn logo_is_independent_of_payload_profile_and_style() {
-        let a = Frame { metadata: 0, symbols: vec![0; 14] };
-        let b = Frame { metadata: 15, symbols: vec![0; 14] };
+        let a = Frame {
+            metadata: 0,
+            symbols: vec![0; 14],
+        };
+        let b = Frame {
+            metadata: 15,
+            symbols: vec![0; 14],
+        };
         for style in [RenderStyle::Classic, RenderStyle::Compact] {
             let left = marks(&a, style.profile()).unwrap().1;
             let right = marks(&b, style.profile()).unwrap().1;
             for (first, second) in left.iter().zip(&right).take(22) {
                 match (first, second) {
                     (Mark::Capsule(one), Mark::Capsule(two)) => {
-                        assert_eq!((one.x, one.y, one.width, one.height),
-                            (two.x, two.y, two.width, two.height));
+                        assert_eq!(
+                            (one.x, one.y, one.width, one.height),
+                            (two.x, two.y, two.width, two.height)
+                        );
                     }
                     _ => panic!("W must be invariant under a routing profile"),
                 }
@@ -276,15 +289,21 @@ mod tests {
 
     #[test]
     fn all_payload_bars_have_one_width_in_both_styles() {
-        let frame = Frame { metadata: 0, symbols: (0..16).collect() };
+        let frame = Frame {
+            metadata: 0,
+            symbols: (0..16).collect(),
+        };
         for style in [RenderStyle::Classic, RenderStyle::Compact] {
             let profile = style.profile();
             let (metrics, output) = marks(&frame, profile).unwrap();
             assert_eq!(metrics.pitch, profile.pitch);
-            let widths = output.iter().filter_map(|mark| match mark {
-                Mark::Rail(rect, _) => Some(rect.width),
-                Mark::Capsule(_) => None,
-            }).collect::<Vec<_>>();
+            let widths = output
+                .iter()
+                .filter_map(|mark| match mark {
+                    Mark::Rail(rect, _) => Some(rect.width),
+                    Mark::Capsule(_) => None,
+                })
+                .collect::<Vec<_>>();
             assert_eq!(widths.len(), (frame.symbols.len() + 1) * 2);
             assert!(widths.iter().all(|width| {
                 (*width - profile.pitch * optical::RAIL_WIDTH_RATIO).abs() < 1.0e-5
@@ -296,7 +315,8 @@ mod tests {
     fn style_does_not_modify_encoded_frame() {
         let frame = encode(&Content::Single(
             MusicCode::from_url("https://music.youtube.com/watch?v=JGwWNGJdvx8").unwrap(),
-        )).unwrap();
+        ))
+        .unwrap();
         let original = frame.clone();
         render_svg_style(&frame, RenderStyle::Classic).unwrap();
         render_svg_style(&frame, RenderStyle::Compact).unwrap();

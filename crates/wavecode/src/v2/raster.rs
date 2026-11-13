@@ -321,7 +321,8 @@ fn locate_shell<'a>(components: &'a [Component]) -> Vec<ShellFit<'a>> {
 fn classify_version(fit: &ShellFit<'_>) -> [bool; anchor::VERSION_SITES] {
     let reference = anchor::capsules();
     let (sin, cos) = fit.angle.sin_cos();
-    let projected: Vec<_> = fit.capsules
+    let projected: Vec<_> = fit
+        .capsules
         .iter()
         .map(|capsule| capsule.projected(sin, cos))
         .collect();
@@ -336,9 +337,8 @@ fn classify_version(fit: &ShellFit<'_>) -> [bool; anchor::VERSION_SITES] {
             10 => (9, 10),
             _ => (col - 1, col + 1),
         };
-        let local_scale = ((centers[right] - centers[left])
-            / (34.0 * (right - left) as f64))
-            .max(0.01);
+        let local_scale =
+            ((centers[right] - centers[left]) / (34.0 * (right - left) as f64)).max(0.01);
         for (lower, index) in [(false, col), (true, col + 11)] {
             let measured = projected[2 * col + usize::from(lower)].transverse / local_scale;
             bits[index] = measured - reference[index].height > anchor::VERSION_EXTENSION / 2.0;
@@ -347,10 +347,7 @@ fn classify_version(fit: &ShellFit<'_>) -> [bool; anchor::VERSION_SITES] {
     bits
 }
 
-fn read_shell_frame(
-    parts: &[Component],
-    fit: &ShellFit<'_>,
-) -> Result<Located, Error> {
+fn read_shell_frame(parts: &[Component], fit: &ShellFit<'_>) -> Result<Located, Error> {
     let (version, corrected_bits) = anchor::decode_version(classify_version(fit))?;
     if version != anchor::VERSION {
         return Err(Error::UnsupportedVersion);

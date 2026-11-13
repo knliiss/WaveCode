@@ -308,5 +308,4 @@ mod tests {
             assert!((projected.x - point.x).hypot(point.y - projected.y) < 1.0e-5);
         }
     }
-
 }
