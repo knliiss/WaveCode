@@ -263,16 +263,16 @@ mod tests {
         ] {
             let frame = encode(&Content::Single(MusicCode::from_url(input).unwrap())).unwrap();
             let svg = render_svg(&frame, RenderProfile::default()).unwrap();
-            assert_eq!(svg.matches("class=\\\"w-capsule\\\"").count(), 22);
-            assert_eq!(svg.matches("class=\\\"w-hole\\\"").count(), 60);
-            assert!(svg.contains("data-version=\\\"2\\\""));
+            assert_eq!(svg.matches("class=\"w-capsule\"").count(), 22);
+            assert_eq!(svg.matches("class=\"w-hole\"").count(), 60);
+            assert!(svg.contains("data-version=\"2\""));
             assert_eq!(
-                svg.matches("class=\\\"data-upper\\\"").count(),
+                svg.matches("class=\"data-upper\"").count(),
                 frame.symbols.len()
             );
             assert!(
-                svg.find("class=\\\"w-hole\\\"").unwrap()
-                    < svg.find("class=\\\"data-upper\\\"").unwrap()
+                svg.find("class=\"w-hole\"").unwrap()
+                    < svg.find("class=\"data-upper\"").unwrap()
             );
         }
     }
