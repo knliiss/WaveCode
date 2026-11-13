@@ -176,7 +176,7 @@ fn perspective_reader_does_not_require_fixed_payload_gaps() {
 #[test]
 fn self_delimiting_dual_modes_scan_without_optical_header_or_layout_hints() {
     let scenarios = [
-        ("0000000000000000000000", None, 22, 15),
+        ("0000000000000000000000", None, 34, 14),
         ("0000000000000000000000", Some(59), 23, 16),
         ("0000000000000000000001", None, 22, 15),
         ("00006rS8oxBA9U5pIjyIaG", None, 18, 28),
@@ -223,7 +223,7 @@ fn marker_protected_micro_dual_does_not_conflict_with_single_optical_profiles() 
     let spotify_id = "0000000000000000000000";
     let content = Content::Dual {
         spotify_id: spotify_id.into(),
-        youtube_music_id: YOUTUBE.into(),
+        youtube_music_id: "__________8".into(),
         moment_seconds: None,
     };
     let frame = v2::encode_adaptive(&content).unwrap();
@@ -235,7 +235,7 @@ fn marker_protected_micro_dual_does_not_conflict_with_single_optical_profiles() 
         assert_eq!(scanned.profile, 22);
 
         let single = Content::Single(
-            MusicCode::from_url("https://music.youtube.com/watch?v=JGwWNGJdvx8").unwrap(),
+            MusicCode::from_url("https://music.youtube.com/watch?v=__________8").unwrap(),
         );
         let single_frame = v2::encode_adaptive(&single).unwrap();
         assert_eq!(v2::optical_column_count(&single_frame), 15);
@@ -243,6 +243,27 @@ fn marker_protected_micro_dual_does_not_conflict_with_single_optical_profiles() 
         let scanned_single = raster::scan_png_or_jpeg(&single_png).unwrap();
         assert_eq!(scanned_single.decoded.content, single);
         assert_eq!(scanned_single.profile, single_frame.metadata);
+        let zero = Content::Dual {
+            spotify_id: spotify_id.into(),
+            youtube_music_id: YOUTUBE.into(),
+            moment_seconds: None,
+        };
+        let tiny = v2::encode_adaptive(&zero).unwrap();
+        assert_eq!(v2::optical_column_count(&tiny), 14);
+        assert_eq!(tiny.metadata, 34);
+        let tiny_png = visual::render_png_style(&tiny, style).unwrap();
+        assert_eq!(raster::scan_png_or_jpeg(&tiny_png).unwrap().decoded.content, zero);
+
+        // Amazon compact legacy is another 14-column optical frame,
+        // distinguished by an explicit metadata byte (zero), not spacing.
+        let amazon = Content::Single(
+            MusicCode::from_url("https://music.amazon.com/tracks/B012345678").unwrap(),
+        );
+        let amazon_frame = v2::encode(&amazon).unwrap();
+        assert_eq!(v2::optical_column_count(&amazon_frame), 14);
+        let amazon_png = visual::render_png_style(&amazon_frame, style).unwrap();
+        assert_eq!(raster::scan_png_or_jpeg(&amazon_png).unwrap().decoded.content, amazon);
+
     }
 }
 
