@@ -82,7 +82,7 @@ console.log(JSON.parse(v2_decode_frame(
 )).urls);
 ```
 
-Both identities are preserved offline. No lookup or same-song matching service is involved. When given Spotify first, YouTube Music second, and equal optional timestamps, `v2_encode_links` automatically selects the earlier compact Dual profiles; otherwise it uses general V2 profile 36 with a longer payload. The optical anchor and version remain V2.
+Both identities are preserved offline. No lookup or same-song matching service is involved. When given Spotify first, YouTube Music second, and equal optional timestamps, `v2_encode_links` automatically selects the earlier compact Dual profiles; otherwise it chooses the shortest of general V2 profiles **36/37** with the same CRC and RS protection. A pair of short numeric platform IDs can shrink from 25 to 17 optical columns. The optical anchor and version remain V2.
 
 ## V2 frame and scan result
 

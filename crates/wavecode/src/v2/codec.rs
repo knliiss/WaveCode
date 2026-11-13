@@ -10,6 +10,7 @@ const SPOTIFY: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrs
 const AMAZON: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const PARITY_BYTES: usize = reed_solomon::PARITY_SYMBOLS;
 const GENERIC_DUAL_PROFILE: u8 = 36;
+const SHORT_GENERIC_DUAL_PROFILE: u8 = 37;
 const MAX_GENERIC_COLUMNS: usize = 56;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -365,9 +366,91 @@ fn encode_dual_links(first: &MusicCode, second: &MusicCode) -> Result<Frame, Err
     })
 }
 
+/// A full-range numeric ID often needs only 32 of its 64 possible bits.
+/// YouTube's usual 11-character ID similarly has 64 rather than 66 free
+/// bits. Use separate V2 profile 37 only when this actually reduces columns;
+/// profile 36 remains a stable, lossless fallback and both share CRC/RS4.
+fn small_numeric_identity(track: &Track) -> Option<(u64, u64)> {
+    let (tag, value) = match track {
+        Track::Deezer(value) => (0, *value),
+        Track::Tidal(value) => (1, *value),
+        Track::Qobuz(value) => (2, *value),
+        Track::TikTokVideo(value) => (3, *value),
+        _ => return None,
+    };
+    (value <= u64::from(u32::MAX)).then_some((tag, value))
+}
+
+fn canonical_youtube_identity(track: &Track) -> Option<(u64, u64)> {
+    let (tag, id) = match track {
+        Track::YouTubeMusic(id) => (0, id),
+        Track::YouTubeVideo(id) => (1, id),
+        Track::YouTubeShort(id) => (2, id),
+        _ => return None,
+    };
+    if id.len() != 11 {
+        return None;
+    }
+    let (value, remainder) = Rank::from_digits(id, YOUTUBE)?.div_mod_small(4);
+    (remainder == 0 && value < Rank::pow(2, 64)).then_some((tag, value.low_u64()))
+}
+
+fn encode_short_dual_links(first: &MusicCode, second: &MusicCode) -> Result<Option<Frame>, Error> {
+    let mut out = BitWriter::default();
+    let mut shortened = false;
+    for code in [first, second] {
+        code.validate_moment()?;
+        if matches!(code.track, Track::Spotify(_)) {
+            out.push(1, 2);
+            out.rank(identity::encode(&code.track)?, 131)?;
+        } else if let Some((tag, value)) = small_numeric_identity(&code.track) {
+            out.push(2, 2);
+            out.push(tag, 2);
+            out.push(value, 32);
+            shortened = true;
+        } else if let Some((tag, value)) = canonical_youtube_identity(&code.track) {
+            out.push(3, 2);
+            out.push(tag, 2);
+            out.push(value, 64);
+            shortened = true;
+        } else {
+            out.push(0, 2);
+            compact_track(&code.track, &mut out)?;
+        }
+        match code.moment_seconds {
+            None => out.push(0, 2),
+            Some(moment) if moment <= 255 => {
+                out.push(1, 2);
+                out.push(u64::from(moment), 8);
+            }
+            Some(moment) => {
+                out.push(2, 2);
+                out.push(u64::from(moment), 16);
+            }
+        }
+    }
+    if !shortened {
+        return Ok(None);
+    }
+    let mut bytes = out.finish();
+    let mut checked = Vec::with_capacity(bytes.len() + 1);
+    checked.push(SHORT_GENERIC_DUAL_PROFILE);
+    checked.extend_from_slice(&bytes);
+    bytes.extend_from_slice(&crc16(&checked).to_be_bytes());
+    if bytes.len() + PARITY_BYTES > MAX_GENERIC_COLUMNS {
+        return Err(Error::InvalidLength);
+    }
+    Ok(Some(Frame {
+        metadata: SHORT_GENERIC_DUAL_PROFILE,
+        symbols: reed_solomon::encode(&bytes),
+    }))
+}
+
 fn decode_dual_links(frame: &Frame) -> Result<Decoded, Error> {
-    if frame.metadata != GENERIC_DUAL_PROFILE
-        || frame.symbols.len() < PARITY_BYTES + 6
+    if !matches!(
+        frame.metadata,
+        GENERIC_DUAL_PROFILE | SHORT_GENERIC_DUAL_PROFILE
+    ) || frame.symbols.len() < PARITY_BYTES + 6
         || frame.symbols.len() > MAX_GENERIC_COLUMNS
     {
         return Err(Error::InvalidLength);
@@ -377,7 +460,7 @@ fn decode_dual_links(frame: &Frame) -> Result<Decoded, Error> {
     let payload = &data[..data.len() - 2];
     let expected = u16::from_be_bytes([data[data.len() - 2], data[data.len() - 1]]);
     let mut checked = Vec::with_capacity(payload.len() + 1);
-    checked.push(GENERIC_DUAL_PROFILE);
+    checked.push(frame.metadata);
     checked.extend_from_slice(payload);
     if crc16(&checked) != expected {
         return Err(Error::ChecksumMismatch);
@@ -385,15 +468,52 @@ fn decode_dual_links(frame: &Frame) -> Result<Decoded, Error> {
     let mut reader = BitReader::new(payload);
     let mut links = Vec::with_capacity(2);
     for _ in 0..2 {
-        let track = if reader.take(1)? != 0 {
-            let identity = reader.rank(131)?;
-            let track = identity::decode(identity)?;
-            if !matches!(track, Track::Spotify(_)) {
-                return Err(Error::InvalidCodeword);
+        let track = if frame.metadata == GENERIC_DUAL_PROFILE {
+            if reader.take(1)? == 0 {
+                read_compact(&mut reader)?
+            } else {
+                let track = identity::decode(reader.rank(131)?)?;
+                if !matches!(track, Track::Spotify(_)) {
+                    return Err(Error::InvalidCodeword);
+                }
+                track
             }
-            track
         } else {
-            read_compact(&mut reader)?
+            match reader.take(2)? {
+                0 => read_compact(&mut reader)?,
+                1 => {
+                    let track = identity::decode(reader.rank(131)?)?;
+                    if !matches!(track, Track::Spotify(_)) {
+                        return Err(Error::InvalidCodeword);
+                    }
+                    track
+                }
+                2 => {
+                    let tag = reader.take(2)?;
+                    let value = reader.take(32)?;
+                    match tag {
+                        0 => Track::Deezer(value),
+                        1 => Track::Tidal(value),
+                        2 => Track::Qobuz(value),
+                        3 => Track::TikTokVideo(value),
+                        _ => return Err(Error::InvalidCodeword),
+                    }
+                }
+                3 => {
+                    let tag = reader.take(2)?;
+                    let id = Rank::from_u64(reader.take(64)?)
+                        .mul_small(4)
+                        .to_digits(YOUTUBE, 11)
+                        .ok_or(Error::InvalidCodeword)?;
+                    match tag {
+                        0 => Track::YouTubeMusic(id),
+                        1 => Track::YouTubeVideo(id),
+                        2 => Track::YouTubeShort(id),
+                        _ => return Err(Error::InvalidCodeword),
+                    }
+                }
+                _ => return Err(Error::InvalidCodeword),
+            }
         };
         let moment_seconds = match reader.take(2)? {
             0 => None,
@@ -483,7 +603,12 @@ pub fn optical_column_count(frame: &Frame) -> usize {
 
 pub fn encode_adaptive(content: &Content) -> Result<Frame, Error> {
     let mut shortest = encode(content)?;
-    if matches!(content, Content::DualLinks { .. }) {
+    if let Content::DualLinks { first, second } = content {
+        if let Some(short) = encode_short_dual_links(first, second)? {
+            if optical_column_count(&short) < optical_column_count(&shortest) {
+                shortest = short;
+            }
+        }
         return Ok(shortest);
     }
     for candidate in super::adaptive::candidates(content)? {
@@ -557,7 +682,10 @@ pub fn encode_with_layout(content: &Content, layout: Layout) -> Result<Frame, Er
 }
 
 pub fn decode(frame: &Frame) -> Result<Decoded, Error> {
-    if frame.metadata == GENERIC_DUAL_PROFILE {
+    if matches!(
+        frame.metadata,
+        GENERIC_DUAL_PROFILE | SHORT_GENERIC_DUAL_PROFILE
+    ) {
         return decode_dual_links(frame);
     }
     if !matches!(frame.metadata, 0 | 2 | 4 | 6 | 8 | 10) {
