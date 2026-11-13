@@ -20,6 +20,10 @@ pub const CAPSULE_WIDTH: f64 = 20.0;
 pub const CAPSULE_RADIUS: f64 = 10.0;
 pub const BRAND_ORIGIN_X: f64 = 76.0;
 pub const BRAND_ORIGIN_Y: f64 = 129.0;
+pub const UPPER_SLIT_Y: f64 = 242.0;
+pub const LOWER_SLIT_Y: f64 = 274.0;
+pub const SLIT_CENTER_Y: f64 = (UPPER_SLIT_Y + LOWER_SLIT_Y) / 2.0;
+
 
 // Binary BCH(31,21,5) with GF(32) primitive polynomial x^5+x^2+1.
 // Generator: (x^5+x^2+1)(x^5+x^4+x^3+x^2+1) = 0x769.
@@ -55,7 +59,7 @@ pub fn capsules() -> [Capsule; VERSION_SITES] {
             y: if upper {
                 UPPER_TOP[col] - BRAND_ORIGIN_Y
             } else {
-                274.0 - BRAND_ORIGIN_Y
+                LOWER_SLIT_Y - BRAND_ORIGIN_Y
             },
             width: CAPSULE_WIDTH,
             height: if upper {
@@ -250,7 +254,7 @@ mod tests {
                 let extended = variant.height - original.height;
                 assert!(extended == 0.0 || extended == VERSION_EXTENSION);
                 if i < 11 {
-                    assert_eq!(variant.y + variant.height, 242.0 - BRAND_ORIGIN_Y);
+                    assert_eq!(variant.y + variant.height, UPPER_SLIT_Y - BRAND_ORIGIN_Y);
                 } else {
                     assert_eq!(variant.y, 274.0 - BRAND_ORIGIN_Y);
                 }
