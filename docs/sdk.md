@@ -42,7 +42,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-For two independent destinations use `v2::Content::Dual { spotify_id, youtube_music_id, moment_seconds }`. For independent W and payload proportions, use `render_png_with_spacing_and_logo_height` or the SVG equivalent. A decoded V2 code does not require the renderer's style, gaps or heights.
+For **arbitrary independent destinations**, use `v2::Content::DualLinks { first: MusicCode::from_url(first_url)?, second: MusicCode::from_url(second_url)? }`. The original `v2::Content::Dual { spotify_id, youtube_music_id, moment_seconds }` remains available for optimized Spotify + YouTube Music codes with one shared moment. The WASM API `v2_encode_links` selects those compact modes automatically where applicable. For independent W and payload proportions, use `render_png_with_spacing_and_logo_height` or the SVG equivalent. A decoded V2 code does not require the renderer's style, gaps or heights.
 
 `wavecode::v1` remains the API for the fixed 36-column format. The `wavecode` binary preserves its existing V1 subcommands; see the [main README](../README.md) for the V2 CLI example.
 

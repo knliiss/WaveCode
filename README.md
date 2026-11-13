@@ -22,11 +22,11 @@ WaveCode ships **two interoperable format versions**. V1 remains available for e
 | | WaveCode V1 | WaveCode V2 |
 | --- | --- | --- |
 | Optical locator | Two end guards | The original 22-capsule W anchor, always on the logical left |
-| Data columns | 36 fixed (34 symbols + 2 guards) | Variable: Single or 14–33 for adaptive Dual |
+| Data columns | 36 fixed (34 symbols + 2 guards) | Variable: Single, 14–33 for optimized Dual, or longer for arbitrary pairs |
 | Symbol alphabet | 6-bit (64 values) | Dual rail, 8-bit (256 values) |
 | Error protection | RS(34,28) over GF(64) + CRC-16 | Four RS parity bytes over GF(256) + CRC-16 |
-| Destinations | One original-platform link | Single or two independent Spotify + YouTube Music links |
-| Moment | Optional when supported by the platform | Optional; shared between both links in Dual |
+| Destinations | One original-platform link | Single or any two independently supported media links |
+| Moment | Optional when supported by the platform | Optional per link; optimized shared time for Spotify + YouTube Music |
 | Appearance | Adjustable V1 canvas and rails | Classic/Compact plus independent W and payload geometry |
 
 **A W is a functional locator in V2, not merely decoration.** It carries only the BCH-protected 12-bit optical version. Platform, identity and time information live in the payload. The W can be substantially larger or smaller than the data rails; neither their relative scale nor the two whitespace gaps encode bits.
@@ -60,7 +60,9 @@ cargo run --release -p wavecode --example v2 -- dual-adaptive \
 cargo run --release -p wavecode --example v2 -- scan dual.png
 ```
 
-Dual stores **both platform IDs**, without assuming they refer to the same recording. For a shared start time in the CLI, append the same `?t=59` value to either or both input URLs (conflicting times are rejected). Rust and WASM also accept an explicit shared time. It is never resolved from an external matching service.
+The `dual-adaptive` CLI above retains the shortest specialized **Spotify + YouTube Music** V2 profiles, including an optional shared moment. For **any two supported platforms** (including two links from the same platform), use Rust `Content::DualLinks { first, second }` or the browser WASM `v2_encode_links(first_url, second_url, first_moment, second_moment)` API. Each moment may be independent. Both IDs are stored locally and losslessly, without assuming they refer to the same song.
+
+The generic V2 profile is 36 with two identity records and independent time modes. It may require more optical columns than a specialized pair; the W and decoding version remain unchanged. Every previously issued V2 frame remains readable.
 
 ### V2 · independent proportions
 
@@ -147,7 +149,7 @@ cargo test --workspace
 cargo test -p wavecode --no-default-features
 ```
 
-Automated checks cover stable V1 vectors, V2 Single/Dual round trips, adaptive identity boundaries, BCH/RS repair, scale-independent W geometry, rotations, perspective, nonuniform contrast and selected image artifacts. Both V2 render styles are exported and scanned in [optical CI](.github/workflows/v2-optical.yml).
+Automated checks cover stable V1 vectors, V2 Single/optimized Dual/generic cross-platform Dual round trips, adaptive identity boundaries, BCH/RS repair, scale-independent W geometry, rotations, perspective, nonuniform contrast and selected image artifacts. Both V2 render styles are exported and scanned in [optical CI](.github/workflows/v2-optical.yml).
 
 **Optical limits:** a rendered vector can be mathematically valid yet fail in a photo with merged or undersampled bars, occlusion, reflections, motion blur or extreme perspective. Neither tiny physical print sizes nor unconstrained real-world camera recognition are guaranteed. Verify target print materials and cameras before manufacturing at scale.
 
