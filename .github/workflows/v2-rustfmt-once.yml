@@ -1,0 +1,32 @@
+name: V2 one-time formatter
+on:
+  push:
+    branches: [experiment/v2]
+permissions:
+  contents: write
+jobs:
+  format:
+    if: github.repository == 'knliiss/WaveCode'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: experiment/v2
+          persist-credentials: true
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Format V2 only
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          git add -- crates/wavecode/src/v2/anchor.rs crates/wavecode/src/v2/raster.rs crates/wavecode/src/v2/visual.rs crates/wavecode-wasm/src/v2.rs
+          if git diff --cached --quiet; then
+            echo "Already formatted"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "style(v2): rustfmt fixed-contour BCH60 reader and encoder"
+          git push origin HEAD:experiment/v2
