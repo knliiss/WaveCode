@@ -42,6 +42,8 @@ import init, {
   v2_encode_dual,
   v2_render_svg,
   v2_render_png,
+  v2_render_svg_with_spacing,
+  v2_render_png_with_spacing,
   v2_render_svg_style,
   v2_render_png_style,
   v2_decode_frame,
@@ -57,6 +59,11 @@ const svg = v2_render_svg_style(frame.metadata, symbols, 'classic');
 const png = v2_render_png_style(frame.metadata, symbols, 'classic');
 const compactSvg = v2_render_svg_style(frame.metadata, symbols, 'compact');
 const compactPng = v2_render_png_style(frame.metadata, symbols, 'compact');
+// Override gaps independently (pixel distances). The binary frame is identical.
+const customPng = v2_render_png_with_spacing(
+  frame.metadata, symbols, 18, 210, 18, 8, 120
+);
+console.log(JSON.parse(v2_scan_image(customPng)).urls);
 // Advanced: v2_render_svg(frame.metadata, symbols, pitch, height, quiet)
 const decoded = JSON.parse(v2_scan_image(png));
 
@@ -66,7 +73,7 @@ console.log(frame.anchor); // capsule-version-bch22
 console.log(decoded.urls); // original music URL
 console.log(decoded.anchor.towards_payload); // image-space direction
 console.log(decoded.anchor.corners); // four corners of fitted W coordinate frame
-console.log(decoded.anchor_corrected_bits); // repaired dot classification errors
+console.log(decoded.anchor_corrected_bits); // repaired version-bearing capsule length errors
 
 const dual = JSON.parse(v2_encode_dual(
   '0VjIjW4GlUZAMYd2vXMi3b', 'JGwWNGJdvx8', 59
@@ -77,9 +84,9 @@ const recovered = JSON.parse(
 console.log(recovered.urls); // both independent platform URLs
 ```
 
-The original `v2_render_svg` and `v2_render_png` arguments are **pitch, height, and quiet zone in pixels**. Named presets `classic` and `compact` instead use `v2_render_svg_style` / `v2_render_png_style`; these do **not** re-encode the payload or write the style into a frame.
+The original `v2_render_svg` and `v2_render_png` arguments are **pitch, height, and quiet zone in pixels**. Named presets `classic` and `compact` instead use `v2_render_svg_style` / `v2_render_png_style`. The two `v2_render_*_with_spacing` functions additionally accept `payload_center_gap` and `logo_payload_gap`, both physical pixel distances. These gaps are **not** stored in the frame and never passed to the scanner. The default center gap is half the W's visible slit; the logo-to-payload gap is 1.4 times the selected pitch. All rendering variants preserve the exact byte mapping.
 
-V2 payload bars have **one constant width** and **16 possible heights per rail** (256 one-byte symbols). The W has **22 solid capsules with small outward length variations** encoding ONLY the 12-bit version (BCH(22,12,d>=5)); there are no tiny holes. The original 32-unit central channel remains unchanged. A separate **first optical payload column** carries the routing profile (currently modes 0..15). The CRC includes that profile; the RS parity currently protects subsequent identity payload and CRC, but NOT the independent profile column. Classic and Compact differ only in spacing and quiet margin. Real camera and printed dimensions need validation.
+V2 payload bars have **one constant width** and **16 possible heights per rail** (256 one-byte symbols). The W has **22 solid capsules with small outward length variations** encoding ONLY the 12-bit version (BCH(22,12,d>=5)); there are no tiny holes. The original 32-unit central channel remains unchanged. A separate **first optical payload column** carries the routing profile (currently modes 0..15). The CRC includes that profile; the RS parity currently protects subsequent identity payload and CRC, but NOT the independent profile column. Classic and Compact differ in column pitch and quiet margin, while each of the two visual whitespace distances can be overridden independently. Real camera and printed dimensions need validation.
 
 The encoder uses the shortest available safe adaptive V2 payload mode and returns a JSON object with `format`, `version`, `anchor`, `layout`, `metadata`, and
 `symbols`; the symbols must be passed as a `Uint8Array`. The scanner returns
