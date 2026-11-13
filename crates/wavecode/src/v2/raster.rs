@@ -481,6 +481,27 @@ fn read_shell_frame(parts: &[Component], fit: &ShellFit<'_>) -> Result<Located, 
         })
         .collect();
     bars.sort_by(|a, b| a.1.u.total_cmp(&b.1.u));
+
+    // Tiny external marks may pass the low absolute area threshold needed
+    // for a W larger than its payload. A real column always has TWO capsules
+    // sharing a horizontal center, regardless of W size or arbitrary gaps.
+    let mut paired_bars = Vec::with_capacity(bars.len());
+    let mut cursor = 0;
+    while cursor + 1 < bars.len() {
+        let first = bars[cursor].1;
+        let second = bars[cursor + 1].1;
+        let alignment = (first.longitudinal.min(second.longitudinal) * 0.35).max(1.5);
+        let vertical_separation = (first.v - second.v).abs();
+        if (first.u - second.u).abs() <= alignment
+            && vertical_separation > (first.transverse + second.transverse) * 0.5
+        {
+            paired_bars.extend_from_slice(&bars[cursor..cursor + 2]);
+            cursor += 2;
+        } else {
+            cursor += 1;
+        }
+    }
+    let bars = paired_bars;
     if bars.len() < 18 || bars.len() > 70 || bars.len() % 2 != 0 {
         return Err(Error::InvalidFrame);
     }
