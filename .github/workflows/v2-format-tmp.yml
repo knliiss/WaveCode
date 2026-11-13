@@ -1,0 +1,32 @@
+name: V2 temporary formatting
+on:
+  push:
+    branches: [experiment/v2]
+permissions:
+  contents: write
+jobs:
+  rustfmt:
+    if: github.repository == 'knliiss/WaveCode' && github.ref == 'refs/heads/experiment/v2'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: experiment/v2
+          persist-credentials: true
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Format and commit V2 Rust source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- crates/wavecode/src/v2/codec.rs crates/wavecode/src/v2/adaptive.rs crates/wavecode/src/v2/raster.rs crates/wavecode/src/v2/visual.rs crates/wavecode/tests/v2_adaptive.rs crates/wavecode/tests/v2_optical.rs
+          if git diff --cached --quiet; then
+            echo 'Already formatted'
+            exit 0
+          fi
+          git commit -m 'style(v2): rustfmt dual domain coding and scan tests'
+          git push origin HEAD:experiment/v2
