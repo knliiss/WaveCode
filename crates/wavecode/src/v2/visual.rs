@@ -475,7 +475,8 @@ mod tests {
                 payload_center_gap: 4.0,
                 logo_payload_gap: 4.0,
             },
-        ).unwrap();
+        )
+        .unwrap();
         for middle in [4.0, 12.0, 32.0, 68.0, 150.0] {
             for separation in [4.0, 20.0, 70.0, 250.0] {
                 let spacing = VisualSpacing {
@@ -496,10 +497,15 @@ mod tests {
                 }
             }
         }
-        assert!(profile.metrics_with_spacing(4, VisualSpacing {
-            payload_center_gap: 0.0,
-            logo_payload_gap: 30.0,
-        }).is_err());
+        assert!(profile
+            .metrics_with_spacing(
+                4,
+                VisualSpacing {
+                    payload_center_gap: 0.0,
+                    logo_payload_gap: 30.0,
+                }
+            )
+            .is_err());
     }
 
     #[test]
