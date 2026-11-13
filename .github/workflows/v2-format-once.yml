@@ -1,0 +1,32 @@
+name: V2 temporary formatting check
+on:
+  push:
+    branches: [experiment/v2]
+permissions:
+  contents: write
+jobs:
+  format:
+    if: github.repository == 'knliiss/WaveCode' && github.ref == 'refs/heads/experiment/v2'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: experiment/v2
+          persist-credentials: true
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Apply rustfmt and commit only formatted Rust files
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          if git diff --quiet; then
+            echo "Already formatted"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- crates/wavecode/src/v2/optical.rs crates/wavecode/src/v2/visual.rs crates/wavecode/src/v2/raster.rs crates/wavecode/tests/v2_optical.rs crates/wavecode-wasm/src/v2.rs crates/wavecode/examples/v2_experiment.rs
+          git commit -m "style(v2): rustfmt 16-level optical alphabet and style-independent renderer"
+          git push origin HEAD:experiment/v2
