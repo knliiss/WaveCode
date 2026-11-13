@@ -224,6 +224,17 @@ fn compact_track(code: &Track, out: &mut BitWriter) -> Result<(), Error> {
                 slug.len() * 6,
             )?;
         }
+        Track::TikTokShort(code) => {
+            if code.is_empty() || code.len() > 16 {
+                return Err(Error::InvalidIdentifier);
+            }
+            out.push(10, 4);
+            out.push((code.len() - 1) as u64, 4);
+            out.rank(
+                Rank::from_digits(code, SPOTIFY).ok_or(Error::InvalidIdentifier)?,
+                code.len() * 6,
+            )?;
+        }
         Track::Spotify(_) => return Err(Error::InvalidIdentifier),
     }
     Ok(())
@@ -275,6 +286,14 @@ fn read_compact(reader: &mut BitReader<'_>) -> Result<Track, Error> {
                 .to_digits(YOUTUBE, len)
                 .ok_or(Error::InvalidCodeword)?;
             Track::InstagramReel(slug)
+        }
+        10 => {
+            let len = reader.take(4)? as usize + 1;
+            let shortcode = reader
+                .rank(len * 6)?
+                .to_digits(SPOTIFY, len)
+                .ok_or(Error::InvalidCodeword)?;
+            Track::TikTokShort(shortcode)
         }
         _ => return Err(Error::InvalidCodeword),
     })
@@ -520,6 +539,7 @@ mod tests {
             "https://music.amazon.com/tracks/B012345678",
             "https://www.instagram.com/reel/DIPPWkUh7Rj/",
             "https://www.tiktok.com/@creator/video/7300873037530795272",
+            "https://vt.tiktok.com/ZSp94BeDn/",
         ] {
             let input = Content::Single(MusicCode::from_url(link).unwrap());
             let encoded = encode(&input).unwrap();
