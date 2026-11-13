@@ -180,6 +180,7 @@ impl Mark {
     }
 }
 
+#[cfg(test)]
 fn marks(frame: &Frame, profile: RenderProfile) -> Result<(Metrics, Vec<Mark>), Error> {
     marks_with_spacing(frame, profile, VisualSpacing::for_profile(profile))
 }
