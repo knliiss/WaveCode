@@ -98,8 +98,8 @@ fn spotify_range_classes_are_reversible_at_boundaries() {
 #[test]
 fn dual_id_modes_never_infer_second_identity_and_preserve_seconds() {
     for (spotify, time, header, symbols) in [
-        ("0000000000000000000000", None, 17, 27),
-        ("0000000000000000000000", Some(59), 16, 31),
+        ("0000000000000000000000", None, 22, 15),
+        ("0000000000000000000000", Some(59), 23, 16),
         ("zzzzzzzzzzzzzzzzzzzzzz", None, 16, 31),
         ("7n42DGM5Tflk9n8mt7Fhc7", Some(255), 20, 32),
         ("zzzzzzzzzzzzzzzzzzzzzz", Some(59), 20, 32),
@@ -123,7 +123,7 @@ fn minimum_possible_dual_visual_columns_with_fixed_rs4_and_crc16() {
         ("7n42DGM5Tflk9n8mt7Fhc7", None, 30_usize),
         ("7n42DGM5Tflk9n8mt7Fhc8", None, 31),
         ("zzzzzzzzzzzzzzzzzzzzzz", None, 31),
-        ("0000000000000000000000", Some(255), 31),
+        ("0000000000000000000000", Some(255), 16),
         ("7Zw3ftPZ2uDmW6wxFc2RYe", Some(255), 32),
         ("zzzzzzzzzzzzzzzzzzzzzz", Some(255), 32),
     ];
@@ -146,7 +146,7 @@ fn minimum_possible_dual_visual_columns_with_fixed_rs4_and_crc16() {
 #[test]
 fn shorter_dual_classes_are_exact_at_every_bit_width_boundary() {
     for (spotify, profile, columns) in [
-        ("0000000000000000000000", 17, 27),
+        ("0000000000000000000000", 22, 15),
         ("00006rS8oxBA9U5pIjyIaF", 17, 27),
         ("00006rS8oxBA9U5pIjyIaG", 18, 28),
         ("000SKiCQOM5vAG3pNoyji3", 18, 28),
@@ -173,6 +173,59 @@ fn shorter_dual_classes_are_exact_at_every_bit_width_boundary() {
             let decoded = v2::decode(&damaged).unwrap();
             assert_eq!(decoded.content, content);
             assert_eq!(decoded.corrected_symbols, 2);
+        }
+    }
+}
+
+fn spotify_22_from_u128(mut value: u128) -> String {
+    const DIGITS: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    let mut result = [b'0'; 22];
+    for digit in result.iter_mut().rev() {
+        *digit = DIGITS[(value % 62) as usize];
+        value /= 62;
+    }
+    assert_eq!(value, 0);
+    String::from_utf8(result.to_vec()).unwrap()
+}
+
+#[test]
+fn all_twelve_micro_dual_lengths_are_lossless_and_correct_two_errors() {
+    for columns in 15_usize..=26 {
+        for seconds in [None, Some(0_u16), Some(255)] {
+            if columns == 15 && seconds.is_some() {
+                continue;
+            }
+            let rank_bits = 8 * columns - 114 - usize::from(seconds.is_some()) * 8;
+            let max_rank = (1_u128 << rank_bits) - 1;
+            for spotify_rank in [0, max_rank] {
+                let input = Content::Dual {
+                    spotify_id: spotify_22_from_u128(spotify_rank),
+                    youtube_music_id: "JGwWNGJdvx8".into(),
+                    moment_seconds: seconds,
+                };
+                let frame = v2::encode_adaptive(&input).unwrap();
+                assert_eq!(frame.metadata, (columns + 7) as u8);
+                assert_eq!(frame.symbols.len(), columns);
+                assert_eq!(v2::optical_column_count(&frame), columns);
+                assert!(frame.symbols[0] & 0x80 != 0);
+                assert_eq!(v2::decode(&frame).unwrap().content, input);
+                let mut damaged = frame.clone();
+                damaged.symbols[0] ^= 0x80;
+                damaged.symbols[columns - 1] ^= 0xa6;
+                let recovered = v2::decode(&damaged).unwrap();
+                assert_eq!(recovered.content, input);
+                assert_eq!(recovered.corrected_symbols, 2);
+            }
+            // Crossing this tier's upper limit must never lose bits or
+            // silently truncate the identity: a longer tier is selected.
+            let larger = Content::Dual {
+                spotify_id: spotify_22_from_u128(1_u128 << rank_bits),
+                youtube_music_id: "JGwWNGJdvx8".into(),
+                moment_seconds: seconds,
+            };
+            let frame = v2::encode_adaptive(&larger).unwrap();
+            assert!(v2::optical_column_count(&frame) > columns);
+            assert_eq!(v2::decode(&frame).unwrap().content, larger);
         }
     }
 }
@@ -351,7 +404,7 @@ fn all_opt_in_headers_keep_two_byte_error_correction() {
         assert_eq!(decoded.corrected_symbols, 2);
     }
     headers.sort_unstable();
-    assert_eq!(headers, [1, 3, 5, 7, 9, 11, 12, 16, 16, 17, 20, 20]);
+    assert_eq!(headers, [1, 3, 5, 7, 9, 11, 12, 16, 20, 20, 22, 23]);
 }
 
 #[test]
