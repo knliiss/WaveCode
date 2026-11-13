@@ -136,7 +136,8 @@ fn arbitrary_gaps_remain_scanable_when_rotated_and_inverted() {
                 payload_center_gap: middle,
                 logo_payload_gap: logo,
             },
-        ).unwrap();
+        )
+        .unwrap();
         let image = image::load_from_memory(&png).unwrap().to_luma8();
         for picture in [rotate90(&image), rotate180(&image), rotate270(&image)] {
             let decoded = raster::scan_gray(&picture).unwrap();
