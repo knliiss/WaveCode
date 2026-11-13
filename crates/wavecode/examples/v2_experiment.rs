@@ -47,10 +47,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             geometry.width,
             geometry.height
         );
-        println!(
-            "Version-only W: {} (12-bit BCH field)",
-            v2::anchor::VERSION
-        );
+        println!("Version-only W: {} (12-bit BCH field)", v2::anchor::VERSION);
         println!("First optical payload column: profile {}", frame.metadata);
         println!(
             "Payload columns saved against original V2: {}",
