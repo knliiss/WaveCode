@@ -15,12 +15,12 @@ impl RenderStyle {
         match self {
             Self::Classic => RenderProfile {
                 pitch: 18.0,
-                height: 180.0,
+                height: 210.0,
                 quiet: 18.0,
             },
             Self::Compact => RenderProfile {
                 pitch: 16.0,
-                height: 180.0,
+                height: 210.0,
                 quiet: 16.0,
             },
         }
@@ -296,6 +296,43 @@ mod tests {
                 svg.find("class=\"w-hole\"").unwrap() < svg.find("class=\"data-upper\"").unwrap()
             );
         }
+    }
+
+    #[test]
+    fn styles_reuse_one_byte_alphabet_and_fixed_width_in_each_frame() {
+        let frame = Frame {
+            metadata: 0,
+            symbols: (0..=255).take(16).collect(),
+        };
+        for style in [RenderStyle::Classic, RenderStyle::Compact] {
+            let render_profile = style.profile();
+            let (metrics, marks) = marks(&frame, render_profile).unwrap();
+            assert_eq!(metrics.pitch, render_profile.pitch);
+            let widths = marks.iter().filter_map(|mark| match mark {
+                Mark::Rail(rect, _) => Some(rect.width),
+                _ => None,
+            }).collect::<Vec<_>>();
+            assert_eq!(widths.len(), frame.symbols.len() * 2);
+            assert!(widths.iter().all(|width| {
+                (*width - render_profile.pitch * optical::RAIL_WIDTH_RATIO).abs() < 0.00001
+            }));
+            let svg = render_svg_style(&frame, style).unwrap();
+            assert_eq!(svg.matches("class=\"data-upper\"").count(), 16);
+            assert_eq!(svg.matches("class=\"data-lower\"").count(), 16);
+        }
+    }
+
+    #[test]
+    fn compact_style_only_changes_geometry_not_the_coded_bytes() {
+        let content = Content::Single(
+            MusicCode::from_url("https://music.youtube.com/watch?v=JGwWNGJdvx8").unwrap(),
+        );
+        let frame = encode(&content).unwrap();
+        let unchanged = frame.clone();
+        let _ = render_svg_style(&frame, RenderStyle::Classic).unwrap();
+        let _ = render_svg_style(&frame, RenderStyle::Compact).unwrap();
+        assert_eq!(frame, unchanged);
+        assert_ne!(RenderStyle::Classic.profile().pitch, RenderStyle::Compact.profile().pitch);
     }
 
     #[test]
