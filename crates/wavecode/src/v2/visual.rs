@@ -94,6 +94,19 @@ impl RenderProfile {
         self.metrics_with_spacing(codec::optical_column_count(frame) - 1, spacing)
     }
 
+    pub fn metrics_with_spacing_and_logo_height_for_frame(
+        self,
+        frame: &Frame,
+        spacing: VisualSpacing,
+        logo_height: f64,
+    ) -> Result<Metrics, Error> {
+        self.metrics_with_spacing_and_logo_height(
+            codec::optical_column_count(frame) - 1,
+            spacing,
+            logo_height,
+        )
+    }
+
     pub fn metrics(self, symbols: usize) -> Result<Metrics, Error> {
         self.metrics_with_spacing(symbols, VisualSpacing::for_profile(self))
     }
@@ -103,10 +116,21 @@ impl RenderProfile {
         symbols: usize,
         spacing: VisualSpacing,
     ) -> Result<Metrics, Error> {
+        self.metrics_with_spacing_and_logo_height(symbols, spacing, self.height)
+    }
+
+    /// The W height is purely visual and independent from the payload height.
+    pub fn metrics_with_spacing_and_logo_height(
+        self,
+        symbols: usize,
+        spacing: VisualSpacing,
+        logo_height: f64,
+    ) -> Result<Metrics, Error> {
         if !(1..=34).contains(&symbols)
             || ![
                 self.pitch,
                 self.height,
+                logo_height,
                 self.quiet,
                 spacing.payload_center_gap,
                 spacing.logo_payload_gap,
@@ -115,13 +139,14 @@ impl RenderProfile {
             .all(|n| n.is_finite())
             || self.pitch < 6.0
             || self.height < 90.0
+            || logo_height < 90.0
             || self.quiet < 0.0
             || spacing.payload_center_gap < 2.0
             || spacing.logo_payload_gap < 2.0
         {
             return Err(Error::InvalidGeometry);
         }
-        let w_pitch = self.height * anchor::W_DOT_SCALE_RATIO;
+        let w_pitch = logo_height * anchor::W_DOT_SCALE_RATIO;
         let anchor_width = anchor::SHELL_WIDTH * w_pitch;
         // payload_x locates the start of the first *column cell*. The
         // requested logo gap is instead the actual empty space to its bar.
@@ -142,7 +167,7 @@ impl RenderProfile {
         let logo_max_y = (anchor::SHELL_HEIGHT + anchor::VERSION_EXTENSION) * w_pitch;
         let min_y = logo_min_y.min(upper_inner_y - max_bar_height);
         let max_y = logo_max_y.max(lower_inner_y + max_bar_height);
-        let vertical_margin = (self.height * 0.038).max(8.0);
+        let vertical_margin = (self.height.max(logo_height) * 0.038).max(8.0);
         let logo_y_offset = vertical_margin - min_y;
         let upper_baseline = upper_inner_y + logo_y_offset;
         let lower_baseline = lower_inner_y + logo_y_offset;
@@ -203,7 +228,18 @@ fn marks_with_spacing(
     profile: RenderProfile,
     spacing: VisualSpacing,
 ) -> Result<(Metrics, Vec<Mark>), Error> {
-    let metrics = profile.metrics_with_spacing_for_frame(frame, spacing)?;
+    marks_with_spacing_and_logo_height(frame, profile, spacing, profile.height)
+}
+
+fn marks_with_spacing_and_logo_height(
+    frame: &Frame,
+    profile: RenderProfile,
+    spacing: VisualSpacing,
+    logo_height: f64,
+) -> Result<(Metrics, Vec<Mark>), Error> {
+    let metrics = profile.metrics_with_spacing_and_logo_height_for_frame(
+        frame, spacing, logo_height,
+    )?;
     let mut result =
         Vec::with_capacity(anchor::VERSION_SITES + codec::optical_column_count(frame) * 2);
 
@@ -258,7 +294,18 @@ pub fn render_svg_with_spacing(
     profile: RenderProfile,
     spacing: VisualSpacing,
 ) -> Result<String, Error> {
-    let (metrics, marks) = marks_with_spacing(frame, profile, spacing)?;
+    render_svg_with_spacing_and_logo_height(frame, profile, spacing, profile.height)
+}
+
+/// The logo and payload have separate vertical scales; neither scale is encoded.
+pub fn render_svg_with_spacing_and_logo_height(
+    frame: &Frame,
+    profile: RenderProfile,
+    spacing: VisualSpacing,
+    logo_height: f64,
+) -> Result<String, Error> {
+    let (metrics, marks) =
+        marks_with_spacing_and_logo_height(frame, profile, spacing, logo_height)?;
     let mut svg = format!(
         "<svg xmlns=\"http://www.w3.org/2000/svg\" data-wavecode=\"v2-capsule-version-bch22\" data-version=\"{}\" data-profile=\"{}\" width=\"{:.3}\" height=\"{:.3}\" viewBox=\"0 0 {:.3} {:.3}\">\n  <rect width=\"100%\" height=\"100%\" fill=\"white\"/>\n",
         anchor::VERSION,
@@ -291,10 +338,21 @@ pub fn render_png_with_spacing(
     profile: RenderProfile,
     spacing: VisualSpacing,
 ) -> Result<Vec<u8>, Error> {
+    render_png_with_spacing_and_logo_height(frame, profile, spacing, profile.height)
+}
+
+#[cfg(feature = "raster")]
+pub fn render_png_with_spacing_and_logo_height(
+    frame: &Frame,
+    profile: RenderProfile,
+    spacing: VisualSpacing,
+    logo_height: f64,
+) -> Result<Vec<u8>, Error> {
     use image::{DynamicImage, GrayImage, ImageOutputFormat, Luma};
     use std::io::Cursor;
 
-    let (metrics, marks) = marks_with_spacing(frame, profile, spacing)?;
+    let (metrics, marks) =
+        marks_with_spacing_and_logo_height(frame, profile, spacing, logo_height)?;
     if metrics.width.ceil() * metrics.height.ceil() > 5_000_000.0 {
         return Err(Error::InvalidGeometry);
     }
