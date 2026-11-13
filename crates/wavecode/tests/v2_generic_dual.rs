@@ -103,3 +103,32 @@ fn longer_generic_dual_is_found_optically_with_small_independent_w() {
         assert_eq!(detected.decoded.content, content);
     }
 }
+
+#[cfg(feature = "raster")]
+#[test]
+fn generic_dual_overlapping_implicit_28_column_length_decodes_without_ambiguity() {
+    let content = Content::DualLinks {
+        first: MusicCode::from_url("https://music.apple.com/ua/song/12345").unwrap(),
+        second: MusicCode::from_url("https://music.apple.com/us/song/67890").unwrap(),
+    };
+    let frame = v2::encode_adaptive(&content).unwrap();
+    assert_eq!(frame.metadata, 36);
+    assert_eq!(v2::optical_column_count(&frame), 28);
+    let encoded = visual::render_png_with_spacing_and_logo_height(
+        &frame,
+        visual::RenderProfile {
+            pitch: 16.0,
+            height: 172.0,
+            quiet: 12.0,
+        },
+        visual::VisualSpacing {
+            payload_center_gap: 11.0,
+            logo_payload_gap: 20.0,
+        },
+        125.0,
+    )
+    .unwrap();
+    let scan = v2::raster::scan_png_or_jpeg(&encoded).unwrap();
+    assert_eq!(scan.decoded.content, content);
+    assert_eq!(scan.profile, 36);
+}
