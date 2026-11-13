@@ -219,8 +219,7 @@ fn marks_with_spacing(
     }
     // Optical profile header is one full 8-bit symbol. It belongs to the
     // payload, not the W, and its value is CRC-covered by the source codec.
-    let implicit_profile =
-        codec::implicit_dual_profile(frame.symbols.len()) == Some(frame.metadata);
+    let implicit_profile = codec::implicit_dual_profile_for_frame(frame);
     for (index, symbol) in std::iter::once(frame.metadata)
         .filter(|_| !implicit_profile)
         .chain(frame.symbols.iter().copied())
