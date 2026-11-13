@@ -333,7 +333,7 @@ mod tests {
         )
         .unwrap();
         assert_ne!(first, second);
-        assert!(first.contains("data-version=\\\"2\\\""));
+        assert!(first.contains("data-version=\"2\""));
         assert_eq!(v2::decode(&frame).unwrap().content, content);
     }
 
