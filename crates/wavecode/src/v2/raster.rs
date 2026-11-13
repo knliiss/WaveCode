@@ -502,7 +502,7 @@ fn read_shell_frame(parts: &[Component], fit: &ShellFit<'_>) -> Result<Located, 
         }
     }
     let bars = paired_bars;
-    if bars.len() < 18 || bars.len() > 70 || bars.len() % 2 != 0 {
+    if bars.len() < 18 || bars.len() > 114 || bars.len() % 2 != 0 {
         return Err(Error::InvalidFrame);
     }
     let pairs: Vec<_> = bars

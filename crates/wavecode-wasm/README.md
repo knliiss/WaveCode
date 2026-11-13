@@ -15,7 +15,7 @@ Import the generated `pkg/wavecode_wasm.js` and initialize it once:
 ```js
 import init, {
   encode_url, decode_symbols, render_png, scan_all,
-  v2_encode_url, v2_encode_dual, v2_render_png_with_geometry,
+  v2_encode_url, v2_encode_dual, v2_encode_links, v2_render_png_with_geometry,
   v2_decode_frame, v2_scan_image,
 } from "./crates/wavecode-wasm/pkg/wavecode_wasm.js";
 
@@ -68,7 +68,21 @@ const restored = JSON.parse(v2_decode_frame(
 console.log(restored.urls); // two original-platform URLs
 ```
 
-Dual tracks are **independent**. No lookup or assumed same-song mapping is involved.
+The legacy `v2_encode_dual` signature remains supported for the specialized Spotify + YouTube Music profiles. To encode **any two individually supported media links**, including mixed platforms, same-platform pairs or separate timestamps, use `v2_encode_links`:
+
+```js
+const mixed = JSON.parse(v2_encode_links(
+  "https://vt.tiktok.com/ZSp94BeDn/",
+  "https://music.youtube.com/watch?v=JGwWNGJdvx8",
+  undefined, // first link: no timestamp
+  187        // second link: independently encoded timestamp
+));
+console.log(JSON.parse(v2_decode_frame(
+  mixed.metadata, Uint8Array.from(mixed.symbols)
+)).urls);
+```
+
+Both identities are preserved offline. No lookup or same-song matching service is involved. When given Spotify first, YouTube Music second, and equal optional timestamps, `v2_encode_links` automatically selects the earlier compact Dual profiles; otherwise it uses general V2 profile 36 with a longer payload. The optical anchor and version remain V2.
 
 ## V2 frame and scan result
 

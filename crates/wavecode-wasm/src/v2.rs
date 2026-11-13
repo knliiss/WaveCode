@@ -33,6 +33,9 @@ fn encoded_json(frame: &v2::Frame) -> Result<String, JsValue> {
 fn decoded_value(decoded: &v2::Decoded) -> Result<Value, wavecode::Error> {
     let urls = match &decoded.content {
         v2::Content::Single(code) => vec![code.to_url()?],
+        v2::Content::DualLinks { first, second } => {
+            vec![first.to_url()?, second.to_url()?]
+        }
         v2::Content::Dual {
             spotify_id,
             youtube_music_id,
@@ -113,6 +116,47 @@ pub fn v2_encode_dual(
         spotify_id: spotify_id.to_owned(),
         youtube_music_id: youtube_music_id.to_owned(),
         moment_seconds,
+    };
+    encoded_json(&v2::encode_adaptive(&content).map_err(js_error)?)
+}
+
+/// Encode two independently supported links, with optional per-link moments.
+/// Existing Spotify + YouTube Music pairs sharing one moment retain the
+/// original optimized V2 Dual profiles for backward compatibility.
+#[wasm_bindgen]
+pub fn v2_encode_links(
+    first_url: &str,
+    second_url: &str,
+    first_moment_override: Option<u16>,
+    second_moment_override: Option<u16>,
+) -> Result<String, JsValue> {
+    if first_url.len() > MAX_URL_BYTES || second_url.len() > MAX_URL_BYTES {
+        return Err(js_error("track URL exceeds maximum length"));
+    }
+    let mut first = MusicCode::from_url(first_url).map_err(js_error)?;
+    let mut second = MusicCode::from_url(second_url).map_err(js_error)?;
+    if let Some(moment) = first_moment_override {
+        first.moment_seconds = Some(moment);
+    }
+    if let Some(moment) = second_moment_override {
+        second.moment_seconds = Some(moment);
+    }
+    first.to_url().map_err(js_error)?;
+    second.to_url().map_err(js_error)?;
+    let content = if let (Track::Spotify(spotify_id), Track::YouTubeMusic(youtube_music_id)) =
+        (&first.track, &second.track)
+    {
+        if first.moment_seconds == second.moment_seconds {
+            v2::Content::Dual {
+                spotify_id: spotify_id.clone(),
+                youtube_music_id: youtube_music_id.clone(),
+                moment_seconds: first.moment_seconds,
+            }
+        } else {
+            v2::Content::DualLinks { first, second }
+        }
+    } else {
+        v2::Content::DualLinks { first, second }
     };
     encoded_json(&v2::encode_adaptive(&content).map_err(js_error)?)
 }

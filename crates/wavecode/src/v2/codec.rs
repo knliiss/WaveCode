@@ -9,6 +9,8 @@ const YOUTUBE: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz012
 const SPOTIFY: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 const AMAZON: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const PARITY_BYTES: usize = reed_solomon::PARITY_SYMBOLS;
+const GENERIC_DUAL_PROFILE: u8 = 36;
+const MAX_GENERIC_COLUMNS: usize = 56;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Layout {
@@ -35,6 +37,10 @@ pub enum Content {
         youtube_music_id: String,
         moment_seconds: Option<u16>,
     },
+    DualLinks {
+        first: MusicCode,
+        second: MusicCode,
+    },
 }
 
 impl Content {
@@ -42,6 +48,7 @@ impl Content {
         match self {
             Self::Single(code) => code.moment_seconds,
             Self::Dual { moment_seconds, .. } => *moment_seconds,
+            Self::DualLinks { .. } => None,
         }
     }
 }
@@ -316,11 +323,112 @@ fn parse_header(meta: u8) -> Result<(Layout, bool), Error> {
     Ok((layout, meta & 2 != 0))
 }
 
+/// Generic V2 Dual keeps two independently validated platform identities and
+/// timestamps. The explicit profile byte 36 is outside all earlier V2 profiles;
+/// old V2 optical frames are not changed. Each entry uses one bit for
+/// compact-versus-Spotify, then the corresponding lossless V2 identity bits,
+/// followed by 2-bit time mode (none, 8-bit, or 16-bit).
+fn encode_dual_links(first: &MusicCode, second: &MusicCode) -> Result<Frame, Error> {
+    let mut out = BitWriter::default();
+    for code in [first, second] {
+        code.validate_moment()?;
+        if matches!(code.track, Track::Spotify(_)) {
+            out.push(1, 1);
+            out.rank(identity::encode(&code.track)?, 131)?;
+        } else {
+            out.push(0, 1);
+            compact_track(&code.track, &mut out)?;
+        }
+        match code.moment_seconds {
+            None => out.push(0, 2),
+            Some(moment) if moment <= 255 => {
+                out.push(1, 2);
+                out.push(u64::from(moment), 8);
+            }
+            Some(moment) => {
+                out.push(2, 2);
+                out.push(u64::from(moment), 16);
+            }
+        }
+    }
+    let mut bytes = out.finish();
+    let mut checked = Vec::with_capacity(bytes.len() + 1);
+    checked.push(GENERIC_DUAL_PROFILE);
+    checked.extend_from_slice(&bytes);
+    bytes.extend_from_slice(&crc16(&checked).to_be_bytes());
+    if bytes.len() + PARITY_BYTES > MAX_GENERIC_COLUMNS {
+        return Err(Error::InvalidLength);
+    }
+    Ok(Frame {
+        metadata: GENERIC_DUAL_PROFILE,
+        symbols: reed_solomon::encode(&bytes),
+    })
+}
+
+fn decode_dual_links(frame: &Frame) -> Result<Decoded, Error> {
+    if frame.metadata != GENERIC_DUAL_PROFILE
+        || frame.symbols.len() < PARITY_BYTES + 6
+        || frame.symbols.len() > MAX_GENERIC_COLUMNS
+    {
+        return Err(Error::InvalidLength);
+    }
+    let (recovered, corrected_symbols) = reed_solomon::decode(&frame.symbols)?;
+    let data = &recovered[..recovered.len() - PARITY_BYTES];
+    let payload = &data[..data.len() - 2];
+    let expected = u16::from_be_bytes([data[data.len() - 2], data[data.len() - 1]]);
+    let mut checked = Vec::with_capacity(payload.len() + 1);
+    checked.push(GENERIC_DUAL_PROFILE);
+    checked.extend_from_slice(payload);
+    if crc16(&checked) != expected {
+        return Err(Error::ChecksumMismatch);
+    }
+    let mut reader = BitReader::new(payload);
+    let mut links = Vec::with_capacity(2);
+    for _ in 0..2 {
+        let track = if reader.take(1)? != 0 {
+            let identity = reader.rank(131)?;
+            let track = identity::decode(identity)?;
+            if !matches!(track, Track::Spotify(_)) {
+                return Err(Error::InvalidCodeword);
+            }
+            track
+        } else {
+            read_compact(&mut reader)?
+        };
+        let moment_seconds = match reader.take(2)? {
+            0 => None,
+            1 => Some(reader.take(8)? as u16),
+            2 => {
+                let moment = reader.take(16)? as u16;
+                if moment <= 255 {
+                    return Err(Error::InvalidCodeword);
+                }
+                Some(moment)
+            }
+            _ => return Err(Error::InvalidCodeword),
+        };
+        let code = MusicCode {
+            track,
+            moment_seconds,
+        };
+        code.validate_moment().map_err(|_| Error::InvalidCodeword)?;
+        links.push(code);
+    }
+    reader.finish()?;
+    let second = links.pop().ok_or(Error::InvalidCodeword)?;
+    let first = links.pop().ok_or(Error::InvalidCodeword)?;
+    Ok(Decoded {
+        content: Content::DualLinks { first, second },
+        corrected_symbols,
+        layout: Layout::Dual,
+    })
+}
+
 pub fn encode(content: &Content) -> Result<Frame, Error> {
     let layout = match content {
         Content::Single(code) if matches!(code.track, Track::Spotify(_)) => Layout::Full,
         Content::Single(_) => Layout::Compact,
-        Content::Dual { .. } => Layout::Dual,
+        Content::Dual { .. } | Content::DualLinks { .. } => Layout::Dual,
     };
     encode_with_layout(content, layout)
 }
@@ -375,6 +483,9 @@ pub fn optical_column_count(frame: &Frame) -> usize {
 
 pub fn encode_adaptive(content: &Content) -> Result<Frame, Error> {
     let mut shortest = encode(content)?;
+    if matches!(content, Content::DualLinks { .. }) {
+        return Ok(shortest);
+    }
     for candidate in super::adaptive::candidates(content)? {
         let shorter = optical_column_count(&candidate) < optical_column_count(&shortest);
         let stronger_equal_length = optical_column_count(&candidate)
@@ -389,6 +500,9 @@ pub fn encode_adaptive(content: &Content) -> Result<Frame, Error> {
 }
 
 pub fn encode_with_layout(content: &Content, layout: Layout) -> Result<Frame, Error> {
+    if let (Content::DualLinks { first, second }, Layout::Dual) = (content, layout) {
+        return encode_dual_links(first, second);
+    }
     let has_time = content.moment().is_some();
     let metadata = make_header(layout, has_time);
     let mut out = BitWriter::default();
@@ -443,6 +557,9 @@ pub fn encode_with_layout(content: &Content, layout: Layout) -> Result<Frame, Er
 }
 
 pub fn decode(frame: &Frame) -> Result<Decoded, Error> {
+    if frame.metadata == GENERIC_DUAL_PROFILE {
+        return decode_dual_links(frame);
+    }
     if !matches!(frame.metadata, 0 | 2 | 4 | 6 | 8 | 10) {
         return super::adaptive::decode(frame);
     }
