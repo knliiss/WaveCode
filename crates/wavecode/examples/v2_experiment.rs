@@ -100,7 +100,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     fn optional_height(value: Option<&String>) -> Result<Option<f64>, IoError> {
         value
-            .map(|input| input.parse().map_err(|_| input_error("invalid W height in pixels")))
+            .map(|input| {
+                input
+                    .parse()
+                    .map_err(|_| input_error("invalid W height in pixels"))
+            })
             .transpose()
     }
 
