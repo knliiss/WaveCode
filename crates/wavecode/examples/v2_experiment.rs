@@ -16,10 +16,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         IoError::new(ErrorKind::InvalidInput, message)
     }
 
+    fn visual_style(name: Option<&String>) -> Result<visual::RenderStyle, IoError> {
+        match name.map(String::as_str) {
+            None | Some("classic") => Ok(visual::RenderStyle::Classic),
+            Some("compact") => Ok(visual::RenderStyle::Compact),
+            _ => Err(input_error("unknown V2 style; choose classic or compact")),
+        }
+    }
+
     fn write_frame(
         content: Content,
         target: &str,
         adaptive: bool,
+        style: visual::RenderStyle,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let original = v2::encode(&content)?;
         let frame = if adaptive {
@@ -27,11 +36,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         } else {
             original.clone()
         };
-        let profile = visual::RenderProfile {
-            pitch: 22.0,
-            height: 210.0,
-            quiet: 20.0,
-        };
+        let profile = style.profile();
         std::fs::write(target, visual::render_png(&frame, profile)?)?;
         let svg_file = std::path::Path::new(target).with_extension("svg");
         std::fs::write(&svg_file, visual::render_svg(&frame, profile)?)?;
@@ -43,7 +48,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             geometry.height
         );
         println!(
-            "Round-dot W version: {} (12-bit BCH field)",
+            "Capsule-hole W version: {} (12-bit BCH field)",
             v2::anchor::VERSION
         );
         println!("W payload profile (protected): {:06b}", frame.metadata);
@@ -57,12 +62,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args: Vec<String> = std::env::args().collect();
     match args.get(1).map(String::as_str) {
-        Some("encode" | "encode-adaptive") if args.len() == 4 => write_frame(
+        Some("encode" | "encode-adaptive") if (4..=5).contains(&args.len()) => write_frame(
             Content::Single(MusicCode::from_url(&args[2])?),
             &args[3],
             args[1] == "encode-adaptive",
+            visual_style(args.get(4))?,
         )?,
-        Some("dual" | "dual-adaptive") if args.len() == 5 => {
+        Some("dual" | "dual-adaptive") if (5..=6).contains(&args.len()) => {
             let spotify_id = match MusicCode::from_url(&args[2])?.track {
                 Track::Spotify(id) => id,
                 _ => return Err(input_error("expected Spotify track URL").into()),
@@ -79,6 +85,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 },
                 &args[4],
                 args[1] == "dual-adaptive",
+                visual_style(args.get(5))?,
             )?
         }
         Some("scan") if args.len() == 3 => {
@@ -116,7 +123,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             return Err(input_error(
-                "usage: v2_experiment (encode|encode-adaptive) <url> <out.png> | (dual|dual-adaptive) <spotify-url> <youtube-music-url> <out.png> | scan <image.png>",
+                "usage: v2_experiment (encode|encode-adaptive) <url> <out.png> [classic|compact] | (dual|dual-adaptive) <spotify-url> <youtube-music-url> <out.png> [classic|compact] | scan <image.png>",
             ).into());
         }
     }
