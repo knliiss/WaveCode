@@ -1,5 +1,6 @@
-//! WaveCode V2 original 22-capsule W with sixty small BCH-coded interior holes.
-//! All outer capsule silhouettes and their central white channel are invariant.
+//! WaveCode V2: only the optical version is encoded in small outward
+//! extensions of the original 22 capsules. No microscopic holes are needed.
+//! The payload profile is a standalone optical byte after the logo.
 use super::{anchor, optical, Frame};
 use crate::Error;
 
@@ -47,7 +48,7 @@ pub struct Metrics {
     pub anchor_width: f64,
     pub payload_x: f64,
     pub pitch: f64,
-    /// Actual round-dot grid unit; it is independent from the payload pitch.
+    /// Uniform scaling from the original 232-unit brand silhouette.
     pub w_pitch: f64,
     pub upper_baseline: f64,
     pub lower_baseline: f64,
@@ -70,7 +71,7 @@ impl RenderProfile {
         let w_pitch = self.height * anchor::W_DOT_SCALE_RATIO;
         let anchor_width = anchor::SHELL_WIDTH * w_pitch;
         let payload_x = self.quiet + anchor_width + self.pitch * optical::PAYLOAD_GAP_PITCH_RATIO;
-        let width = payload_x + symbols as f64 * self.pitch + self.quiet;
+        let width = payload_x + (symbols + 1) as f64 * self.pitch + self.quiet;
         let gap = self.height * 0.060;
         Ok(Metrics {
             width,
@@ -95,48 +96,34 @@ struct Rect {
     height: f64,
 }
 
-#[derive(Clone, Copy, Debug)]
-struct Circle {
-    cx: f64,
-    cy: f64,
-    r: f64,
-}
-
 enum Mark {
     Capsule(Rect),
-    Hole(Circle),
     Rail(Rect, bool),
 }
 
 impl Mark {
     fn svg(&self) -> String {
-        match self {
-            Self::Capsule(rect) | Self::Rail(rect, _) => format!(
-                "  <rect class=\"{}\" x=\"{:.3}\" y=\"{:.3}\" width=\"{:.3}\" height=\"{:.3}\" rx=\"{:.3}\" fill=\"black\"/>\n",
-                match self {
-                    Self::Capsule(_) => "w-capsule",
-                    Self::Rail(_, true) => "data-upper",
-                    Self::Rail(_, false) => "data-lower",
-                    Self::Hole(_) => unreachable!(),
-                },
-                rect.x, rect.y, rect.width, rect.height, rect.width / 2.0,
-            ),
-            Self::Hole(hole) => format!(
-                "  <circle class=\"w-hole\" cx=\"{:.3}\" cy=\"{:.3}\" r=\"{:.3}\" fill=\"white\"/>\n",
-                hole.cx, hole.cy, hole.r,
-            ),
-        }
+        let (rect, kind) = match self {
+            Self::Capsule(rect) => (rect, "w-capsule"),
+            Self::Rail(rect, true) => (rect, "data-upper"),
+            Self::Rail(rect, false) => (rect, "data-lower"),
+        };
+        format!(
+            "  <rect class=\"{}\" x=\"{:.3}\" y=\"{:.3}\" width=\"{:.3}\" height=\"{:.3}\" rx=\"{:.3}\" fill=\"black\"/>\n",
+            kind, rect.x, rect.y, rect.width, rect.height, rect.width / 2.0
+        )
     }
 }
 
 fn marks(frame: &Frame, profile: RenderProfile) -> Result<(Metrics, Vec<Mark>), Error> {
     let metrics = profile.metrics(frame.symbols.len())?;
-    let encoded = anchor::encode_meta(frame.metadata)?;
-    let mut result = Vec::with_capacity(22 + anchor::METADATA_BITS + frame.symbols.len() * 2);
+    let mut result = Vec::with_capacity(
+        anchor::VERSION_SITES + (frame.symbols.len() + 1) * 2,
+    );
 
-    // Draw the original brand shells first. Every pixel on their outside
-    // boundary is invariant under routing metadata and BCH shape selection.
-    for capsule in anchor::capsules() {
+    // The W carries ONLY the version. The original 32-unit center
+    // channel and every horizontal capsule center remain unchanged.
+    for capsule in anchor::capsules_for_version(anchor::VERSION)? {
         result.push(Mark::Capsule(Rect {
             x: profile.quiet + capsule.x * metrics.w_pitch,
             y: capsule.y * metrics.w_pitch,
@@ -144,21 +131,12 @@ fn marks(frame: &Frame, profile: RenderProfile) -> Result<(Metrics, Vec<Mark>), 
             height: capsule.height * metrics.w_pitch,
         }));
     }
-    // Draw 60 transparent holes *after* the opaque capsules.
-    for site in anchor::sites() {
-        let bit = site.bit.ok_or(Error::InvalidGeometry)?;
-        let radius = if encoded[bit] {
-            anchor::DOT_LARGE_RADIUS
-        } else {
-            anchor::DOT_SMALL_RADIUS
-        } * metrics.w_pitch;
-        result.push(Mark::Hole(Circle {
-            cx: profile.quiet + site.x * metrics.w_pitch,
-            cy: site.y * metrics.w_pitch,
-            r: radius,
-        }));
-    }
-    for (index, &symbol) in frame.symbols.iter().enumerate() {
+    // Optical profile header is one full 8-bit symbol. It belongs to the
+    // payload, not the W, and its value is CRC-covered by the source codec.
+    for (index, symbol) in std::iter::once(frame.metadata)
+        .chain(frame.symbols.iter().copied())
+        .enumerate()
+    {
         let center = metrics.payload_x + (index as f64 + 0.5) * profile.pitch;
         let logical = optical::OpticalSymbol::from_byte(symbol);
         for (upper, level) in [(true, logical.upper), (false, logical.lower)] {
@@ -186,7 +164,7 @@ fn marks(frame: &Frame, profile: RenderProfile) -> Result<(Metrics, Vec<Mark>), 
 pub fn render_svg(frame: &Frame, profile: RenderProfile) -> Result<String, Error> {
     let (metrics, marks) = marks(frame, profile)?;
     let mut svg = format!(
-        "<svg xmlns=\"http://www.w3.org/2000/svg\" data-wavecode=\"v2-capsule-holes-bch60\" data-version=\"{}\" data-profile=\"{}\" width=\"{:.3}\" height=\"{:.3}\" viewBox=\"0 0 {:.3} {:.3}\">\n  <rect width=\"100%\" height=\"100%\" fill=\"white\"/>\n",
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" data-wavecode=\"v2-capsule-version-bch22\" data-version=\"{}\" data-profile=\"{}\" width=\"{:.3}\" height=\"{:.3}\" viewBox=\"0 0 {:.3} {:.3}\">\n  <rect width=\"100%\" height=\"100%\" fill=\"white\"/>\n",
         anchor::VERSION,
         frame.metadata,
         metrics.width,
@@ -219,21 +197,6 @@ pub fn render_png(frame: &Frame, profile: RenderProfile) -> Result<Vec<u8>, Erro
     );
     for mark in marks {
         match mark {
-            Mark::Hole(hole) => {
-                let top = (hole.cy - hole.r).floor().max(0.0) as u32;
-                let bottom = (hole.cy + hole.r).ceil().min(f64::from(image.height())) as u32;
-                let left = (hole.cx - hole.r).floor().max(0.0) as u32;
-                let right = (hole.cx + hole.r).ceil().min(f64::from(image.width())) as u32;
-                for y in top..bottom {
-                    for x in left..right {
-                        let dx = f64::from(x) + 0.5 - hole.cx;
-                        let dy = f64::from(y) + 0.5 - hole.cy;
-                        if dx * dx + dy * dy <= hole.r * hole.r {
-                            image.put_pixel(x, y, Luma([255]));
-                        }
-                    }
-                }
-            }
             Mark::Capsule(rect) | Mark::Rail(rect, _) => {
                 let radius = rect.width.min(rect.height) / 2.0;
                 let cx = rect.x + rect.width / 2.0;
@@ -277,103 +240,64 @@ mod tests {
     };
 
     #[test]
-    fn v2_logo_keeps_original_twenty_two_capsules_and_sixty_holes() {
-        for input in [
-            "https://music.youtube.com/watch?v=JGwWNGJdvx8",
-            "https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b",
-        ] {
-            let frame = encode(&Content::Single(MusicCode::from_url(input).unwrap())).unwrap();
-            let svg = render_svg(&frame, RenderProfile::default()).unwrap();
-            assert_eq!(svg.matches("class=\"w-capsule\"").count(), 22);
-            assert_eq!(svg.matches("class=\"w-hole\"").count(), 60);
-            assert!(svg.contains("data-version=\"2\""));
-            assert_eq!(
-                svg.matches("class=\"data-upper\"").count(),
-                frame.symbols.len()
-            );
-            assert!(
-                svg.find("class=\"w-hole\"").unwrap() < svg.find("class=\"data-upper\"").unwrap()
-            );
-        }
-    }
-
-    #[test]
-    fn styles_reuse_one_byte_alphabet_and_fixed_width_in_each_frame() {
-        let frame = Frame {
-            metadata: 0,
-            symbols: (0..=255).take(16).collect(),
-        };
-        for style in [RenderStyle::Classic, RenderStyle::Compact] {
-            let render_profile = style.profile();
-            let (metrics, marks) = marks(&frame, render_profile).unwrap();
-            assert_eq!(metrics.pitch, render_profile.pitch);
-            let widths = marks
-                .iter()
-                .filter_map(|mark| match mark {
-                    Mark::Rail(rect, _) => Some(rect.width),
-                    _ => None,
-                })
-                .collect::<Vec<_>>();
-            assert_eq!(widths.len(), frame.symbols.len() * 2);
-            assert!(widths.iter().all(|width| {
-                (*width - render_profile.pitch * optical::RAIL_WIDTH_RATIO).abs() < 0.00001
-            }));
-            let svg = render_svg_style(&frame, style).unwrap();
-            assert_eq!(svg.matches("class=\"data-upper\"").count(), 16);
-            assert_eq!(svg.matches("class=\"data-lower\"").count(), 16);
-        }
-    }
-
-    #[test]
-    fn compact_style_only_changes_geometry_not_the_coded_bytes() {
-        let content = Content::Single(
+    fn w_uses_twenty_two_solid_capsules_with_no_microholes() {
+        let frame = encode(&Content::Single(
             MusicCode::from_url("https://music.youtube.com/watch?v=JGwWNGJdvx8").unwrap(),
-        );
-        let frame = encode(&content).unwrap();
-        let unchanged = frame.clone();
-        let _ = render_svg_style(&frame, RenderStyle::Classic).unwrap();
-        let _ = render_svg_style(&frame, RenderStyle::Compact).unwrap();
-        assert_eq!(frame, unchanged);
-        assert_ne!(
-            RenderStyle::Classic.profile().pitch,
-            RenderStyle::Compact.profile().pitch
-        );
+        )).unwrap();
+        let svg = render_svg(&frame, RenderStyle::Classic.profile()).unwrap();
+        assert_eq!(svg.matches("class=\"w-capsule\"").count(), 22);
+        assert!(!svg.contains("w-hole"));
+        assert!(!svg.contains("<circle"));
+        assert!(svg.contains("data-version=\"2\""));
+        assert_eq!(svg.matches("class=\"data-upper\"").count(), frame.symbols.len() + 1);
+        assert_eq!(svg.matches("class=\"data-lower\"").count(), frame.symbols.len() + 1);
     }
 
     #[test]
-    fn all_brand_capsules_and_hole_centers_remain_fixed_when_metadata_changes() {
-        let a = marks(
-            &Frame {
-                metadata: 1,
-                symbols: vec![0; 14],
-            },
-            RenderProfile::default(),
-        )
-        .unwrap()
-        .1;
-        let b = marks(
-            &Frame {
-                metadata: 15,
-                symbols: vec![0; 14],
-            },
-            RenderProfile::default(),
-        )
-        .unwrap()
-        .1;
-        for (first, second) in a.iter().zip(&b) {
-            match (first, second) {
-                (Mark::Capsule(one), Mark::Capsule(two)) => {
-                    assert_eq!(
-                        (one.x, one.y, one.width, one.height),
-                        (two.x, two.y, two.width, two.height)
-                    );
+    fn logo_is_independent_of_payload_profile_and_style() {
+        let a = Frame { metadata: 0, symbols: vec![0; 14] };
+        let b = Frame { metadata: 15, symbols: vec![0; 14] };
+        for style in [RenderStyle::Classic, RenderStyle::Compact] {
+            let left = marks(&a, style.profile()).unwrap().1;
+            let right = marks(&b, style.profile()).unwrap().1;
+            for (first, second) in left.iter().zip(&right).take(22) {
+                match (first, second) {
+                    (Mark::Capsule(one), Mark::Capsule(two)) => {
+                        assert_eq!((one.x, one.y, one.width, one.height),
+                            (two.x, two.y, two.width, two.height));
+                    }
+                    _ => panic!("W must be invariant under a routing profile"),
                 }
-                (Mark::Hole(one), Mark::Hole(two)) => {
-                    assert_eq!((one.cx, one.cy), (two.cx, two.cy));
-                }
-                (Mark::Rail(..), Mark::Rail(..)) => {}
-                _ => panic!("nonidentical mark ordering"),
             }
         }
+    }
+
+    #[test]
+    fn all_payload_bars_have_one_width_in_both_styles() {
+        let frame = Frame { metadata: 0, symbols: (0..16).collect() };
+        for style in [RenderStyle::Classic, RenderStyle::Compact] {
+            let profile = style.profile();
+            let (metrics, output) = marks(&frame, profile).unwrap();
+            assert_eq!(metrics.pitch, profile.pitch);
+            let widths = output.iter().filter_map(|mark| match mark {
+                Mark::Rail(rect, _) => Some(rect.width),
+                Mark::Capsule(_) => None,
+            }).collect::<Vec<_>>();
+            assert_eq!(widths.len(), (frame.symbols.len() + 1) * 2);
+            assert!(widths.iter().all(|width| {
+                (*width - profile.pitch * optical::RAIL_WIDTH_RATIO).abs() < 1.0e-5
+            }));
+        }
+    }
+
+    #[test]
+    fn style_does_not_modify_encoded_frame() {
+        let frame = encode(&Content::Single(
+            MusicCode::from_url("https://music.youtube.com/watch?v=JGwWNGJdvx8").unwrap(),
+        )).unwrap();
+        let original = frame.clone();
+        render_svg_style(&frame, RenderStyle::Classic).unwrap();
+        render_svg_style(&frame, RenderStyle::Compact).unwrap();
+        assert_eq!(frame, original);
     }
 }
