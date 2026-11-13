@@ -337,6 +337,65 @@ mod tests {
     }
 
     #[test]
+    fn payload_symmetric_slit_matches_original_w_on_both_styles() {
+        for style in [RenderStyle::Classic, RenderStyle::Compact] {
+            let profile = style.profile();
+            let frame = Frame {
+                metadata: 15,
+                symbols: vec![0x00, 0x0f, 0xf0, 0xff, 0x5a, 0xa5],
+            };
+            let (metrics, drawing) = marks(&frame, profile).unwrap();
+            let epsilon = 1.0e-8;
+
+            // The white slit center is the midpoint of y=242 and y=274
+            // in the original 512-unit logo SVG, not its bounding center.
+            assert!((anchor::SLIT_CENTER_Y - 258.0).abs() < epsilon);
+            assert!((metrics.center_y - (metrics.upper_baseline + metrics.lower_baseline) / 2.0).abs() < epsilon);
+            assert!((metrics.center_gap - 32.0 * metrics.w_pitch).abs() < epsilon);
+
+            for index in 0..11 {
+                match (&drawing[index], &drawing[index + 11]) {
+                    (Mark::Capsule(upper), Mark::Capsule(lower)) => {
+                        assert!((upper.y + upper.height - metrics.upper_baseline).abs() < epsilon);
+                        assert!((lower.y - metrics.lower_baseline).abs() < epsilon);
+                    }
+                    _ => panic!("the W's two capsule rows must be consecutive"),
+                }
+            }
+
+            for mark in drawing.iter().skip(anchor::VERSION_SITES) {
+                let Mark::Rail(rect, upper) = mark else {
+                    panic!("unexpected mark after W");
+                };
+                if *upper {
+                    assert!((rect.y + rect.height - metrics.upper_baseline).abs() < epsilon);
+                } else {
+                    assert!((rect.y - metrics.lower_baseline).abs() < epsilon);
+                }
+                assert!(rect.y >= 8.0 - epsilon);
+                assert!(rect.y + rect.height <= metrics.height - 8.0 + epsilon);
+            }
+
+            // The longest possible pair has mirror-symmetric extents,
+            // regardless of the actual sequence of data bytes.
+            let tallest = optical::height_of(15, profile.height).unwrap();
+            let top = metrics.upper_baseline - tallest;
+            let bottom = metrics.lower_baseline + tallest;
+            assert!((metrics.center_y - top - (bottom - metrics.center_y)).abs() < epsilon);
+            assert!(top >= 8.0 - epsilon);
+            assert!(bottom <= metrics.height - 8.0 + epsilon);
+
+            let logo_right = profile.quiet + metrics.anchor_width;
+            let first_bar_left = metrics.payload_x + profile.pitch / 2.0
+                - profile.pitch * optical::RAIL_WIDTH_RATIO / 2.0;
+            let visible_gap = first_bar_left - logo_right;
+            let logo_internal_gap = 14.0 * metrics.w_pitch;
+            assert!(visible_gap > logo_internal_gap * 0.60);
+            assert!(visible_gap < logo_internal_gap * 1.20);
+        }
+    }
+
+    #[test]
     fn style_does_not_modify_encoded_frame() {
         let frame = encode(&Content::Single(
             MusicCode::from_url("https://music.youtube.com/watch?v=JGwWNGJdvx8").unwrap(),
