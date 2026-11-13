@@ -326,18 +326,30 @@ pub fn implicit_dual_profile(optical_columns: usize) -> Option<u8> {
     }
 }
 
+/// In 32/33-column Dual frames, an RS-protected high bit marks the
+/// self-contained source profile. Regular explicit profile symbols are <64,
+/// so their on-wire first symbol is disjoint from this marker.
+pub fn implicit_dual_profile_for_frame(frame: &Frame) -> bool {
+    implicit_dual_profile(frame.symbols.len()) == Some(frame.metadata)
+        || matches!(
+            (frame.symbols.len(), frame.metadata),
+            (32, 20) | (33, 21)
+        )
+}
+
 pub fn optical_column_count(frame: &Frame) -> usize {
-    if implicit_dual_profile(frame.symbols.len()) == Some(frame.metadata) {
-        frame.symbols.len()
-    } else {
-        frame.symbols.len() + 1
-    }
+    frame.symbols.len() + usize::from(!implicit_dual_profile_for_frame(frame))
 }
 
 pub fn encode_adaptive(content: &Content) -> Result<Frame, Error> {
     let mut shortest = encode(content)?;
     for candidate in super::adaptive::candidates(content)? {
-        if optical_column_count(&candidate) < optical_column_count(&shortest) {
+        let shorter = optical_column_count(&candidate) < optical_column_count(&shortest);
+        let stronger_equal_length = optical_column_count(&candidate)
+            == optical_column_count(&shortest)
+            && implicit_dual_profile_for_frame(&candidate)
+            && !implicit_dual_profile_for_frame(&shortest);
+        if shorter || stronger_equal_length {
             shortest = candidate;
         }
     }
