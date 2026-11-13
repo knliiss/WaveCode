@@ -620,12 +620,7 @@ fn scan_components_in_bands(parts: &[Component], height: u32) -> Result<Located,
     }
 
     let h = f64::from(height);
-    for (top, bottom) in [
-        (0.20, 0.80),
-        (0.30, 0.70),
-        (0.0, 0.60),
-        (0.40, 1.0),
-    ] {
+    for (top, bottom) in [(0.20, 0.80), (0.30, 0.70), (0.0, 0.60), (0.40, 1.0)] {
         let subset: Vec<Component> = parts
             .iter()
             .filter(|part| part.cy >= top * h && part.cy <= bottom * h)
