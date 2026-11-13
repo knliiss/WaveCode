@@ -185,13 +185,13 @@ fn unpack_packed_dual(source: &[u8]) -> Result<Content, Error> {
     } else {
         let delta = subtract_ordinal(source, boundary).ok_or(Error::InvalidCodeword)?;
         let spotify = Rank::from_bytes(&delta[..16]);
-        let video = u64::from_be_bytes(
-            delta[16..24].try_into().map_err(|_| Error::InvalidLength)?
-        );
+        let video = u64::from_be_bytes(delta[16..24].try_into().map_err(|_| Error::InvalidLength)?);
         (spotify, youtube_id(video)?, Some(u16::from(delta[24])))
     };
     Ok(Content::Dual {
-        spotify_id: spotify.to_digits(SPOTIFY, 22).ok_or(Error::InvalidCodeword)?,
+        spotify_id: spotify
+            .to_digits(SPOTIFY, 22)
+            .ok_or(Error::InvalidCodeword)?,
         youtube_music_id,
         moment_seconds: moment,
     })
