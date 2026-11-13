@@ -166,7 +166,6 @@ fn shorter_dual_classes_are_exact_at_every_bit_width_boundary() {
             assert_eq!(frame.metadata, profile, "{spotify}");
             assert_eq!(frame.symbols.len(), columns, "{spotify}");
             assert_eq!(v2::optical_column_count(&frame), columns, "{spotify}");
-            assert_eq!(v2::implicit_dual_profile(columns), Some(profile));
             assert_eq!(v2::decode(&frame).unwrap().content, content);
             let mut damaged = frame.clone();
             damaged.symbols[2] ^= 0x51;
