@@ -10,7 +10,8 @@ fn short(content: Content, metadata: u8, symbols: usize, layout: Layout) {
     let optimized = v2::encode_adaptive(&content).unwrap();
     assert_eq!(optimized.metadata, metadata, "{content:?}");
     assert_eq!(optimized.symbols.len(), symbols, "{content:?}");
-    assert!(optimized.symbols.len() < previous.symbols.len());
+    assert!(v2::optical_column_count(&optimized) < v2::optical_column_count(&previous));
+    assert!(optimized.symbols.len() <= previous.symbols.len());
     let decoded = v2::decode(&optimized).unwrap();
     assert_eq!(decoded.content, content);
     assert_eq!(decoded.layout, layout);
@@ -98,7 +99,9 @@ fn spotify_range_classes_are_reversible_at_boundaries() {
 fn dual_id_modes_never_infer_second_identity_and_preserve_seconds() {
     for (spotify, time, header, symbols) in [
         ("0000000000000000000000", None, 14, 30),
-        ("0000000000000000000000", Some(59), 15, 31),
+        ("0000000000000000000000", Some(59), 16, 31),
+        ("zzzzzzzzzzzzzzzzzzzzzz", None, 16, 31),
+        ("7n42DGM5Tflk9n8mt7Fhc7", Some(255), 15, 31),
         ("zzzzzzzzzzzzzzzzzzzzzz", Some(59), 13, 32),
     ] {
         short(
@@ -111,6 +114,60 @@ fn dual_id_modes_never_infer_second_identity_and_preserve_seconds() {
             symbols,
             Layout::Dual,
         );
+    }
+}
+
+#[test]
+fn minimum_possible_dual_visual_columns_with_fixed_rs4_and_crc16() {
+    let families = [
+        ("7n42DGM5Tflk9n8mt7Fhc7", None, 30_usize),
+        ("7n42DGM5Tflk9n8mt7Fhc8", None, 31),
+        ("zzzzzzzzzzzzzzzzzzzzzz", None, 31),
+        ("0000000000000000000000", Some(255), 31),
+        ("7Zw3ftPZ2uDmW6wxFc2RYe", Some(255), 32),
+        ("zzzzzzzzzzzzzzzzzzzzzz", Some(255), 33),
+    ];
+    for (spotify_id, moment_seconds, optical_columns) in families {
+        let content = Content::Dual {
+            spotify_id: spotify_id.into(),
+            youtube_music_id: "JGwWNGJdvx8".into(),
+            moment_seconds,
+        };
+        let frame = v2::encode_adaptive(&content).unwrap();
+        assert_eq!(v2::optical_column_count(&frame), optical_columns, "{content:?}");
+        assert_eq!(v2::decode(&frame).unwrap().content, content);
+    }
+}
+
+#[test]
+fn ranked_31_column_dual_modes_remain_lossless_at_boundaries() {
+    for spotify_id in [
+        "7n42DGM5Tflk9n8mt7Fhc8",
+        "7Zw3ftPZ2uDmW6wxFc2RYd",
+        "7Zw3ftPZ2uDmW6wxFc2RYe",
+        "zzzzzzzzzzzzzzzzzzzzzz",
+    ] {
+        for youtube_music_id in ["AAAAAAAAAAA", "JGwWNGJdvx8", "__________8"] {
+            for moment_seconds in [None, Some(0), Some(255), Some(256), Some(65535)] {
+                let content = Content::Dual {
+                    spotify_id: spotify_id.into(),
+                    youtube_music_id: youtube_music_id.into(),
+                    moment_seconds,
+                };
+                let frame = v2::encode_adaptive(&content).unwrap();
+                assert_eq!(v2::decode(&frame).unwrap().content, content);
+                assert!(v2::optical_column_count(&frame) <= 34);
+                if frame.metadata == 16 {
+                    assert_eq!(frame.symbols.len(), 31);
+                    let mut damaged = frame.clone();
+                    damaged.symbols[2] ^= 0xa6;
+                    damaged.symbols[28] ^= 0x39;
+                    let recovered = v2::decode(&damaged).unwrap();
+                    assert_eq!(recovered.content, content);
+                    assert_eq!(recovered.corrected_symbols, 2);
+                }
+            }
+        }
     }
 }
 
@@ -161,6 +218,16 @@ fn all_opt_in_headers_keep_two_byte_error_correction() {
             youtube_music_id: "JGwWNGJdvx8".into(),
             moment_seconds: Some(70),
         },
+        Content::Dual {
+            spotify_id: "zzzzzzzzzzzzzzzzzzzzzz".into(),
+            youtube_music_id: "JGwWNGJdvx8".into(),
+            moment_seconds: None,
+        },
+        Content::Dual {
+            spotify_id: "7n42DGM5Tflk9n8mt7Fhc7".into(),
+            youtube_music_id: "JGwWNGJdvx8".into(),
+            moment_seconds: Some(255),
+        },
     ];
     let mut headers = Vec::new();
     for content in cases {
@@ -174,7 +241,7 @@ fn all_opt_in_headers_keep_two_byte_error_correction() {
         assert_eq!(decoded.corrected_symbols, 2);
     }
     headers.sort_unstable();
-    assert_eq!(headers, [1, 3, 5, 7, 9, 11, 12, 13, 14, 15]);
+    assert_eq!(headers, [1, 3, 5, 7, 9, 11, 12, 13, 14, 15, 16, 16]);
 }
 
 #[test]
