@@ -340,8 +340,7 @@ fn classify_holes(
         // single transform from the opposite end of the W.
         let local_scale = part.transverse / capsule.height;
         let u = part.edge_center_u;
-        let v = part.edge_center_v
-            + (site.y - (capsule.y + capsule.height / 2.0)) * local_scale;
+        let v = part.edge_center_v + (site.y - (capsule.y + capsule.height / 2.0)) * local_scale;
         let point = Point {
             x: u * cos - v * sin,
             y: u * sin + v * cos,
