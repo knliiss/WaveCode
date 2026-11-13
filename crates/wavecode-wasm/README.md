@@ -29,7 +29,7 @@ No camera permission is requested by this library. Camera capture, video frames 
 The public JS functions match their equivalents in `include/wavecode.h`.
 
 
-## Experimental V2 round-dot W-anchor API
+## Experimental V2 capsule-shell W-anchor API
 
 V1 exports above remain unchanged. The V2 functions are opt-in and are **not yet
 production camera-scanning APIs**. Every new V2 frame contains the W locator on
@@ -57,7 +57,7 @@ const decoded = JSON.parse(v2_scan_image(png));
 
 console.log(frame.layout); // compact
 console.log(frame.version); // 2, stored explicitly as 12 BCH-protected W bits
-console.log(frame.anchor); // round-dot-w-bch60
+console.log(frame.anchor); // capsule-shell-60-holes-bch60
 console.log(decoded.urls); // original music URL
 console.log(decoded.anchor.towards_payload); // image-space direction
 console.log(decoded.anchor.corners); // four corners of fitted W coordinate frame
@@ -86,9 +86,7 @@ low-resolution printing need more experiments. **Do not replace the V1
 production scanner with V2 automatically.** V2 functions and JSON objects are
 experimental and may change before the optical format is frozen.
 
-The **W itself contains no rectangles or capsules**: its fixed outer circular
-mosaic and 60 smaller variable-size interior circles form the finder and routing
-header. The BCH-protected metadata is exactly 12-bit version (`2` in V2),
+The **W preserves all 22 original rounded capsules** as an immutable optical finder. Exactly 60 small transparent holes inside their black strokes carry BCH routing metadata. Their centers stay fixed; only the hole radii change. The original 32-unit central channel is unchanged. The BCH-protected metadata is exactly 12-bit version (`2` in V2),
 6-bit adaptive payload profile, and 6-bit visual-choice selector. Legacy
 rectangular V2 W anchors are intentionally not recognized by the V2 image
 scanner. This does not affect V1. The source-only V2 profile fallback still
