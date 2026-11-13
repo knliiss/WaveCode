@@ -4,10 +4,10 @@
 use super::{anchor, codec, optical, Frame};
 use crate::Error;
 
-/// Style affects geometry only; the optical alphabet is fixed for all styles.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 const MAX_SUPPORTED_COLUMNS: usize = 56;
 
+/// Style affects geometry only; the optical alphabet is fixed for all styles.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RenderStyle {
     Classic,
     Compact,
