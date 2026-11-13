@@ -120,7 +120,6 @@ pub fn v2_encode_dual(
     encoded_json(&v2::encode_adaptive(&content).map_err(js_error)?)
 }
 
-
 /// Encode two independently supported links, with optional per-link moments.
 /// Existing Spotify + YouTube Music pairs sharing one moment retain the
 /// original optimized V2 Dual profiles for backward compatibility.

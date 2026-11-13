@@ -37,8 +37,10 @@ fn each_single_platform_can_be_paired_with_each_other_without_id_mapping() {
 #[test]
 fn two_large_spotify_identifiers_and_independent_moments_remain_lossless() {
     let content = Content::DualLinks {
-        first: MusicCode::from_url("https://open.spotify.com/track/zzzzzzzzzzzzzzzzzzzzzz?t=65535").unwrap(),
-        second: MusicCode::from_url("https://open.spotify.com/track/0000000000000000000000?t=0").unwrap(),
+        first: MusicCode::from_url("https://open.spotify.com/track/zzzzzzzzzzzzzzzzzzzzzz?t=65535")
+            .unwrap(),
+        second: MusicCode::from_url("https://open.spotify.com/track/0000000000000000000000?t=0")
+            .unwrap(),
     };
     let frame = v2::encode_adaptive(&content).unwrap();
     assert!(v2::optical_column_count(&frame) > 34);
@@ -93,12 +95,8 @@ fn longer_generic_dual_is_found_optically_with_small_independent_w() {
             payload_center_gap: 11.0,
             logo_payload_gap: 20.0,
         };
-        let png = visual::render_png_with_spacing_and_logo_height(
-            &frame,
-            profile,
-            spacing,
-            125.0,
-        ).unwrap();
+        let png = visual::render_png_with_spacing_and_logo_height(&frame, profile, spacing, 125.0)
+            .unwrap();
         let detected = v2::raster::scan_png_or_jpeg(&png).unwrap();
         assert_eq!(detected.decoded.content, content);
     }

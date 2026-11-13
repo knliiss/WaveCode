@@ -323,7 +323,6 @@ fn parse_header(meta: u8) -> Result<(Layout, bool), Error> {
     Ok((layout, meta & 2 != 0))
 }
 
-
 /// Generic V2 Dual keeps two independently validated platform identities and
 /// timestamps. The explicit profile byte 36 is outside all earlier V2 profiles;
 /// old V2 optical frames are not changed. Each entry uses one bit for
@@ -367,9 +366,10 @@ fn encode_dual_links(first: &MusicCode, second: &MusicCode) -> Result<Frame, Err
 }
 
 fn decode_dual_links(frame: &Frame) -> Result<Decoded, Error> {
-    if frame.metadata != GENERIC_DUAL_PROFILE ||
-        frame.symbols.len() < PARITY_BYTES + 6 ||
-        frame.symbols.len() > MAX_GENERIC_COLUMNS {
+    if frame.metadata != GENERIC_DUAL_PROFILE
+        || frame.symbols.len() < PARITY_BYTES + 6
+        || frame.symbols.len() > MAX_GENERIC_COLUMNS
+    {
         return Err(Error::InvalidLength);
     }
     let (recovered, corrected_symbols) = reed_solomon::decode(&frame.symbols)?;
