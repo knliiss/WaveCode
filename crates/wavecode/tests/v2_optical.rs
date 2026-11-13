@@ -139,7 +139,9 @@ fn capsule_w_compact_has_smaller_nominal_render_width_than_v1() {
     let long = renderer.metrics(full.symbols.len()).unwrap().width;
     assert!(short < long);
     let old_v1 = 36.0 * renderer.pitch / 0.89;
-    assert!(short / old_v1 < 0.90);
+    // A nominal same-pitch comparison, NOT a reliable-print-size claim.
+    // Moving the profile into payload adds one physical column by design.
+    assert!(short < old_v1);
 }
 
 #[test]
