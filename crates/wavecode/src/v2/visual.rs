@@ -1,4 +1,4 @@
-//! WaveCode V2 dot-mosaic W-anchor and independent dual-rail data symbols.
+//! WaveCode V2 static-contour W with sixty small inner BCH dots and dual-rail payload.
 //! No capsule or rectangle is permitted inside the logo itself.
 use super::{anchor, Frame};
 use crate::Error;
@@ -259,7 +259,7 @@ mod tests {
                 .filter(|site| site.bit.is_none())
                 .count();
             assert_eq!(svg.matches("class=\"w-fixed-dot\"").count(), fixed);
-            assert_eq!(svg.matches("class=\"w-data-dot\"").count(), 40);
+            assert_eq!(svg.matches("class=\"w-data-dot\"").count(), anchor::METADATA_BITS);
             assert!(!svg.contains("w-upper"));
             assert!(!svg.contains("w-lower"));
             assert!(svg.contains("data-version=\"2\""));
