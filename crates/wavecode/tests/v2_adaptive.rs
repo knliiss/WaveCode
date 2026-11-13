@@ -98,7 +98,7 @@ fn spotify_range_classes_are_reversible_at_boundaries() {
 #[test]
 fn dual_id_modes_never_infer_second_identity_and_preserve_seconds() {
     for (spotify, time, header, symbols) in [
-        ("0000000000000000000000", None, 22, 15),
+        ("0000000000000000000000", None, 34, 14),
         ("0000000000000000000000", Some(59), 23, 16),
         ("zzzzzzzzzzzzzzzzzzzzzz", None, 16, 31),
         ("7n42DGM5Tflk9n8mt7Fhc7", Some(255), 20, 32),
@@ -146,7 +146,6 @@ fn minimum_possible_dual_visual_columns_with_fixed_rs4_and_crc16() {
 #[test]
 fn shorter_dual_classes_are_exact_at_every_bit_width_boundary() {
     for (spotify, profile, columns) in [
-        ("0000000000000000000000", 22, 15),
         ("00006rS8oxBA9U5pIjyIaF", 17, 27),
         ("00006rS8oxBA9U5pIjyIaG", 18, 28),
         ("000SKiCQOM5vAG3pNoyji3", 18, 28),
@@ -189,6 +188,30 @@ fn spotify_22_from_u128(mut value: u128) -> String {
 }
 
 #[test]
+fn fourteen_columns_are_exact_for_spotify_zero_and_low_youtube_rank() {
+    let spotify = "0000000000000000000000";
+    for (youtube, n, profile) in [
+        ("AAAAAAAAAAA", 14, 34),
+        ("JGwWNGJdvx8", 14, 34),
+        ("__________8", 15, 22),
+    ] {
+        let content = Content::Dual {
+            spotify_id: spotify.into(),
+            youtube_music_id: youtube.into(),
+            moment_seconds: None,
+        };
+        let frame = v2::encode_adaptive(&content).unwrap();
+        assert_eq!(v2::optical_column_count(&frame), n);
+        assert_eq!(frame.metadata, profile);
+        assert_eq!(v2::decode(&frame).unwrap().content, content);
+        let mut corrupted = frame.clone();
+        corrupted.symbols[0] ^= 0x80;
+        corrupted.symbols[n - 1] ^= 0x33;
+        assert_eq!(v2::decode(&corrupted).unwrap().content, content);
+    }
+}
+
+#[test]
 fn all_twelve_micro_dual_lengths_are_lossless_and_correct_two_errors() {
     for columns in 15_usize..=26 {
         for seconds in [None, Some(0_u16), Some(255)] {
@@ -200,7 +223,7 @@ fn all_twelve_micro_dual_lengths_are_lossless_and_correct_two_errors() {
             for spotify_rank in [0, max_rank] {
                 let input = Content::Dual {
                     spotify_id: spotify_22_from_u128(spotify_rank),
-                    youtube_music_id: "JGwWNGJdvx8".into(),
+                    youtube_music_id: "__________8".into(),
                     moment_seconds: seconds,
                 };
                 let frame = v2::encode_adaptive(&input).unwrap();
@@ -220,7 +243,7 @@ fn all_twelve_micro_dual_lengths_are_lossless_and_correct_two_errors() {
             // silently truncate the identity: a longer tier is selected.
             let larger = Content::Dual {
                 spotify_id: spotify_22_from_u128(1_u128 << rank_bits),
-                youtube_music_id: "JGwWNGJdvx8".into(),
+                youtube_music_id: "__________8".into(),
                 moment_seconds: seconds,
             };
             let frame = v2::encode_adaptive(&larger).unwrap();
@@ -404,7 +427,7 @@ fn all_opt_in_headers_keep_two_byte_error_correction() {
         assert_eq!(decoded.corrected_symbols, 2);
     }
     headers.sort_unstable();
-    assert_eq!(headers, [1, 3, 5, 7, 9, 11, 12, 16, 20, 20, 22, 23]);
+    assert_eq!(headers, [1, 3, 5, 7, 9, 11, 12, 16, 20, 20, 23, 34]);
 }
 
 #[test]
