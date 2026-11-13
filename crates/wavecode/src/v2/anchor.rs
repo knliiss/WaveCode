@@ -24,7 +24,6 @@ pub const UPPER_SLIT_Y: f64 = 242.0;
 pub const LOWER_SLIT_Y: f64 = 274.0;
 pub const SLIT_CENTER_Y: f64 = (UPPER_SLIT_Y + LOWER_SLIT_Y) / 2.0;
 
-
 // Binary BCH(31,21,5) with GF(32) primitive polynomial x^5+x^2+1.
 // Generator: (x^5+x^2+1)(x^5+x^4+x^3+x^2+1) = 0x769.
 // Shortening nine information bits gives (22,12,d>=5).
