@@ -252,6 +252,16 @@ pub(super) fn candidates(content: &Content) -> Result<Vec<Frame>, Error> {
                 (spotify_rank(spotify_id), youtube_rank(youtube_music_id))
             {
                 let fits_128 = spotify < Rank::pow(2, 128);
+                if moment_seconds.is_none() {
+                    for (width, profile) in [(104_usize, 17_u8), (112, 18), (120, 19)] {
+                        if spotify < Rank::pow(2, width) {
+                            let mut out = BitWriter::default();
+                            out.rank(spotify, width)?;
+                            out.push(youtube, 64);
+                            result.push(frame(profile, out)?);
+                        }
+                    }
+                }
                 match moment_seconds {
                     None if fits_128 => {
                         let mut out = BitWriter::default();
@@ -306,6 +316,9 @@ pub(super) fn decode(code: &Frame) -> Result<Decoded, Error> {
         14 => (Layout::Dual, 128, false),
         15 => (Layout::Dual, 128, true),
         PACKED_DUAL_PROFILE => (Layout::Dual, 0, false),
+        17 => (Layout::Dual, 104, false),
+        18 => (Layout::Dual, 112, false),
+        19 => (Layout::Dual, 120, false),
         _ => return Err(Error::UnsupportedVersion),
     };
     if code.metadata == PACKED_DUAL_PROFILE && code.symbols.len() != 31 {
@@ -370,7 +383,7 @@ pub(super) fn decode(code: &Frame) -> Result<Decoded, Error> {
             })
         }
         PACKED_DUAL_PROFILE => unpack_packed_dual(payload)?,
-        13..=15 => {
+        13..=15 | 17..=19 => {
             let spotify_id = bits
                 .rank(rank_width)?
                 .to_digits(SPOTIFY, 22)
