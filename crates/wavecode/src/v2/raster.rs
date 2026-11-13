@@ -424,7 +424,14 @@ fn read_shell_frame(parts: &[Component], fit: &ShellFit<'_>) -> Result<Located, 
     if symbols.len() < 2 {
         return Err(Error::InvalidFrame);
     }
-    let metadata = symbols.remove(0);
+    // Mode is inferred solely from the observed number of payload columns
+    // for the two self-delimiting Dual classes. It is NOT encoded by the
+    // W-to-data distance, the central slit, the color or the render style.
+    let metadata = if let Some(inferred) = codec::implicit_dual_profile(symbols.len()) {
+        inferred
+    } else {
+        symbols.remove(0)
+    };
     if metadata > 63 {
         return Err(Error::InvalidFrame);
     }
