@@ -31,6 +31,10 @@ jobs:
             cargo run -p wavecode --example v2_experiment -- dual-adaptive \
               'https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b' \
               'https://music.youtube.com/watch?v=JGwWNGJdvx8' "previews/dual-${style}.png" "${style}"
+            cargo run -p wavecode --example v2_experiment -- encode-adaptive \
+              'https://music.youtube.com/watch?v=JGwWNGJdvx8&t=59' "previews/variable-wide-logo-${style}.png" "${style}" 6 240
+            cargo run -p wavecode --example v2_experiment -- encode-adaptive \
+              'https://music.youtube.com/watch?v=JGwWNGJdvx8&t=59' "previews/variable-wide-slit-${style}.png" "${style}" 85 4
           done
       - name: Optical scan the actual generated marks
         shell: bash
