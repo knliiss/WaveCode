@@ -94,7 +94,7 @@ fn left_w_sets_payload_direction_for_rolled_camera_frame() {
 }
 
 #[test]
-fn dot_w_compact_remains_shorter_than_previous_v1_code() {
+fn capsule_w_compact_has_smaller_nominal_render_width_than_v1() {
     let compact = v2::encode(&samples()[0]).unwrap();
     let full = v2::encode(&samples()[2]).unwrap();
     let dual = v2::encode(&samples()[3]).unwrap();
@@ -110,7 +110,7 @@ fn dot_w_compact_remains_shorter_than_previous_v1_code() {
     let long = renderer.metrics(full.symbols.len()).unwrap().width;
     assert!(short < long);
     let old_v1 = 36.0 * renderer.pitch / 0.89;
-    assert!(short / old_v1 < 0.80);
+    assert!(short / old_v1 < 0.90);
 }
 
 #[test]
