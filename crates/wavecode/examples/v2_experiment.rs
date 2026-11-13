@@ -68,9 +68,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &svg_file,
             visual::render_svg_with_spacing_and_logo_height(&frame, profile, spacing, logo_height)?,
         )?;
-        let geometry = profile.metrics_with_spacing_and_logo_height_for_frame(
-            &frame, spacing, logo_height,
-        )?;
+        let geometry =
+            profile.metrics_with_spacing_and_logo_height_for_frame(&frame, spacing, logo_height)?;
         let visible_columns = v2::optical_column_count(&frame);
         println!(
             "Experimental V2: {} optical columns + W, total {:.0} × {:.0}px",
