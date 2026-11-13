@@ -178,6 +178,7 @@ fn self_delimiting_dual_modes_scan_without_optical_header_or_layout_hints() {
     let scenarios = [
         ("0000000000000000000000", None, 17, 27),
         ("zzzzzzzzzzzzzzzzzzzzzz", None, 16, 31),
+
         ("00006rS8oxBA9U5pIjyIaG", None, 18, 28),
         ("000SKiCQOM5vAG3pNoyji4", None, 19, 29),
         ("zzzzzzzzzzzzzzzzzzzzzz", None, 16, 31),
