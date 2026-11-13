@@ -61,6 +61,8 @@ impl Component {
             v: self.cy * cos - self.cx * sin,
             longitudinal: hi_u - lo_u + 1.0,
             transverse: hi_v - lo_v + 1.0,
+            edge_center_u: (lo_u + hi_u) / 2.0,
+            edge_center_v: (lo_v + hi_v) / 2.0,
         }
     }
 }
@@ -71,6 +73,8 @@ struct Projection {
     v: f64,
     longitudinal: f64,
     transverse: f64,
+    edge_center_u: f64,
+    edge_center_v: f64,
 }
 
 fn connected(image: &GrayImage, light: bool) -> Result<Vec<Component>, Error> {
@@ -276,7 +280,10 @@ fn fit_shell<'a>(parts: &[&'a Component], angle: f64) -> Option<ShellFit<'a>> {
         scale,
         origin_u,
         origin_v,
-        capsules: parts.to_vec(),
+        capsules: paired
+            .iter()
+            .flat_map(|pair| [pair.0 .0, pair.1 .0])
+            .collect(),
         score,
     })
 }
@@ -321,8 +328,24 @@ fn classify_holes(
         * (anchor::DOT_SMALL_RADIUS.powi(2) + anchor::DOT_LARGE_RADIUS.powi(2))
         * fit.scale.powi(2)
         / 2.0;
+    let (sin, cos) = fit.angle.sin_cos();
+    let capsules = anchor::capsules();
     for site in anchor::sites() {
-        let point = fit.to_image(site.x, site.y);
+        let col = ((site.x - 10.0) / 34.0).round() as usize;
+        let lower = usize::from(site.y >= 145.0);
+        let capsule = capsules[col + if lower == 0 { 0 } else { 11 }];
+        let part = fit.capsules[col * 2 + lower].projected(sin, cos);
+        // Each original shell capsule supplies a local vertical scale and
+        // center. This follows perspective keystone without extrapolating a
+        // single transform from the opposite end of the W.
+        let local_scale = part.transverse / capsule.height;
+        let u = part.edge_center_u;
+        let v = part.edge_center_v
+            + (site.y - (capsule.y + capsule.height / 2.0)) * local_scale;
+        let point = Point {
+            x: u * cos - v * sin,
+            y: u * sin + v * cos,
+        };
         let mut opening_area = 0_u32;
         let min_x = (point.x - sample_radius).floor().max(0.0) as u32;
         let max_x = (point.x + sample_radius)
