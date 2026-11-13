@@ -315,13 +315,21 @@ mod tests {
         let first = v2_render_svg_with_spacing(
             frame.metadata,
             &frame.symbols,
-            18.0, 210.0, 18.0, 4.0, 200.0,
+            18.0,
+            210.0,
+            18.0,
+            4.0,
+            200.0,
         )
         .unwrap();
         let second = v2_render_svg_with_spacing(
             frame.metadata,
             &frame.symbols,
-            18.0, 210.0, 18.0, 80.0, 4.0,
+            18.0,
+            210.0,
+            18.0,
+            80.0,
+            4.0,
         )
         .unwrap();
         assert_ne!(first, second);
