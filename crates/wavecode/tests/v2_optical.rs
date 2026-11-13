@@ -252,7 +252,10 @@ fn marker_protected_micro_dual_does_not_conflict_with_single_optical_profiles() 
         assert_eq!(v2::optical_column_count(&tiny), 14);
         assert_eq!(tiny.metadata, 34);
         let tiny_png = visual::render_png_style(&tiny, style).unwrap();
-        assert_eq!(raster::scan_png_or_jpeg(&tiny_png).unwrap().decoded.content, zero);
+        assert_eq!(
+            raster::scan_png_or_jpeg(&tiny_png).unwrap().decoded.content,
+            zero
+        );
 
         // Amazon compact legacy is another 14-column optical frame,
         // distinguished by an explicit metadata byte (zero), not spacing.
@@ -262,8 +265,13 @@ fn marker_protected_micro_dual_does_not_conflict_with_single_optical_profiles() 
         let amazon_frame = v2::encode(&amazon).unwrap();
         assert_eq!(v2::optical_column_count(&amazon_frame), 14);
         let amazon_png = visual::render_png_style(&amazon_frame, style).unwrap();
-        assert_eq!(raster::scan_png_or_jpeg(&amazon_png).unwrap().decoded.content, amazon);
-
+        assert_eq!(
+            raster::scan_png_or_jpeg(&amazon_png)
+                .unwrap()
+                .decoded
+                .content,
+            amazon
+        );
     }
 }
 
