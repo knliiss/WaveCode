@@ -249,11 +249,17 @@ cargo run -p wavecode --example v2_experiment -- encode-adaptive "https://music.
 cargo run -p wavecode --example v2_experiment -- encode-adaptive "https://music.youtube.com/watch?v=JGwWNGJdvx8&t=59" compact.png compact
 cargo run -p wavecode --example v2_experiment -- scan classic.png
 cargo run -p wavecode --example v2_experiment -- scan compact.png
+# Optional: custom payload-center gap and logo-to-payload gap, in pixels
+cargo run -p wavecode --example v2_experiment -- encode-adaptive "https://music.youtube.com/watch?v=JGwWNGJdvx8&t=59" custom.png compact 8 120
+cargo run -p wavecode --example v2_experiment -- scan custom.png
 ```
 
 Each command generates a PNG and a matching SVG. Both **Classic** and **Compact**
 styles use the same encoded byte sequence: the dual-rail bars have constant
-width and 16 height levels per rail. The scanner requires no style metadata.
+width and 16 height levels per rail. The scanner requires no style metadata,
+and neither the center whitespace nor W-to-payload whitespace encodes bits.
+Default V2 uses a smaller payload center gap and a larger W-to-data gap.
+Both distances can be changed independently without passing them to the scanner.
 The GitHub Actions `V2 independent optical-style previews` workflow publishes
 examples of both styles after scanning each generated mark.
 
