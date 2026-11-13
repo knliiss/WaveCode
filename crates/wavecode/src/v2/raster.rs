@@ -1,5 +1,6 @@
-//! V2 original-capsule W finder: locate 22 fixed silhouettes before reading
-//! 60 interior BCH-coded holes and the independent dual-rail byte payload.
+//! V2 original-brand W finder: identify 22 capsules, decode only the
+//! optical version from their slight length modulation, then read the
+//! profile and content from the independent dual-rail payload.
 use image::{GrayImage, RgbImage};
 
 use super::anchor::{self, AnchorPose, Point};
@@ -318,71 +319,44 @@ fn locate_shell<'a>(components: &'a [Component]) -> Vec<ShellFit<'a>> {
     candidates
 }
 
-fn classify_holes(
-    image: &GrayImage,
-    light_ink: bool,
-    fit: &ShellFit<'_>,
-) -> [bool; anchor::METADATA_BITS] {
-    let mut bits = [false; anchor::METADATA_BITS];
-    let sample_radius = anchor::DOT_LARGE_RADIUS * fit.scale + 0.6;
-    let threshold = std::f64::consts::PI
-        * (anchor::DOT_SMALL_RADIUS.powi(2) + anchor::DOT_LARGE_RADIUS.powi(2))
-        * fit.scale.powi(2)
-        / 2.0;
+/// The W's visible capsule lengths encode only the BCH-protected version.
+/// Estimate local scale from the horizontal spacing between neighbouring
+/// capsule pairs, so small perspective changes do not look like version bits.
+fn classify_version(fit: &ShellFit<'_>) -> [bool; anchor::VERSION_SITES] {
+    let reference = anchor::capsules();
     let (sin, cos) = fit.angle.sin_cos();
-    let capsules = anchor::capsules();
-    for site in anchor::sites() {
-        let col = ((site.x - 10.0) / 34.0).round() as usize;
-        let lower = usize::from(site.y >= 145.0);
-        let capsule = capsules[col + if lower == 0 { 0 } else { 11 }];
-        let part = fit.capsules[col * 2 + lower].projected(sin, cos);
-        // Each original shell capsule supplies a local vertical scale and
-        // center. This follows perspective keystone without extrapolating a
-        // single transform from the opposite end of the W.
-        let local_scale = part.transverse / capsule.height;
-        let u = part.edge_center_u;
-        let v = part.edge_center_v + (site.y - (capsule.y + capsule.height / 2.0)) * local_scale;
-        let point = Point {
-            x: u * cos - v * sin,
-            y: u * sin + v * cos,
+    let projected: Vec<_> = fit.capsules
+        .iter()
+        .map(|capsule| capsule.projected(sin, cos))
+        .collect();
+    let centers: Vec<f64> = projected
+        .chunks_exact(2)
+        .map(|pair| (pair[0].u + pair[1].u) / 2.0)
+        .collect();
+    let mut bits = [false; anchor::VERSION_SITES];
+    for col in 0..11 {
+        let (left, right) = match col {
+            0 => (0, 1),
+            10 => (9, 10),
+            _ => (col - 1, col + 1),
         };
-        let mut opening_area = 0_u32;
-        let min_x = (point.x - sample_radius).floor().max(0.0) as u32;
-        let max_x = (point.x + sample_radius)
-            .ceil()
-            .min(f64::from(image.width())) as u32;
-        let min_y = (point.y - sample_radius).floor().max(0.0) as u32;
-        let max_y = (point.y + sample_radius)
-            .ceil()
-            .min(f64::from(image.height())) as u32;
-        for y in min_y..max_y {
-            for x in min_x..max_x {
-                let dx = f64::from(x) + 0.5 - point.x;
-                let dy = f64::from(y) + 0.5 - point.y;
-                if dx * dx + dy * dy <= sample_radius * sample_radius {
-                    let ink = image.get_pixel(x, y).0[0] < 128;
-                    if ink == light_ink {
-                        opening_area += 1;
-                    }
-                }
-            }
-        }
-        if let Some(bit) = site.bit {
-            bits[bit] = f64::from(opening_area) > threshold;
+        let local_scale = ((centers[right] - centers[left])
+            / (34.0 * (right - left) as f64))
+            .max(0.01);
+        for (lower, index) in [(false, col), (true, col + 11)] {
+            let measured = projected[2 * col + usize::from(lower)].transverse / local_scale;
+            bits[index] = measured - reference[index].height > anchor::VERSION_EXTENSION / 2.0;
         }
     }
     bits
 }
 
 fn read_shell_frame(
-    image: &GrayImage,
-    light_ink: bool,
     parts: &[Component],
     fit: &ShellFit<'_>,
 ) -> Result<Located, Error> {
-    let bits = classify_holes(image, light_ink, fit);
-    let meta = anchor::decode_version_profile(bits)?;
-    if meta.version != anchor::VERSION {
+    let (version, corrected_bits) = anchor::decode_version(classify_version(fit))?;
+    if version != anchor::VERSION {
         return Err(Error::UnsupportedVersion);
     }
     let (sin, cos) = fit.angle.sin_cos();
@@ -397,7 +371,7 @@ fn read_shell_frame(
         })
         .collect();
     bars.sort_by(|a, b| a.1.u.total_cmp(&b.1.u));
-    if bars.len() < 16 || bars.len() > 68 || bars.len() % 2 != 0 {
+    if bars.len() < 18 || bars.len() > 70 || bars.len() % 2 != 0 {
         return Err(Error::InvalidFrame);
     }
     let pairs: Vec<_> = bars
@@ -450,10 +424,14 @@ fn read_shell_frame(
             .to_byte()?,
         );
     }
-    let decoded = codec::decode(&Frame {
-        metadata: meta.profile,
-        symbols,
-    })?;
+    if symbols.len() < 2 {
+        return Err(Error::InvalidFrame);
+    }
+    let metadata = symbols.remove(0);
+    if metadata > 63 {
+        return Err(Error::InvalidFrame);
+    }
+    let decoded = codec::decode(&Frame { metadata, symbols })?;
     let corners = [
         fit.to_image(0.0, 0.0),
         fit.to_image(anchor::W_X_MAX, 0.0),
@@ -496,9 +474,9 @@ fn read_shell_frame(
             width: right - left + 1,
             height: bottom - top + 1,
         },
-        version: meta.version,
-        profile: meta.profile,
-        corrected_anchor_bits: meta.corrected_bits,
+        version,
+        profile: metadata,
+        corrected_anchor_bits: corrected_bits,
     })
 }
 
@@ -508,20 +486,20 @@ fn scan_components(
     parts: &[Component],
 ) -> Result<Located, Error> {
     for fit in locate_shell(parts) {
-        if let Ok(located) = read_shell_frame(image, light_ink, parts, &fit) {
+        if let Ok(located) = read_shell_frame(parts, &fit) {
             return Ok(located);
         }
     }
     Err(Error::InvalidFrame)
 }
 
-/// The prototype recognizes the original capsule-shell with 60 interior holes.
-/// Real mobile photos,
+/// The prototype recognizes the original capsule W with version-only length
+/// modulation. Real mobile photos,
 /// extreme perspective, motion blur and reflections still need field tests.
 pub fn scan_gray(image: &GrayImage) -> Result<Located, Error> {
     for light in [false, true] {
         if let Ok(parts) = connected(image, light) {
-            if let Ok(frame) = scan_components(image, light, &parts) {
+            if let Ok(frame) = scan_components(&parts) {
                 return Ok(frame);
             }
         }
