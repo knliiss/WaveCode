@@ -110,17 +110,13 @@ fn w_and_payload_heights_are_independent_optical_parameters() {
                     logo_payload_gap: separation,
                 };
                 let metrics = profile
-                    .metrics_with_spacing_and_logo_height_for_frame(
-                        &frame,
-                        spacing,
-                        logo_height,
-                    )
+                    .metrics_with_spacing_and_logo_height_for_frame(&frame, spacing, logo_height)
                     .unwrap();
                 assert!(
                     (metrics.anchor_width
-                        - logo_height * v2::anchor::SHELL_WIDTH
-                            * v2::anchor::W_DOT_SCALE_RATIO)
-                        .abs() < 1.0e-8
+                        - logo_height * v2::anchor::SHELL_WIDTH * v2::anchor::W_DOT_SCALE_RATIO)
+                        .abs()
+                        < 1.0e-8
                 );
                 let png = visual::render_png_with_spacing_and_logo_height(
                     &frame,
