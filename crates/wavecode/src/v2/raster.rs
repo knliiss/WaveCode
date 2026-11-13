@@ -1,4 +1,4 @@
-//! V2 original-cap­­sule W finder: locate 22 fixed silhouettes before reading
+//! V2 original-capsule W finder: locate 22 fixed silhouettes before reading
 //! 60 interior BCH-coded holes and the independent dual-rail byte payload.
 use image::{GrayImage, RgbImage};
 
@@ -147,20 +147,6 @@ fn connected(image: &GrayImage, light: bool) -> Result<Vec<Component>, Error> {
         }
     }
     Ok(components)
-}
-
-fn principal_angle(parts: &[&Component]) -> f64 {
-    let cx = parts.iter().map(|item| item.cx).sum::<f64>() / parts.len() as f64;
-    let cy = parts.iter().map(|item| item.cy).sum::<f64>() / parts.len() as f64;
-    let (mut xx, mut yy, mut xy) = (0.0, 0.0, 0.0);
-    for part in parts {
-        let dx = part.cx - cx;
-        let dy = part.cy - cy;
-        xx += dx * dx;
-        yy += dy * dy;
-        xy += dx * dy;
-    }
-    0.5 * (2.0 * xy).atan2(xx - yy)
 }
 
 // The shell has 11 regularly spaced x-centers with two rounded capsules
@@ -336,7 +322,7 @@ fn classify_holes(
                 let dy = f64::from(y) + 0.5 - point.y;
                 if dx * dx + dy * dy <= sample_radius * sample_radius {
                     let ink = image.get_pixel(x, y).0[0] < 128;
-                    if ink != light_ink {
+                    if ink == light_ink {
                         opening_area += 1;
                     }
                 }
