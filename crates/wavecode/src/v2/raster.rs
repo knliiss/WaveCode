@@ -414,8 +414,7 @@ fn decode_payload_heights(rails: &[(f64, f64)]) -> Result<(u8, Decoded), Error> 
     let mut candidates = Vec::with_capacity(observed.len() * optical::LEVELS as usize);
     for &rail in &observed {
         for level in 0..optical::LEVELS {
-            let unit = optical::BASE_HEIGHT_RATIO
-                + f64::from(level) * optical::HEIGHT_STEP_RATIO;
+            let unit = optical::BASE_HEIGHT_RATIO + f64::from(level) * optical::HEIGHT_STEP_RATIO;
             let height = rail / unit;
             if !(16.0..=10_000.0).contains(&height) {
                 continue;
@@ -423,8 +422,8 @@ fn decode_payload_heights(rails: &[(f64, f64)]) -> Result<(u8, Decoded), Error> 
             let score: f64 = observed
                 .iter()
                 .map(|&sample| {
-                    let value = (sample / height - optical::BASE_HEIGHT_RATIO)
-                        / optical::HEIGHT_STEP_RATIO;
+                    let value =
+                        (sample / height - optical::BASE_HEIGHT_RATIO) / optical::HEIGHT_STEP_RATIO;
                     if !(-0.5..=15.5).contains(&value) {
                         4.0
                     } else {
