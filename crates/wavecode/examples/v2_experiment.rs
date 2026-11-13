@@ -49,6 +49,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         adaptive: bool,
         style: visual::RenderStyle,
         spacing: visual::VisualSpacing,
+        logo_height: Option<f64>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let original = v2::encode(&content)?;
         let frame = if adaptive {
@@ -57,16 +58,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             original.clone()
         };
         let profile = style.profile();
+        let logo_height = logo_height.unwrap_or(profile.height);
         std::fs::write(
             target,
-            visual::render_png_with_spacing(&frame, profile, spacing)?,
+            visual::render_png_with_spacing_and_logo_height(&frame, profile, spacing, logo_height)?,
         )?;
         let svg_file = std::path::Path::new(target).with_extension("svg");
         std::fs::write(
             &svg_file,
-            visual::render_svg_with_spacing(&frame, profile, spacing)?,
+            visual::render_svg_with_spacing_and_logo_height(&frame, profile, spacing, logo_height)?,
         )?;
-        let geometry = profile.metrics_with_spacing_for_frame(&frame, spacing)?;
+        let geometry = profile.metrics_with_spacing_and_logo_height_for_frame(
+            &frame, spacing, logo_height,
+        )?;
         let visible_columns = v2::optical_column_count(&frame);
         println!(
             "Experimental V2: {} optical columns + W, total {:.0} × {:.0}px",
@@ -84,6 +88,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             spacing.payload_center_gap, spacing.logo_payload_gap
         );
         println!(
+            "Independent heights: W {:.1}px; payload {:.1}px",
+            logo_height, profile.height
+        );
+        println!(
             "Optical columns saved vs nonadaptive V2: {}",
             v2::optical_column_count(&original) - visible_columns
         );
@@ -91,9 +99,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(())
     }
 
+    fn optional_height(value: Option<&String>) -> Result<Option<f64>, IoError> {
+        value
+            .map(|input| input.parse().map_err(|_| input_error("invalid W height in pixels")))
+            .transpose()
+    }
+
     let args: Vec<String> = std::env::args().collect();
     match args.get(1).map(String::as_str) {
-        Some("encode" | "encode-adaptive") if (4..=7).contains(&args.len()) => {
+        Some("encode" | "encode-adaptive") if (4..=8).contains(&args.len()) => {
             let style = visual_style(args.get(4))?;
             let spacing = visual_spacing(style, args.get(5), args.get(6))?;
             write_frame(
@@ -102,9 +116,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 args[1] == "encode-adaptive",
                 style,
                 spacing,
+                optional_height(args.get(7))?,
             )?
         }
-        Some("dual" | "dual-adaptive") if (5..=8).contains(&args.len()) => {
+        Some("dual" | "dual-adaptive") if (5..=9).contains(&args.len()) => {
             let spotify_id = match MusicCode::from_url(&args[2])?.track {
                 Track::Spotify(id) => id,
                 _ => return Err(input_error("expected Spotify track URL").into()),
@@ -125,6 +140,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 args[1] == "dual-adaptive",
                 style,
                 spacing,
+                optional_height(args.get(8))?,
             )?
         }
         Some("scan") if args.len() == 3 => {
@@ -162,7 +178,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             return Err(input_error(
-                "usage: v2_experiment (encode|encode-adaptive) <url> <out.png> [classic|compact] [middle-gap-px] [logo-gap-px] | (dual|dual-adaptive) <spotify-url> <youtube-music-url> <out.png> [classic|compact] [middle-gap-px] [logo-gap-px] | scan <image.png>",
+                "usage: v2_experiment (encode|encode-adaptive) <url> <out.png> [classic|compact] [middle-gap-px] [logo-gap-px] [logo-height-px] | (dual|dual-adaptive) <spotify-url> <youtube-music-url> <out.png> [classic|compact] [middle-gap-px] [logo-gap-px] [logo-height-px] | scan <image.png>",
             ).into());
         }
     }
