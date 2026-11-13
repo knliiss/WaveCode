@@ -57,9 +57,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             original.clone()
         };
         let profile = style.profile();
-        std::fs::write(target, visual::render_png_with_spacing(&frame, profile, spacing)?)?;
+        std::fs::write(
+            target,
+            visual::render_png_with_spacing(&frame, profile, spacing)?,
+        )?;
         let svg_file = std::path::Path::new(target).with_extension("svg");
-        std::fs::write(&svg_file, visual::render_svg_with_spacing(&frame, profile, spacing)?)?;
+        std::fs::write(
+            &svg_file,
+            visual::render_svg_with_spacing(&frame, profile, spacing)?,
+        )?;
         let geometry = profile.metrics_with_spacing(frame.symbols.len(), spacing)?;
         println!(
             "Experimental V2: {} payload columns + mandatory W, total {:.0} × {:.0}px",
