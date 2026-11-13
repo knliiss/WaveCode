@@ -1,7 +1,7 @@
 //! WaveCode V2: only the optical version is encoded in small outward
 //! extensions of the original 22 capsules. No microscopic holes are needed.
 //! The payload profile is a standalone optical byte after the logo.
-use super::{anchor, optical, Frame};
+use super::{anchor, codec, optical, Frame};
 use crate::Error;
 
 /// Style affects geometry only; the optical alphabet is fixed for all styles.
@@ -81,6 +81,19 @@ pub struct Metrics {
 }
 
 impl RenderProfile {
+    /// Actual rendered dimensions, including inferred Dual headers.
+    pub fn metrics_for_frame(self, frame: &Frame) -> Result<Metrics, Error> {
+        self.metrics_with_spacing_for_frame(frame, VisualSpacing::for_profile(self))
+    }
+
+    pub fn metrics_with_spacing_for_frame(
+        self,
+        frame: &Frame,
+        spacing: VisualSpacing,
+    ) -> Result<Metrics, Error> {
+        self.metrics_with_spacing(codec::optical_column_count(frame) - 1, spacing)
+    }
+
     pub fn metrics(self, symbols: usize) -> Result<Metrics, Error> {
         self.metrics_with_spacing(symbols, VisualSpacing::for_profile(self))
     }
@@ -190,8 +203,9 @@ fn marks_with_spacing(
     profile: RenderProfile,
     spacing: VisualSpacing,
 ) -> Result<(Metrics, Vec<Mark>), Error> {
-    let metrics = profile.metrics_with_spacing(frame.symbols.len(), spacing)?;
-    let mut result = Vec::with_capacity(anchor::VERSION_SITES + (frame.symbols.len() + 1) * 2);
+    let metrics = profile.metrics_with_spacing_for_frame(frame, spacing)?;
+    let mut result =
+        Vec::with_capacity(anchor::VERSION_SITES + codec::optical_column_count(frame) * 2);
 
     // The W carries ONLY the version. The original 32-unit center
     // channel and every horizontal capsule center remain unchanged.
@@ -205,7 +219,10 @@ fn marks_with_spacing(
     }
     // Optical profile header is one full 8-bit symbol. It belongs to the
     // payload, not the W, and its value is CRC-covered by the source codec.
+    let implicit_profile =
+        codec::implicit_dual_profile(frame.symbols.len()) == Some(frame.metadata);
     for (index, symbol) in std::iter::once(frame.metadata)
+        .filter(|_| !implicit_profile)
         .chain(frame.symbols.iter().copied())
         .enumerate()
     {
