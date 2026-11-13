@@ -527,6 +527,32 @@ mod tests {
     }
 
     #[test]
+    fn inferred_dual_headers_do_not_create_visual_payload_columns() {
+        for (metadata, protected, expected) in [(14, 30, 30), (16, 31, 31), (15, 31, 32)] {
+            let frame = Frame {
+                metadata,
+                symbols: vec![0; protected],
+            };
+            for style in [RenderStyle::Classic, RenderStyle::Compact] {
+                let profile = style.profile();
+                let drawing = marks(&frame, profile).unwrap().1;
+                assert_eq!(
+                    drawing.len(),
+                    anchor::VERSION_SITES + expected * 2,
+                );
+                let metrics = profile.metrics_for_frame(&frame).unwrap();
+                let first_bar = drawing.iter().find_map(|part| match part {
+                    Mark::Rail(rect, true) => Some(*rect),
+                    _ => None,
+                }).unwrap();
+                assert!(first_bar.x >= profile.quiet + metrics.anchor_width);
+                let svg = render_svg(&frame, profile).unwrap();
+                assert_eq!(svg.matches("class=\\\"data-upper\\\"").count(), expected);
+            }
+        }
+    }
+
+    #[test]
     fn style_does_not_modify_encoded_frame() {
         let frame = encode(&Content::Single(
             MusicCode::from_url("https://music.youtube.com/watch?v=JGwWNGJdvx8").unwrap(),
