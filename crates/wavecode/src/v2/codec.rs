@@ -326,13 +326,16 @@ pub fn implicit_dual_profile(optical_columns: usize) -> Option<u8> {
     }
 }
 
-/// Profile 22..33: 15..26 visible Dual columns for unusually small
+/// Profile 34: 14 visible Dual columns when Spotify rank=0 and the
+/// canonical YouTube rank fits 63 bits. Profile 22..33: 15..26
+/// visible Dual columns for unusually small
 /// Spotify ranks with canonical YouTube IDs. Their first protected source
 /// bit is one, disjoint from any existing explicit metadata byte (<64).
 /// The next bit distinguishes no moment (0) and an 8-bit moment (1).
 /// The CRC includes the implicit profile, and RS protects the marker.
 pub fn marked_dual_profile(columns: usize) -> Option<u8> {
     match columns {
+        14 => Some(34),
         15..=26 => Some((columns + 7) as u8),
         32 => Some(20),
         33 => Some(21),
