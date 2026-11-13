@@ -42,6 +42,8 @@ import init, {
   v2_encode_dual,
   v2_render_svg,
   v2_render_png,
+  v2_render_svg_style,
+  v2_render_png_style,
   v2_decode_frame,
   v2_scan_image,
 } from './crates/wavecode-wasm/pkg/wavecode_wasm.js';
@@ -51,8 +53,11 @@ const frame = JSON.parse(v2_encode_url(
   'https://music.youtube.com/watch?v=JGwWNGJdvx8&t=59'
 ));
 const symbols = new Uint8Array(frame.symbols);
-const svg = v2_render_svg(frame.metadata, symbols, 18, 180, 18);
-const png = v2_render_png(frame.metadata, symbols, 18, 180, 18);
+const svg = v2_render_svg_style(frame.metadata, symbols, 'classic');
+const png = v2_render_png_style(frame.metadata, symbols, 'classic');
+const compactSvg = v2_render_svg_style(frame.metadata, symbols, 'compact');
+const compactPng = v2_render_png_style(frame.metadata, symbols, 'compact');
+// Advanced: v2_render_svg(frame.metadata, symbols, pitch, height, quiet)
 const decoded = JSON.parse(v2_scan_image(png));
 
 console.log(frame.layout); // compact
@@ -72,7 +77,9 @@ const recovered = JSON.parse(
 console.log(recovered.urls); // both independent platform URLs
 ```
 
-The rendering arguments are **pitch, height, and quiet zone in pixels**.
+The original `v2_render_svg` and `v2_render_png` arguments are **pitch, height, and quiet zone in pixels**. Named presets `classic` and `compact` instead use `v2_render_svg_style` / `v2_render_png_style`; these do **not** re-encode the payload or write the style into a frame.
+
+V2 payload bars now have **one constant width** and **16 possible heights on each rail** (256 one-byte symbols). The byte mapping is shared between styles and the image reader never needs a style name to decode. The W shape and its 60 protected microholes are unchanged. `Classic` and `Compact` have the same nominal height; Compact uses narrower column spacing and a smaller quiet margin. Height-level resolution is slightly reduced relative to the previous unreleased 3-bit-height + width-bit experimental format, so phone-camera reliability still requires testing.
 The encoder uses the shortest available safe adaptive V2 payload mode and returns a JSON object with `format`, `version`, `anchor`, `layout`, `metadata`, and
 `symbols`; the symbols must be passed as a `Uint8Array`. The scanner returns
 JSON with `format`, `version`, `metadata`, `anchor_corrected_bits`, `layout`, `urls`, `corrected_symbols`, `bounds`, and
@@ -90,4 +97,4 @@ The **W preserves all 22 original rounded capsules** as an immutable optical fin
 6-bit adaptive payload profile, and 6-bit visual-choice selector. Legacy
 rectangular V2 W anchors are intentionally not recognized by the V2 image
 scanner. This does not affect V1. The source-only V2 profile fallback still
-supports arbitrary platform IDs and long timestamps with the new round-dot W.
+supports arbitrary platform IDs and long timestamps with the original capsule-shell W.
