@@ -635,9 +635,8 @@ fn otsu_threshold(image: &GrayImage) -> u8 {
         if left_count == 0 || left_count == total {
             continue;
         }
-        let difference =
-            left_sum / left_count as f64
-                - (weighted_total - left_sum) / (total - left_count) as f64;
+        let difference = left_sum / left_count as f64
+            - (weighted_total - left_sum) / (total - left_count) as f64;
         let score = left_count as f64 * (total - left_count) as f64 * difference * difference;
         if score > best_score {
             best_score = score;
