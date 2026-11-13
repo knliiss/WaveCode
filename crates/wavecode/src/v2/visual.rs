@@ -271,8 +271,7 @@ mod tests {
                 frame.symbols.len()
             );
             assert!(
-                svg.find("class=\"w-hole\"").unwrap()
-                    < svg.find("class=\"data-upper\"").unwrap()
+                svg.find("class=\"w-hole\"").unwrap() < svg.find("class=\"data-upper\"").unwrap()
             );
         }
     }
