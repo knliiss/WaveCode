@@ -4,6 +4,7 @@ use image::{GrayImage, RgbImage};
 
 use super::anchor::{self, AnchorPose, Point};
 use super::codec::{self, Decoded, Frame};
+use super::optical;
 use crate::Error;
 
 const MAX_PIXELS: u64 = 5_000_000;
@@ -415,8 +416,6 @@ fn read_shell_frame(
         return Err(Error::InvalidFrame);
     }
     let height = fit.scale / anchor::W_DOT_SCALE_RATIO;
-    let base = height * 0.10;
-    let step = height * 0.026;
     let reference_pitch = (pairs[1].0.u - pairs[0].0.u).abs();
     if reference_pitch < 4.0 {
         return Err(Error::InvalidFrame);
@@ -439,29 +438,16 @@ fn read_shell_frame(
             return Err(Error::InvalidFrame);
         }
         let vertical_scale = (local_pitch / reference_pitch).sqrt().clamp(0.7, 1.3);
-        let level = |observed_height: f64| -> Result<u8, Error> {
-            let estimate = (observed_height / vertical_scale - base) / step;
-            let rounded = estimate.round();
-            if !(0.0..=7.0).contains(&rounded) || (rounded - estimate).abs() > 0.5 {
-                return Err(Error::InvalidFrame);
-            }
-            Ok(rounded as u8)
-        };
-        let up = level(upper.transverse)?;
-        let down = level(lower.transverse)?;
+        // The 16x16 optical alphabet has one invariant rail width.
+        // Physical style changes pitch, scale and margins, never the byte.
+        let upper_level = optical::level_of(upper.transverse / vertical_scale, height)?;
+        let lower_level = optical::level_of(lower.transverse / vertical_scale, height)?;
         symbols.push(
-            (up << 5)
-                | (down << 2)
-                | if upper.longitudinal / local_pitch > 0.55 {
-                    2
-                } else {
-                    0
-                }
-                | if lower.longitudinal / local_pitch > 0.55 {
-                    1
-                } else {
-                    0
-                },
+            optical::OpticalSymbol {
+                upper: upper_level,
+                lower: lower_level,
+            }
+            .to_byte()?,
         );
     }
     let decoded = codec::decode(&Frame {
