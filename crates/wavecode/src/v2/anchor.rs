@@ -1,4 +1,4 @@
-//! V2 W finder: fully fixed circular contour and sixty smaller variable dots.
+//! V2 W finder: original 22-capsule brand silhouette with 60 interior holes.
 //! Twelve version bits, six profile bits, six aesthetic bits and BCH(60,24,d>=13).
 //! The W never encodes any track identity.
 use crate::Error;
@@ -10,12 +10,12 @@ pub const METADATA_BITS: usize = 60;
 pub const VERSION_BITS: usize = 12;
 pub const PROFILE_BITS: usize = 6;
 pub const SHAPE_BITS: usize = 6;
-pub const W_X_MAX: f64 = 20.0;
-pub const W_Y_MAX: f64 = 12.5;
-pub const W_DOT_SCALE_RATIO: f64 = 0.055;
-pub const DOT_SMALL_RADIUS: f64 = 0.165;
-pub const DOT_LARGE_RADIUS: f64 = 0.235;
-pub const DOT_FIXED_RADIUS: f64 = 0.32;
+pub const W_X_MAX: f64 = 360.0;
+pub const W_Y_MAX: f64 = 232.0;
+pub const W_DOT_SCALE_RATIO: f64 = 1.0 / 232.0;
+pub const DOT_SMALL_RADIUS: f64 = 1.5;
+pub const DOT_LARGE_RADIUS: f64 = 2.4;
+pub const DOT_FIXED_RADIUS: f64 = 10.0;
 
 // BCH(63,30,d>=13) with primitive field x^6+x+1, roots alpha^1..alpha^12.
 // After shortening by three and freezing three more message bits to zero,
@@ -49,96 +49,105 @@ pub struct Meta {
     pub corrected_bits: u8,
 }
 
-fn distance_to_spine(x: f64, y: f64) -> f64 {
-    SPINE
-        .windows(2)
-        .map(|segment| {
-            let (ax, ay) = segment[0];
-            let (bx, by) = segment[1];
-            let dx = bx - ax;
-            let dy = by - ay;
-            let t = (((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy)).clamp(0.0, 1.0);
-            (x - ax - t * dx).hypot(y - ay - t * dy)
-        })
-        .fold(f64::INFINITY, f64::min)
+/// Dimensions of the exact original WaveCode brand shell, excluding its
+/// surrounding 512x512 artwork whitespace.
+pub const SHELL_WIDTH: f64 = 360.0;
+pub const SHELL_HEIGHT: f64 = 232.0;
+pub const CAPSULE_WIDTH: f64 = 20.0;
+pub const CAPSULE_RADIUS: f64 = 10.0;
+pub const BRAND_ORIGIN_X: f64 = 76.0;
+pub const BRAND_ORIGIN_Y: f64 = 129.0;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Capsule {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
 }
 
-/// The W silhouette and the spine's white channel are immutable.
-/// Static circles trace both stroke boundaries. All sixty coding dots
-/// are strictly inside the boundaries and smaller than contour circles.
-/// Absolute centers are fixed; only interior radii carry metadata.
+const UPPER_TOP: [f64; 11] = [
+    146.0, 165.0, 194.0, 205.0, 172.0, 129.0, 172.0, 208.0, 189.0, 166.0, 144.0,
+];
+const UPPER_HEIGHT: [f64; 11] = [
+    96.0, 77.0, 48.0, 37.0, 70.0, 113.0, 70.0, 34.0, 53.0, 76.0, 98.0,
+];
+const LOWER_HEIGHT: [f64; 11] = [
+    30.0, 50.0, 70.0, 87.0, 59.0, 31.0, 56.0, 85.0, 66.0, 47.0, 29.0,
+];
+
+// All 60 centers use the coordinate system of the original 512x512 brand SVG.
+// They are distributed across all 22 capsules. No hole may alter the capsule
+// envelope or the 32-unit white channel between y=242 and y=274.
+const UPPER_HOLES: [&[f64]; 11] = [
+    &[166.0, 180.0, 208.0, 222.0],
+    &[182.5, 210.5, 224.5],
+    &[211.0, 225.0],
+    &[223.5],
+    &[186.0, 214.0, 228.0],
+    &[143.5, 157.5, 171.5, 199.5, 213.5, 227.5],
+    &[186.0, 214.0, 228.0],
+    &[225.0],
+    &[208.5, 222.5],
+    &[183.0, 211.0, 225.0],
+    &[158.0, 172.0, 186.0, 214.0, 228.0],
+];
+const LOWER_HOLES: [&[f64]; 11] = [
+    &[289.0],
+    &[292.0, 306.0],
+    &[288.0, 316.0, 330.0],
+    &[289.5, 303.5, 331.5, 345.5],
+    &[289.5, 303.5, 317.5],
+    &[289.5],
+    &[288.0, 302.0, 316.0],
+    &[288.5, 302.5, 330.5, 344.5],
+    &[293.0, 307.0, 321.0],
+    &[290.5, 304.5],
+    &[288.5],
+];
+
+/// Upper/lower capsule geometry is exactly the original brand mark.
+pub fn capsules() -> [Capsule; 22] {
+    std::array::from_fn(|index| {
+        let col = index % 11;
+        let upper = index < 11;
+        Capsule {
+            x: col as f64 * 34.0,
+            y: if upper {
+                UPPER_TOP[col] - BRAND_ORIGIN_Y
+            } else {
+                274.0 - BRAND_ORIGIN_Y
+            },
+            width: CAPSULE_WIDTH,
+            height: if upper {
+                UPPER_HEIGHT[col]
+            } else {
+                LOWER_HEIGHT[col]
+            },
+        }
+    })
+}
+
+/// BCH bit sites are fixed-center transparent holes within the original 22
+/// opaque brand capsules. Bit 0 and bit 1 are different hole *radii*.
+/// Indices are assigned by column, upper before lower, ascending Y.
+/// The coprime stride interleaves the bits across the entire logo.
 pub fn sites() -> Vec<DotSite> {
-    let mut contour: Vec<(f64, f64)> = Vec::new();
-    let mut candidates: Vec<(f64, f64)> = Vec::new();
-    for (arm, segment) in SPINE.windows(2).enumerate() {
-        let (ax, ay) = segment[0];
-        let (bx, by) = segment[1];
-        let dx = bx - ax;
-        let dy = by - ay;
-        let length = dx.hypot(dy);
-        let (normal_x, normal_y) = (-dy / length, dx / length);
-        for side in [-1.0_f64, 1.0] {
-            for index in 0..17 {
-                let t = f64::from(index) / 16.0;
-                let x = ax + dx * t + side * normal_x * 1.55;
-                let y = ay + dy * t + side * normal_y * 1.55;
-                if distance_to_spine(x, y) > 0.62
-                    && contour
-                        .iter()
-                        .all(|&(cx, cy)| (x - cx).hypot(y - cy) >= 0.84)
-                {
-                    contour.push((x, y));
-                }
-            }
-            let count = INNER_COUNTS[arm];
-            for index in 0..count {
-                let t = (index as f64 + 0.5) / count as f64;
-                let x = ax + dx * t + side * normal_x * 0.78;
-                let y = ay + dy * t + side * normal_y * 0.78;
-                candidates.push((x, y));
+    let mut dots = Vec::with_capacity(METADATA_BITS);
+    for col in 0..11 {
+        for holes in [UPPER_HOLES[col], LOWER_HOLES[col]] {
+            for &svg_y in holes {
+                let ordinal = dots.len();
+                dots.push(DotSite {
+                    x: col as f64 * 34.0 + 10.0,
+                    y: svg_y - BRAND_ORIGIN_Y,
+                    bit: Some((ordinal * 17) % METADATA_BITS),
+                });
             }
         }
     }
-
-    let mut inside: Vec<(f64, f64)> = Vec::new();
-    for (x, y) in candidates {
-        if distance_to_spine(x, y) <= 0.57
-            || contour
-                .iter()
-                .any(|&(cx, cy)| (x - cx).hypot(y - cy) <= 0.72)
-            || inside
-                .iter()
-                .any(|&(cx, cy)| (x - cx).hypot(y - cy) <= 0.62)
-        {
-            continue;
-        }
-        inside.push((x, y));
-    }
-
-    assert!(
-        inside.len() >= METADATA_BITS,
-        "W cannot hold sixty isolated interior circles"
-    );
-    let mut result = Vec::with_capacity(contour.len() + METADATA_BITS);
-    for (x, y) in contour {
-        result.push(DotSite {
-            x: x + 2.0,
-            y: y + 1.2,
-            bit: None,
-        });
-    }
-    for position in 0..METADATA_BITS {
-        // Evenly select 60 of the candidates across the entire W, never
-        // truncating the last arm. 17 is coprime with 60.
-        let index = position * inside.len() / METADATA_BITS;
-        let (x, y) = inside[index];
-        result.push(DotSite {
-            x: x + 2.0,
-            y: y + 1.2,
-            bit: Some((position * 17) % METADATA_BITS),
-        });
-    }
-    result
+    assert_eq!(dots.len(), METADATA_BITS, "invalid W hole allocation");
+    dots
 }
 
 fn remainder(mut polynomial: u64) -> u64 {
@@ -176,7 +185,7 @@ fn visual_cost(bits: &[bool; METADATA_BITS], dots: &[DotSite]) -> i32 {
     let mut cost = 0_i32;
     for dot in dots {
         if let Some(bit) = dot.bit {
-            let arm = ((dot.x - 2.0) / 4.0).floor().clamp(0.0, 3.0) as usize;
+            let arm = ((dot.x - 10.0) / 85.0).floor().clamp(0.0, 3.0) as usize;
             used_by_arm[arm] += 1;
             if bits[bit] {
                 large_by_arm[arm] += 1;
@@ -404,58 +413,42 @@ mod tests {
     use super::*;
 
     #[test]
-    fn w_contour_gap_and_sixty_inner_sites_are_invariant() {
-        let dots = sites();
-        assert_eq!(
-            dots.len(),
-            117,
-            "V2 optical geometry must be version-stable"
-        );
-        assert_eq!(
-            dots.iter().filter(|dot| dot.bit.is_some()).count(),
-            METADATA_BITS
-        );
-        let mut order: Vec<_> = dots.iter().filter_map(|dot| dot.bit).collect();
-        order.sort_unstable();
-        assert_eq!(order, (0..METADATA_BITS).collect::<Vec<_>>());
-
-        let fixed: Vec<_> = dots.iter().filter(|dot| dot.bit.is_none()).collect();
-        let inner: Vec<_> = dots.iter().filter(|dot| dot.bit.is_some()).collect();
-        assert_eq!(
-            fixed.len(),
-            57,
-            "all fixed contour sites must remain unchanged"
-        );
-        for dot in &inner {
-            let dist = distance_to_spine(dot.x - 2.0, dot.y - 1.2);
-            assert!(dist - DOT_LARGE_RADIUS >= 0.35, "central gap violated");
-            assert!(fixed.iter().all(|outer| {
-                (dot.x - outer.x).hypot(dot.y - outer.y)
-                    > DOT_FIXED_RADIUS + DOT_LARGE_RADIUS + 0.04
-            }));
+    fn original_brand_shell_and_sixty_hole_sites_are_exact() {
+        let shell = capsules();
+        let holes = sites();
+        assert_eq!(shell.len(), 22);
+        assert_eq!(holes.len(), METADATA_BITS);
+        let counts: [usize; 11] = [5, 5, 5, 5, 6, 7, 6, 5, 5, 5, 6];
+        let upper_counts: [usize; 11] = [4, 3, 2, 1, 3, 6, 3, 1, 2, 3, 5];
+        for col in 0..11 {
+            assert_eq!(UPPER_HOLES[col].len(), upper_counts[col]);
+            assert_eq!(UPPER_HOLES[col].len() + LOWER_HOLES[col].len(), counts[col]);
+            assert_eq!(shell[col].x, col as f64 * 34.0);
+            assert_eq!(shell[col + 11].x, col as f64 * 34.0);
+            assert_eq!(shell[col].y + shell[col].height, 242.0 - BRAND_ORIGIN_Y);
+            assert_eq!(shell[col + 11].y, 274.0 - BRAND_ORIGIN_Y);
         }
-        for dot in &fixed {
-            let dist = distance_to_spine(dot.x - 2.0, dot.y - 1.2);
-            assert!(dist - DOT_FIXED_RADIUS >= 0.30);
+        let mut bit_order: Vec<_> = holes.iter().filter_map(|site| site.bit).collect();
+        bit_order.sort_unstable();
+        assert_eq!(bit_order, (0..METADATA_BITS).collect::<Vec<_>>());
+        for site in &holes {
+            let owner = shell.iter().filter(|bar| {
+                site.x == bar.x + bar.width / 2.0
+                    && site.y >= bar.y + CAPSULE_RADIUS
+                    && site.y <= bar.y + bar.height - CAPSULE_RADIUS
+            }).collect::<Vec<_>>();
+            assert_eq!(owner.len(), 1, "hole outside a single opaque capsule");
+            let bar = owner[0];
+            assert!(site.y - bar.y > DOT_LARGE_RADIUS + 8.0);
+            assert!(bar.y + bar.height - site.y > DOT_LARGE_RADIUS + 8.0);
+            assert!(bar.width / 2.0 - DOT_LARGE_RADIUS > 7.0);
         }
-        // No two discs may merge, even when every metadata dot is at its
-        // maximum size. Contour and central negative space must be immutable.
-        for (i, first) in dots.iter().enumerate() {
-            for second in dots.iter().skip(i + 1) {
-                let first_radius = if first.bit.is_some() {
-                    DOT_LARGE_RADIUS
-                } else {
-                    DOT_FIXED_RADIUS
-                };
-                let second_radius = if second.bit.is_some() {
-                    DOT_LARGE_RADIUS
-                } else {
-                    DOT_FIXED_RADIUS
-                };
+        // Hole centers never touch their neighbors at the maximum radius.
+        for (i, first) in holes.iter().enumerate() {
+            for second in holes.iter().skip(i + 1) {
                 assert!(
                     (first.x - second.x).hypot(first.y - second.y)
-                        > first_radius + second_radius + 0.10,
-                    "W dots collide at positions {i} and another site"
+                        > 2.0 * DOT_LARGE_RADIUS + 3.0
                 );
             }
         }
