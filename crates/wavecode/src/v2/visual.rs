@@ -547,7 +547,7 @@ mod tests {
                     .unwrap();
                 assert!(first_bar.x >= profile.quiet + metrics.anchor_width);
                 let svg = render_svg(&frame, profile).unwrap();
-                assert_eq!(svg.matches("class=\\\"data-upper\\\"").count(), expected);
+                assert_eq!(svg.matches("class=\"data-upper\"").count(), expected);
             }
         }
     }
