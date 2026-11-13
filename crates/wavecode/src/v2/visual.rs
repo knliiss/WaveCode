@@ -41,6 +41,25 @@ impl Default for RenderProfile {
     }
 }
 
+/// Physical gaps in rendered pixels, never part of a binary frame.
+/// Scanner locates actual components instead of decoding these parameters.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct VisualSpacing {
+    /// Clear distance between upper and lower payload capsules.
+    pub payload_center_gap: f64,
+    /// Clear horizontal distance from the right edge of W to the first payload capsule.
+    pub logo_payload_gap: f64,
+}
+
+impl VisualSpacing {
+    pub fn for_profile(profile: RenderProfile) -> Self {
+        Self {
+            payload_center_gap: 16.0 * profile.height * anchor::W_DOT_SCALE_RATIO,
+            logo_payload_gap: 1.4 * profile.pitch,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Metrics {
     pub width: f64,
@@ -63,26 +82,45 @@ pub struct Metrics {
 
 impl RenderProfile {
     pub fn metrics(self, symbols: usize) -> Result<Metrics, Error> {
+        self.metrics_with_spacing(symbols, VisualSpacing::for_profile(self))
+    }
+
+    pub fn metrics_with_spacing(
+        self,
+        symbols: usize,
+        spacing: VisualSpacing,
+    ) -> Result<Metrics, Error> {
         if !(1..=34).contains(&symbols)
-            || ![self.pitch, self.height, self.quiet]
-                .iter()
-                .all(|n| n.is_finite())
+            || ![
+                self.pitch,
+                self.height,
+                self.quiet,
+                spacing.payload_center_gap,
+                spacing.logo_payload_gap,
+            ]
+            .iter()
+            .all(|n| n.is_finite())
             || self.pitch < 6.0
             || self.height < 90.0
             || self.quiet < 0.0
+            || spacing.payload_center_gap < 2.0
+            || spacing.logo_payload_gap < 2.0
         {
             return Err(Error::InvalidGeometry);
         }
         let w_pitch = self.height * anchor::W_DOT_SCALE_RATIO;
         let anchor_width = anchor::SHELL_WIDTH * w_pitch;
-        let payload_x = self.quiet + anchor_width + self.pitch * optical::PAYLOAD_GAP_PITCH_RATIO;
+        // payload_x locates the start of the first *column cell*. The
+        // requested logo gap is instead the actual empty space to its bar.
+        let first_bar_inset = (1.0 - optical::RAIL_WIDTH_RATIO) * self.pitch / 2.0;
+        let payload_x = self.quiet + anchor_width + spacing.logo_payload_gap - first_bar_inset;
         let width = payload_x + (symbols + 1) as f64 * self.pitch + self.quiet;
 
-        // The W and the data share the ORIGINAL center of the white slit
-        // (SVG y=258), never the midpoint of the black logo's bounding box.
-        let upper_inner_y = (anchor::UPPER_SLIT_Y - anchor::BRAND_ORIGIN_Y) * w_pitch;
-        let lower_inner_y = (anchor::LOWER_SLIT_Y - anchor::BRAND_ORIGIN_Y) * w_pitch;
+        // The shared center remains the midpoint of the W's white slit.
+        // Unlike its center, the payload gap is independent of the W gap.
         let center_local = (anchor::SLIT_CENTER_Y - anchor::BRAND_ORIGIN_Y) * w_pitch;
+        let upper_inner_y = center_local - spacing.payload_center_gap / 2.0;
+        let lower_inner_y = center_local + spacing.payload_center_gap / 2.0;
         let max_bar_height = optical::height_of(optical::LEVELS - 1, self.height)?;
 
         // The payload can extend below the original logo. Derive the full
@@ -143,7 +181,15 @@ impl Mark {
 }
 
 fn marks(frame: &Frame, profile: RenderProfile) -> Result<(Metrics, Vec<Mark>), Error> {
-    let metrics = profile.metrics(frame.symbols.len())?;
+    marks_with_spacing(frame, profile, VisualSpacing::for_profile(profile))
+}
+
+fn marks_with_spacing(
+    frame: &Frame,
+    profile: RenderProfile,
+    spacing: VisualSpacing,
+) -> Result<(Metrics, Vec<Mark>), Error> {
+    let metrics = profile.metrics_with_spacing(frame.symbols.len(), spacing)?;
     let mut result = Vec::with_capacity(anchor::VERSION_SITES + (frame.symbols.len() + 1) * 2);
 
     // The W carries ONLY the version. The original 32-unit center
@@ -187,7 +233,15 @@ fn marks(frame: &Frame, profile: RenderProfile) -> Result<(Metrics, Vec<Mark>), 
 }
 
 pub fn render_svg(frame: &Frame, profile: RenderProfile) -> Result<String, Error> {
-    let (metrics, marks) = marks(frame, profile)?;
+    render_svg_with_spacing(frame, profile, VisualSpacing::for_profile(profile))
+}
+
+pub fn render_svg_with_spacing(
+    frame: &Frame,
+    profile: RenderProfile,
+    spacing: VisualSpacing,
+) -> Result<String, Error> {
+    let (metrics, marks) = marks_with_spacing(frame, profile, spacing)?;
     let mut svg = format!(
         "<svg xmlns=\"http://www.w3.org/2000/svg\" data-wavecode=\"v2-capsule-version-bch22\" data-version=\"{}\" data-profile=\"{}\" width=\"{:.3}\" height=\"{:.3}\" viewBox=\"0 0 {:.3} {:.3}\">\n  <rect width=\"100%\" height=\"100%\" fill=\"white\"/>\n",
         anchor::VERSION,
@@ -211,10 +265,22 @@ pub fn render_svg_style(frame: &Frame, style: RenderStyle) -> Result<String, Err
 
 #[cfg(feature = "raster")]
 pub fn render_png(frame: &Frame, profile: RenderProfile) -> Result<Vec<u8>, Error> {
+    render_png_with_spacing(frame, profile, VisualSpacing::for_profile(profile))
+}
+
+#[cfg(feature = "raster")]
+pub fn render_png_with_spacing(
+    frame: &Frame,
+    profile: RenderProfile,
+    spacing: VisualSpacing,
+) -> Result<Vec<u8>, Error> {
     use image::{DynamicImage, GrayImage, ImageOutputFormat, Luma};
     use std::io::Cursor;
 
-    let (metrics, marks) = marks(frame, profile)?;
+    let (metrics, marks) = marks_with_spacing(frame, profile, spacing)?;
+    if metrics.width.ceil() * metrics.height.ceil() > 5_000_000.0 {
+        return Err(Error::InvalidGeometry);
+    }
     let mut image = GrayImage::from_pixel(
         metrics.width.ceil() as u32,
         metrics.height.ceil() as u32,
@@ -337,35 +403,36 @@ mod tests {
     }
 
     #[test]
-    fn payload_symmetric_slit_matches_original_w_on_both_styles() {
+    fn payload_center_tracks_w_slit_without_copying_its_gap() {
         for style in [RenderStyle::Classic, RenderStyle::Compact] {
             let profile = style.profile();
+            let spacing = VisualSpacing::for_profile(profile);
             let frame = Frame {
                 metadata: 15,
                 symbols: vec![0x00, 0x0f, 0xf0, 0xff, 0x5a, 0xa5],
             };
-            let (metrics, drawing) = marks(&frame, profile).unwrap();
+            let (metrics, drawing) = marks_with_spacing(&frame, profile, spacing).unwrap();
             let epsilon = 1.0e-8;
-
-            // The white slit center is the midpoint of y=242 and y=274
-            // in the original 512-unit logo SVG, not its bounding center.
             assert!((anchor::SLIT_CENTER_Y - 258.0).abs() < epsilon);
             assert!(
                 (metrics.center_y - (metrics.upper_baseline + metrics.lower_baseline) / 2.0).abs()
                     < epsilon
             );
-            assert!((metrics.center_gap - 32.0 * metrics.w_pitch).abs() < epsilon);
+            assert!((metrics.center_gap - spacing.payload_center_gap).abs() < epsilon);
+            let w_gap = (anchor::LOWER_SLIT_Y - anchor::UPPER_SLIT_Y) * metrics.w_pitch;
+            assert!(metrics.center_gap < w_gap);
 
             for index in 0..11 {
                 match (&drawing[index], &drawing[index + 11]) {
                     (Mark::Capsule(upper), Mark::Capsule(lower)) => {
-                        assert!((upper.y + upper.height - metrics.upper_baseline).abs() < epsilon);
-                        assert!((lower.y - metrics.lower_baseline).abs() < epsilon);
+                        let w_upper = upper.y + upper.height;
+                        let w_lower = lower.y;
+                        assert!((w_upper + w_lower - 2.0 * metrics.center_y).abs() < epsilon);
+                        assert!((w_lower - w_upper - w_gap).abs() < epsilon);
                     }
-                    _ => panic!("the W's two capsule rows must be consecutive"),
+                    _ => panic!("W capsule order is not preserved"),
                 }
             }
-
             for mark in drawing.iter().skip(anchor::VERSION_SITES) {
                 let Mark::Rail(rect, upper) = mark else {
                     panic!("unexpected mark after W");
@@ -378,9 +445,6 @@ mod tests {
                 assert!(rect.y >= 8.0 - epsilon);
                 assert!(rect.y + rect.height <= metrics.height - 8.0 + epsilon);
             }
-
-            // The longest possible pair has mirror-symmetric extents,
-            // regardless of the actual sequence of data bytes.
             let tallest = optical::height_of(15, profile.height).unwrap();
             let top = metrics.upper_baseline - tallest;
             let bottom = metrics.lower_baseline + tallest;
@@ -391,11 +455,51 @@ mod tests {
             let logo_right = profile.quiet + metrics.anchor_width;
             let first_bar_left = metrics.payload_x + profile.pitch / 2.0
                 - profile.pitch * optical::RAIL_WIDTH_RATIO / 2.0;
-            let visible_gap = first_bar_left - logo_right;
-            let logo_internal_gap = 14.0 * metrics.w_pitch;
-            assert!(visible_gap > logo_internal_gap * 0.60);
-            assert!(visible_gap < logo_internal_gap * 1.20);
+            assert!((first_bar_left - logo_right - spacing.logo_payload_gap).abs() < epsilon);
+            assert!(spacing.logo_payload_gap > 14.0 * metrics.w_pitch);
         }
+    }
+
+    #[test]
+    fn both_gaps_are_visual_only_and_can_vary_independently() {
+        let frame = Frame {
+            metadata: 3,
+            symbols: vec![0x00, 0x12, 0xff, 0x5a],
+        };
+        let profile = RenderStyle::Classic.profile();
+        let anchor_count = anchor::VERSION_SITES;
+        let base = marks_with_spacing(
+            &frame,
+            profile,
+            VisualSpacing {
+                payload_center_gap: 4.0,
+                logo_payload_gap: 4.0,
+            },
+        ).unwrap();
+        for middle in [4.0, 12.0, 32.0, 68.0, 150.0] {
+            for separation in [4.0, 20.0, 70.0, 250.0] {
+                let spacing = VisualSpacing {
+                    payload_center_gap: middle,
+                    logo_payload_gap: separation,
+                };
+                let (metrics, marks) = marks_with_spacing(&frame, profile, spacing).unwrap();
+                assert!((metrics.center_gap - middle).abs() < 1.0e-8);
+                assert_eq!(marks.len(), base.1.len());
+                for (original, current) in base.1.iter().zip(&marks).take(anchor_count) {
+                    match (original, current) {
+                        (Mark::Capsule(a), Mark::Capsule(b)) => {
+                            assert!((a.width - b.width).abs() < 1.0e-8);
+                            assert!((a.height - b.height).abs() < 1.0e-8);
+                        }
+                        _ => panic!("W changed with payload layout"),
+                    }
+                }
+            }
+        }
+        assert!(profile.metrics_with_spacing(4, VisualSpacing {
+            payload_center_gap: 0.0,
+            logo_payload_gap: 30.0,
+        }).is_err());
     }
 
     #[test]
