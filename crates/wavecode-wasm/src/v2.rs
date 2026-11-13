@@ -20,9 +20,9 @@ fn layout_name(layout: v2::Layout) -> &'static str {
 fn encoded_json(frame: &v2::Frame) -> Result<String, JsValue> {
     let decoded = v2::decode(frame).map_err(js_error)?;
     serde_json::to_string(&json!({
-        "format": "v2-dot-bch",
+        "format": "v2-capsule-holes-bch60",
         "version": v2::anchor::VERSION,
-        "anchor": "round-dot-w-bch60",
+        "anchor": "capsule-shell-60-holes-bch60",
         "layout": layout_name(decoded.layout),
         "metadata": frame.metadata,
         "symbols": &frame.symbols,
@@ -51,9 +51,9 @@ fn decoded_value(decoded: &v2::Decoded) -> Result<Value, wavecode::Error> {
         ],
     };
     Ok(json!({
-        "format": "v2-dot-bch",
+        "format": "v2-capsule-holes-bch60",
         "version": v2::anchor::VERSION,
-        "anchor": "round-dot-w-bch60",
+        "anchor": "capsule-shell-60-holes-bch60",
         "layout": layout_name(decoded.layout),
         "urls": urls,
         "corrected_symbols": decoded.corrected_symbols,
