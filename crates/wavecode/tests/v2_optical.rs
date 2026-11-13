@@ -93,6 +93,60 @@ fn classic_and_compact_render_styles_roundtrip_without_style_information() {
 }
 
 #[test]
+fn w_and_payload_heights_are_independent_optical_parameters() {
+    let cases = [
+        (110.0, 270.0, 6.0, 25.0),
+        (370.0, 130.0, 30.0, 75.0),
+        (230.0, 310.0, 75.0, 8.0),
+    ];
+    for content in [samples()[0].clone(), samples()[3].clone()] {
+        let frame = v2::encode_adaptive(&content).unwrap();
+        for style in [visual::RenderStyle::Classic, visual::RenderStyle::Compact] {
+            for (logo_height, payload_height, center_gap, separation) in cases {
+                let mut profile = style.profile();
+                profile.height = payload_height;
+                let spacing = visual::VisualSpacing {
+                    payload_center_gap: center_gap,
+                    logo_payload_gap: separation,
+                };
+                let metrics = profile
+                    .metrics_with_spacing_and_logo_height_for_frame(
+                        &frame,
+                        spacing,
+                        logo_height,
+                    )
+                    .unwrap();
+                assert!(
+                    (metrics.anchor_width
+                        - logo_height * v2::anchor::SHELL_WIDTH
+                            * v2::anchor::W_DOT_SCALE_RATIO)
+                        .abs() < 1.0e-8
+                );
+                let png = visual::render_png_with_spacing_and_logo_height(
+                    &frame,
+                    profile,
+                    spacing,
+                    logo_height,
+                )
+                .unwrap();
+                let image = image::load_from_memory(&png).unwrap().to_luma8();
+                let recovered = raster::scan_gray(&image).unwrap();
+                assert_eq!(recovered.decoded.content, content);
+                assert_eq!(recovered.profile, frame.metadata);
+                assert_eq!(recovered.version, v2::anchor::VERSION);
+                assert_eq!(
+                    raster::scan_gray(&rotate180(&image))
+                        .unwrap()
+                        .decoded
+                        .content,
+                    content
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn decoder_ignores_independent_middle_and_logo_payload_gaps() {
     // These are physical pixel distances, not bits or metadata fields.
     // The scanner receives the image only: no pitch, gap or style argument.
