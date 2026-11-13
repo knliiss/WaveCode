@@ -355,12 +355,16 @@ fn read_shell_frame(parts: &[Component], fit: &ShellFit<'_>) -> Result<Located, 
     let (sin, cos) = fit.angle.sin_cos();
     let end_u = fit.origin_u + anchor::SHELL_WIDTH * fit.scale;
     let lower_area = (fit.scale * fit.scale * 85.0).max(15.0);
+    // The W-to-data whitespace is NOT a delimiter with a fixed pitch.
+    // Exclude the 22 detected W components by identity, then locate actual
+    // data bars geometrically on the logical right, at any visible distance.
     let mut bars: Vec<_> = parts
         .iter()
+        .filter(|part| !fit.capsules.iter().any(|logo| std::ptr::eq(*logo, *part)))
         .filter(|part| part.area() > lower_area)
         .filter_map(|part| {
             let projection = part.projected(sin, cos);
-            (projection.u > end_u + fit.scale * 8.0).then_some((part, projection))
+            (projection.u > end_u - fit.scale * 4.0).then_some((part, projection))
         })
         .collect();
     bars.sort_by(|a, b| a.1.u.total_cmp(&b.1.u));
