@@ -174,6 +174,41 @@ fn perspective_reader_does_not_require_fixed_payload_gaps() {
 }
 
 #[test]
+fn self_delimiting_dual_modes_scan_without_optical_header_or_layout_hints() {
+    let scenarios = [
+        ("0000000000000000000000", None, 14, 30),
+        ("zzzzzzzzzzzzzzzzzzzzzz", None, 16, 31),
+        ("0VjIjW4GlUZAMYd2vXMi3b", Some(59), 16, 31),
+        ("7n42DGM5Tflk9n8mt7Fhc7", Some(255), 15, 32),
+    ];
+    for (spotify, moment, expected_profile, expected_columns) in scenarios {
+        let content = Content::Dual {
+            spotify_id: spotify.into(),
+            youtube_music_id: YOUTUBE.into(),
+            moment_seconds: moment,
+        };
+        let frame = v2::encode_adaptive(&content).unwrap();
+        assert_eq!(frame.metadata, expected_profile);
+        assert_eq!(v2::optical_column_count(&frame), expected_columns);
+        for style in [visual::RenderStyle::Classic, visual::RenderStyle::Compact] {
+            let profile = style.profile();
+            let spacing = visual::VisualSpacing {
+                payload_center_gap: 9.0,
+                logo_payload_gap: 78.0,
+            };
+            let png = visual::render_png_with_spacing(&frame, profile, spacing).unwrap();
+            let image = image::load_from_memory(&png).unwrap().to_luma8();
+            for picture in [image.clone(), rotate180(&image)] {
+                let restored = raster::scan_gray(&picture).unwrap();
+                assert_eq!(restored.decoded.content, content);
+                assert_eq!(restored.profile, expected_profile);
+                assert_eq!(restored.version, v2::anchor::VERSION);
+            }
+        }
+    }
+}
+
+#[test]
 fn anchor_is_detected_and_payload_is_restored_at_cardinal_rotations() {
     for content in samples() {
         let picture = frame_image(&content);
