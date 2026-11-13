@@ -31,6 +31,9 @@ jobs:
             cargo run -p wavecode --example v2 -- dual-adaptive \
               'https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b' \
               'https://music.youtube.com/watch?v=JGwWNGJdvx8' "previews/dual-${style}.png" "${style}"
+            cargo run -p wavecode --example v2 -- dual-adaptive \
+              'https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b?t=59' \
+              'https://music.youtube.com/watch?v=JGwWNGJdvx8&t=59' "previews/timed-dual-${style}.png" "${style}"
             cargo run -p wavecode --example v2 -- encode-adaptive \
               'https://music.youtube.com/watch?v=JGwWNGJdvx8&t=59' "previews/variable-wide-logo-${style}.png" "${style}" 6 240
             cargo run -p wavecode --example v2 -- encode-adaptive \
@@ -48,7 +51,12 @@ jobs:
           set -euo pipefail
           for png in previews/*.png; do
             echo "Verifying ${png}"
-            cargo run -p wavecode --example v2 -- scan "${png}"
+            output=$(cargo run -q -p wavecode --example v2 -- scan "${png}")
+            echo "${output}"
+            if [[ "${png}" == *timed-dual* ]]; then
+              grep -Fq 'https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b?t=59' <<< "${output}"
+              grep -Fq 'https://music.youtube.com/watch?v=JGwWNGJdvx8&t=59' <<< "${output}"
+            fi
           done
       - uses: actions/upload-artifact@v4
         with:
