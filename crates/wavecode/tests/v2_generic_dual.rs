@@ -165,14 +165,26 @@ fn adaptive_numeric_dual_uses_seventeen_columns_instead_of_twenty_five() {
 #[test]
 fn numeric_boundary_and_independent_timestamps_are_lossless() {
     let cases = [
-        ("https://www.deezer.com/track/4294967295?t=255", 37),
-        ("https://www.deezer.com/track/4294967296?t=256", 36),
-        ("https://open.qobuz.com/track/7?t=65535", 37),
+        (
+            "https://www.deezer.com/track/4294967295?t=255",
+            "https://tidal.com/browse/track/7?t=0",
+            37,
+        ),
+        (
+            "https://www.deezer.com/track/4294967296?t=256",
+            "https://tidal.com/browse/track/4294967296?t=0",
+            36,
+        ),
+        (
+            "https://open.qobuz.com/track/7?t=65535",
+            "https://tidal.com/browse/track/7?t=0",
+            37,
+        ),
     ];
-    for (first_url, expected) in cases {
+    for (first_url, second_url, expected) in cases {
         let content = Content::DualLinks {
             first: MusicCode::from_url(first_url).unwrap(),
-            second: MusicCode::from_url("https://tidal.com/browse/track/7?t=0").unwrap(),
+            second: MusicCode::from_url(second_url).unwrap(),
         };
         let frame = v2::encode_adaptive(&content).unwrap();
         assert_eq!(frame.metadata, expected, "{first_url}");
