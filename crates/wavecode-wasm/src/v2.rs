@@ -77,6 +77,14 @@ fn profile(pitch: f64, height: f64, quiet: f64) -> v2::visual::RenderProfile {
     }
 }
 
+fn visual_style(name: &str) -> Result<v2::visual::RenderStyle, JsValue> {
+    match name {
+        "classic" => Ok(v2::visual::RenderStyle::Classic),
+        "compact" => Ok(v2::visual::RenderStyle::Compact),
+        _ => Err(js_error("unsupported V2 visual style; use classic or compact")),
+    }
+}
+
 /// Return a JSON frame with metadata and full GF(256) symbols.
 #[wasm_bindgen]
 pub fn v2_encode_url(url: &str, moment_override: Option<u16>) -> Result<String, JsValue> {
@@ -129,6 +137,28 @@ pub fn v2_render_png(
 ) -> Result<Vec<u8>, JsValue> {
     let frame = verified_frame(metadata, symbols)?;
     v2::visual::render_png(&frame, profile(pitch, height, quiet)).map_err(js_error)
+}
+
+/// Render a named visual style without storing style data in the encoded frame.
+#[wasm_bindgen]
+pub fn v2_render_svg_style(
+    metadata: u8,
+    symbols: &[u8],
+    style: &str,
+) -> Result<String, JsValue> {
+    let frame = verified_frame(metadata, symbols)?;
+    v2::visual::render_svg_style(&frame, visual_style(style)?).map_err(js_error)
+}
+
+/// Render an optically equivalent PNG from the same bytes in either preset.
+#[wasm_bindgen]
+pub fn v2_render_png_style(
+    metadata: u8,
+    symbols: &[u8],
+    style: &str,
+) -> Result<Vec<u8>, JsValue> {
+    let frame = verified_frame(metadata, symbols)?;
+    v2::visual::render_png_style(&frame, visual_style(style)?).map_err(js_error)
 }
 
 #[wasm_bindgen]
@@ -218,6 +248,21 @@ mod tests {
             details["urls"][1],
             "https://music.youtube.com/watch?v=JGwWNGJdvx8&t=59"
         );
+    }
+
+    #[test]
+    fn web_style_presets_do_not_modify_binary_frames() {
+        let content = v2::Content::Single(
+            MusicCode::from_url("https://music.youtube.com/watch?v=JGwWNGJdvx8").unwrap(),
+        );
+        let frame = v2::encode(&content).unwrap();
+        let first = v2_render_svg_style(frame.metadata, &frame.symbols, "classic").unwrap();
+        let second = v2_render_svg_style(frame.metadata, &frame.symbols, "compact").unwrap();
+        assert!(first.contains("class=\\\"data-upper\\\""));
+        assert!(second.contains("class=\\\"data-upper\\\""));
+        assert_ne!(first, second);
+        assert!(visual_style("unregistered").is_err());
+        assert_eq!(v2::decode(&frame).unwrap().content, content);
     }
 
     #[test]
