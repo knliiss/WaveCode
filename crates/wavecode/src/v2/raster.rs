@@ -395,6 +395,71 @@ fn decode_payload_symbols(mut symbols: Vec<u8>) -> Result<(u8, Decoded), Error> 
     Ok((metadata, decoded))
 }
 
+/// Derive the payload's own height unit from its 16-level rail alphabet.
+///
+/// The W determines only pose and version. Each candidate height is anchored
+/// to an observed rail/level match; the RS and CRC checks disambiguate the
+/// resulting quantized bytes. No fixed logo-to-payload scale ratio is assumed.
+fn decode_payload_heights(rails: &[(f64, f64)]) -> Result<(u8, Decoded), Error> {
+    use std::collections::HashSet;
+
+    let observed: Vec<f64> = rails
+        .iter()
+        .flat_map(|&(upper, lower)| [upper, lower])
+        .collect();
+    if observed.is_empty() || observed.iter().any(|h| !h.is_finite() || *h <= 0.0) {
+        return Err(Error::InvalidFrame);
+    }
+
+    let mut candidates = Vec::with_capacity(observed.len() * optical::LEVELS as usize);
+    for &rail in &observed {
+        for level in 0..optical::LEVELS {
+            let unit = optical::BASE_HEIGHT_RATIO
+                + f64::from(level) * optical::HEIGHT_STEP_RATIO;
+            let height = rail / unit;
+            if !(16.0..=10_000.0).contains(&height) {
+                continue;
+            }
+            let score: f64 = observed
+                .iter()
+                .map(|&sample| {
+                    let value = (sample / height - optical::BASE_HEIGHT_RATIO)
+                        / optical::HEIGHT_STEP_RATIO;
+                    if !(-0.5..=15.5).contains(&value) {
+                        4.0
+                    } else {
+                        (value - value.round()).powi(2)
+                    }
+                })
+                .sum();
+            candidates.push((score, height));
+        }
+    }
+    candidates.sort_by(|a, b| a.0.total_cmp(&b.0));
+
+    let mut attempted = HashSet::new();
+    for (_, height) in candidates.into_iter().take(96) {
+        let nibble = |observed: f64| -> Option<u8> {
+            let level = ((observed / height - optical::BASE_HEIGHT_RATIO)
+                / optical::HEIGHT_STEP_RATIO)
+                .round();
+            (level.is_finite() && (0.0..=15.0).contains(&level)).then_some(level as u8)
+        };
+        let symbols: Option<Vec<u8>> = rails
+            .iter()
+            .map(|&(upper, lower)| Some((nibble(upper)? << 4) | nibble(lower)?))
+            .collect();
+        if let Some(symbols) = symbols {
+            if attempted.insert(symbols.clone()) {
+                if let Ok(decoded) = decode_payload_symbols(symbols) {
+                    return Ok(decoded);
+                }
+            }
+        }
+    }
+    Err(Error::InvalidFrame)
+}
+
 fn read_shell_frame(parts: &[Component], fit: &ShellFit<'_>) -> Result<Located, Error> {
     let (version, corrected_bits) = anchor::decode_version(classify_version(fit))?;
     if version != anchor::VERSION {
@@ -402,7 +467,8 @@ fn read_shell_frame(parts: &[Component], fit: &ShellFit<'_>) -> Result<Located, 
     }
     let (sin, cos) = fit.angle.sin_cos();
     let end_u = fit.origin_u + anchor::SHELL_WIDTH * fit.scale;
-    let lower_area = (fit.scale * fit.scale * 85.0).max(15.0);
+    // A payload may be much smaller than the W; never filter it by W area.
+    let lower_area = 15.0;
     // The W-to-data whitespace is NOT a delimiter with a fixed pitch.
     // Exclude the 22 detected W components by identity, then locate actual
     // data bars geometrically on the logical right, at any visible distance.
@@ -434,12 +500,11 @@ fn read_shell_frame(parts: &[Component], fit: &ShellFit<'_>) -> Result<Located, 
     if pitch < 4.0 {
         return Err(Error::InvalidFrame);
     }
-    let height = fit.scale / anchor::W_DOT_SCALE_RATIO;
     let reference_pitch = (pairs[1].0.u - pairs[0].0.u).abs();
     if reference_pitch < 4.0 {
         return Err(Error::InvalidFrame);
     }
-    let mut symbols = Vec::with_capacity(pairs.len());
+    let mut rail_heights = Vec::with_capacity(pairs.len());
     for (index, &(upper, lower)) in pairs.iter().enumerate() {
         let left_pitch = index
             .checked_sub(1)
@@ -459,17 +524,12 @@ fn read_shell_frame(parts: &[Component], fit: &ShellFit<'_>) -> Result<Located, 
         let vertical_scale = (local_pitch / reference_pitch).sqrt().clamp(0.7, 1.3);
         // The 16x16 optical alphabet has one invariant rail width.
         // Physical style changes pitch, scale and margins, never the byte.
-        let upper_level = optical::level_of(upper.transverse / vertical_scale, height)?;
-        let lower_level = optical::level_of(lower.transverse / vertical_scale, height)?;
-        symbols.push(
-            optical::OpticalSymbol {
-                upper: upper_level,
-                lower: lower_level,
-            }
-            .to_byte()?,
-        );
+        rail_heights.push((
+            upper.transverse / vertical_scale,
+            lower.transverse / vertical_scale,
+        ));
     }
-    let (metadata, decoded) = decode_payload_symbols(symbols)?;
+    let (metadata, decoded) = decode_payload_heights(&rail_heights)?;
     let corners = [
         fit.to_image(0.0, 0.0),
         fit.to_image(anchor::W_X_MAX, 0.0),
