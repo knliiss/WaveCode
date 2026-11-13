@@ -34,6 +34,7 @@ pub enum Track {
     YouTubeVideo(String),
     YouTubeShort(String),
     TikTokVideo(u64),
+    TikTokShort(String),
     InstagramReel(String),
     Spotify(String),
     AppleMusic { id: u64, storefront: String },
@@ -98,6 +99,11 @@ impl Track {
                     return Err(Error::InvalidIdentifier);
                 }
                 Ok(Self::TikTokVideo(id))
+            }
+            "vt.tiktok.com" if segments.len() == 1 => {
+                let track = Self::TikTokShort(segments[0].to_owned());
+                identity::encode(&track)?;
+                Ok(track)
             }
             "www.instagram.com" | "instagram.com"
                 if segments.len() == 2 && (segments[0] == "reel" || segments[0] == "reels") =>
@@ -178,6 +184,7 @@ impl Track {
             Self::YouTubeVideo(id) => format!("https://www.youtube.com/watch?v={id}"),
             Self::YouTubeShort(id) => format!("https://www.youtube.com/shorts/{id}"),
             Self::TikTokVideo(id) => format!("https://www.tiktok.com/@/video/{id}"),
+            Self::TikTokShort(code) => format!("https://vt.tiktok.com/{code}/"),
             Self::InstagramReel(shortcode) => {
                 format!("https://www.instagram.com/reel/{shortcode}/")
             }
@@ -193,7 +200,7 @@ impl Track {
     }
 
     pub(crate) fn supports_moment(&self) -> bool {
-        !matches!(self, Self::TikTokVideo(_) | Self::InstagramReel(_))
+        !matches!(self, Self::TikTokVideo(_) | Self::TikTokShort(_) | Self::InstagramReel(_))
     }
 }
 
