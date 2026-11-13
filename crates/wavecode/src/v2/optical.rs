@@ -84,8 +84,18 @@ mod tests {
 
     #[test]
     fn malformed_optical_levels_are_rejected() {
-        assert!(OpticalSymbol { upper: 16, lower: 0 }.to_byte().is_err());
-        assert!(OpticalSymbol { upper: 0, lower: 16 }.to_byte().is_err());
+        assert!(OpticalSymbol {
+            upper: 16,
+            lower: 0
+        }
+        .to_byte()
+        .is_err());
+        assert!(OpticalSymbol {
+            upper: 0,
+            lower: 16
+        }
+        .to_byte()
+        .is_err());
         assert!(level_of(f64::NAN, 180.0).is_err());
         assert!(level_of(180.0, 180.0).is_err());
     }

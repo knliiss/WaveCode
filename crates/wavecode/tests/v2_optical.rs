@@ -74,12 +74,19 @@ fn classic_and_compact_render_styles_roundtrip_without_style_information() {
             assert_eq!(recovered.profile, frame.metadata);
             assert_eq!(recovered.version, v2::anchor::VERSION);
             let rotated = rotate180(&image::load_from_memory(&png).unwrap().to_luma8());
-            assert_eq!(raster::scan_gray(&rotated).unwrap().decoded.content, content);
+            assert_eq!(
+                raster::scan_gray(&rotated).unwrap().decoded.content,
+                content
+            );
         }
-        let classic = visual::RenderStyle::Classic.profile()
-            .metrics(frame.symbols.len()).unwrap();
-        let compact = visual::RenderStyle::Compact.profile()
-            .metrics(frame.symbols.len()).unwrap();
+        let classic = visual::RenderStyle::Classic
+            .profile()
+            .metrics(frame.symbols.len())
+            .unwrap();
+        let compact = visual::RenderStyle::Compact
+            .profile()
+            .metrics(frame.symbols.len())
+            .unwrap();
         assert!(compact.width < classic.width);
         assert_eq!(classic.height, compact.height);
     }

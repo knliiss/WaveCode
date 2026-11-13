@@ -27,7 +27,6 @@ impl RenderStyle {
     }
 }
 
-
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RenderProfile {
     pub pitch: f64,
@@ -308,10 +307,13 @@ mod tests {
             let render_profile = style.profile();
             let (metrics, marks) = marks(&frame, render_profile).unwrap();
             assert_eq!(metrics.pitch, render_profile.pitch);
-            let widths = marks.iter().filter_map(|mark| match mark {
-                Mark::Rail(rect, _) => Some(rect.width),
-                _ => None,
-            }).collect::<Vec<_>>();
+            let widths = marks
+                .iter()
+                .filter_map(|mark| match mark {
+                    Mark::Rail(rect, _) => Some(rect.width),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
             assert_eq!(widths.len(), frame.symbols.len() * 2);
             assert!(widths.iter().all(|width| {
                 (*width - render_profile.pitch * optical::RAIL_WIDTH_RATIO).abs() < 0.00001
@@ -332,7 +334,10 @@ mod tests {
         let _ = render_svg_style(&frame, RenderStyle::Classic).unwrap();
         let _ = render_svg_style(&frame, RenderStyle::Compact).unwrap();
         assert_eq!(frame, unchanged);
-        assert_ne!(RenderStyle::Classic.profile().pitch, RenderStyle::Compact.profile().pitch);
+        assert_ne!(
+            RenderStyle::Classic.profile().pitch,
+            RenderStyle::Compact.profile().pitch
+        );
     }
 
     #[test]

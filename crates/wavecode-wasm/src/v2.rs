@@ -81,7 +81,9 @@ fn visual_style(name: &str) -> Result<v2::visual::RenderStyle, JsValue> {
     match name {
         "classic" => Ok(v2::visual::RenderStyle::Classic),
         "compact" => Ok(v2::visual::RenderStyle::Compact),
-        _ => Err(js_error("unsupported V2 visual style; use classic or compact")),
+        _ => Err(js_error(
+            "unsupported V2 visual style; use classic or compact",
+        )),
     }
 }
 
@@ -141,22 +143,14 @@ pub fn v2_render_png(
 
 /// Render a named visual style without storing style data in the encoded frame.
 #[wasm_bindgen]
-pub fn v2_render_svg_style(
-    metadata: u8,
-    symbols: &[u8],
-    style: &str,
-) -> Result<String, JsValue> {
+pub fn v2_render_svg_style(metadata: u8, symbols: &[u8], style: &str) -> Result<String, JsValue> {
     let frame = verified_frame(metadata, symbols)?;
     v2::visual::render_svg_style(&frame, visual_style(style)?).map_err(js_error)
 }
 
 /// Render an optically equivalent PNG from the same bytes in either preset.
 #[wasm_bindgen]
-pub fn v2_render_png_style(
-    metadata: u8,
-    symbols: &[u8],
-    style: &str,
-) -> Result<Vec<u8>, JsValue> {
+pub fn v2_render_png_style(metadata: u8, symbols: &[u8], style: &str) -> Result<Vec<u8>, JsValue> {
     let frame = verified_frame(metadata, symbols)?;
     v2::visual::render_png_style(&frame, visual_style(style)?).map_err(js_error)
 }
