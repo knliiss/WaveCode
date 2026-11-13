@@ -364,8 +364,9 @@ pub(super) fn candidates(content: &Content) -> Result<Vec<Frame>, Error> {
                             {
                                 result.push(packed_dual_frame(value)?);
                             }
-                            // A valid 32-column fallback for the ~2.72%
-                            // of the 128-bit domain outside the 31-column range.
+                            // A complete fallback for short-time pairs not
+                            // contained in the remaining 31-column ordinal
+                            // interval after every no-time pair is reserved.
                             let mut out = BitWriter::default();
                             out.rank(spotify, 128)?;
                             out.push(youtube, 64);
