@@ -252,8 +252,8 @@ mod tests {
         let frame = v2::encode(&content).unwrap();
         let first = v2_render_svg_style(frame.metadata, &frame.symbols, "classic").unwrap();
         let second = v2_render_svg_style(frame.metadata, &frame.symbols, "compact").unwrap();
-        assert!(first.contains("class=\\\"data-upper\\\""));
-        assert!(second.contains("class=\\\"data-upper\\\""));
+        assert!(first.contains("class=\"data-upper\""));
+        assert!(second.contains("class=\"data-upper\""));
         assert_ne!(first, second);
         assert!(visual_style("unregistered").is_err());
         assert_eq!(v2::decode(&frame).unwrap().content, content);
