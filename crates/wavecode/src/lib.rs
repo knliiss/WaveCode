@@ -200,7 +200,10 @@ impl Track {
     }
 
     pub(crate) fn supports_moment(&self) -> bool {
-        !matches!(self, Self::TikTokVideo(_) | Self::TikTokShort(_) | Self::InstagramReel(_))
+        !matches!(
+            self,
+            Self::TikTokVideo(_) | Self::TikTokShort(_) | Self::InstagramReel(_)
+        )
     }
 }
 
