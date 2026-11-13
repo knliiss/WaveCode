@@ -175,6 +175,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
             match found.decoded.content {
                 Content::Single(code) => println!("{}", code.to_url()?),
+                Content::DualLinks { first, second } => {
+                    println!("{}", first.to_url()?);
+                    println!("{}", second.to_url()?);
+                }
                 Content::Dual {
                     spotify_id,
                     youtube_music_id,
