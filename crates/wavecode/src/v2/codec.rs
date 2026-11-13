@@ -1,11 +1,9 @@
 //! Experimental short single-link and two-link payloads.
-//! Optical widths carry the extra two bits of each GF(256) symbol;
-//! IDs are encoded losslessly, with neither database nor a hash shortcut.
+//! Each GF(256) byte is represented by two 16-level optical rails;
+//! IDs are encoded losslessly without an identity database.
 use crate::identity;
 use crate::rank::Rank;
 use crate::{reed_solomon, Error, MusicCode, Track};
-
-use super::anchor;
 
 const YOUTUBE: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 const SPOTIFY: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
@@ -365,9 +363,9 @@ pub fn encode_with_layout(content: &Content, layout: Layout) -> Result<Frame, Er
     if bytes.len() + PARITY_BYTES > 34 {
         return Err(Error::InvalidLength);
     }
-    // The metadata is protected independently (SECDED) and is also covered
-    // by the payload CRC, preventing an undetected mode reinterpretation.
-    anchor::encode_meta(metadata)?;
+    // The optical W holds ONLY the version. Routing metadata is transmitted
+    // as the first byte of the payload's optical column sequence and is
+    // covered by CRC together with the content.
     Ok(Frame {
         metadata,
         symbols: reed_solomon::encode(&bytes),
@@ -477,12 +475,6 @@ mod tests {
             let decoded = decode(&encoded).unwrap();
             assert_eq!(decoded.content, input, "{link}");
             assert!(encoded.symbols.len() < 34, "{link}");
-            assert_eq!(
-                anchor::decode_meta(anchor::encode_meta(encoded.metadata).unwrap())
-                    .unwrap()
-                    .0,
-                encoded.metadata
-            );
         }
     }
 
