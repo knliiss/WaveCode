@@ -16,6 +16,84 @@ const PARITY: usize = reed_solomon::PARITY_SYMBOLS;
 // high-Spotify/no-time pair; use the remaining range for short-time pairs.
 // This is a bijective enumerative encoding, not a music-ID dictionary.
 pub(super) const PACKED_DUAL_PROFILE: u8 = 16;
+const SHORT_FULL_DUAL_PROFILE: u8 = 20;
+const LONG_FULL_DUAL_PROFILE: u8 = 21;
+
+// These profiles need no separate header column. The FIRST source bit is
+// exactly one, leaving a disjoint marker from an explicit profile byte
+// (all current explicit headers are <64). The marker is inside the
+// systematic RS codeword and therefore receives full RS protection.
+fn full_dual_frame(
+    spotify: Rank,
+    youtube: Rank,
+    moment_seconds: Option<u16>,
+) -> Result<Frame, Error> {
+    let mut out = BitWriter::default();
+    out.push(1, 1);
+    match moment_seconds {
+        None => {
+            out.push(0, 1);
+            out.rank(spotify, 131)?;
+            out.rank(youtube, 66)?;
+            out.push(0, 8);
+            frame(SHORT_FULL_DUAL_PROFILE, out)
+        }
+        Some(moment) if moment <= 255 => {
+            out.push(1, 1);
+            out.rank(spotify, 131)?;
+            out.rank(youtube, 66)?;
+            out.push(u64::from(moment), 8);
+            frame(SHORT_FULL_DUAL_PROFILE, out)
+        }
+        Some(moment) => {
+            out.rank(spotify, 131)?;
+            out.rank(youtube, 66)?;
+            out.push(u64::from(moment), 16);
+            frame(LONG_FULL_DUAL_PROFILE, out)
+        }
+    }
+}
+
+fn read_full_dual(
+    header: u8,
+    bits: &mut BitReader<'_>,
+) -> Result<Content, Error> {
+    if bits.take(1)? != 1 {
+        return Err(Error::InvalidCodeword);
+    }
+    let has_short_time = if header == SHORT_FULL_DUAL_PROFILE {
+        bits.take(1)? != 0
+    } else {
+        false
+    };
+    let spotify = bits
+        .rank(131)?
+        .to_digits(SPOTIFY, 22)
+        .ok_or(Error::InvalidCodeword)?;
+    let youtube = bits
+        .rank(66)?
+        .to_digits(YOUTUBE, 11)
+        .ok_or(Error::InvalidCodeword)?;
+    let moment = if header == SHORT_FULL_DUAL_PROFILE {
+        let time = bits.take(8)? as u16;
+        if !has_short_time && time != 0 {
+            return Err(Error::InvalidCodeword);
+        }
+        has_short_time.then_some(time)
+    } else {
+        let time = bits.take(16)? as u16;
+        if time <= 255 {
+            return Err(Error::InvalidCodeword);
+        }
+        Some(time)
+    };
+    Ok(Content::Dual {
+        spotify_id: spotify,
+        youtube_music_id: youtube,
+        moment_seconds: moment,
+    })
+}
+
 
 fn packed_boundary() -> Result<[u8; 25], Error> {
     let high_spotify_count = Rank::pow(62, 22).sub(Rank::pow(2, 128));
@@ -300,6 +378,20 @@ pub(super) fn candidates(content: &Content) -> Result<Vec<Frame>, Error> {
             }
         }
     }
+    if let Content::Dual {
+        spotify_id,
+        youtube_music_id,
+        moment_seconds,
+    } = content
+    {
+        if let Some(spotify) = spotify_rank(spotify_id) {
+            if youtube_music_id.len() == 11 {
+                if let Some(youtube) = Rank::from_digits(youtube_music_id, YOUTUBE) {
+                    result.push(full_dual_frame(spotify, youtube, *moment_seconds)?);
+                }
+            }
+        }
+    }
     Ok(result)
 }
 
@@ -319,9 +411,18 @@ pub(super) fn decode(code: &Frame) -> Result<Decoded, Error> {
         17 => (Layout::Dual, 104, false),
         18 => (Layout::Dual, 112, false),
         19 => (Layout::Dual, 120, false),
+        SHORT_FULL_DUAL_PROFILE | LONG_FULL_DUAL_PROFILE => (Layout::Dual, 0, false),
         _ => return Err(Error::UnsupportedVersion),
     };
     if code.metadata == PACKED_DUAL_PROFILE && code.symbols.len() != 31 {
+        return Err(Error::InvalidLength);
+    }
+    if matches!(
+        (code.metadata, code.symbols.len()),
+        (SHORT_FULL_DUAL_PROFILE, 32) | (LONG_FULL_DUAL_PROFILE, 33)
+    ) == false
+        && matches!(code.metadata, SHORT_FULL_DUAL_PROFILE | LONG_FULL_DUAL_PROFILE)
+    {
         return Err(Error::InvalidLength);
     }
     let (corrected, corrected_symbols) = reed_solomon::decode(&code.symbols)?;
@@ -383,6 +484,9 @@ pub(super) fn decode(code: &Frame) -> Result<Decoded, Error> {
             })
         }
         PACKED_DUAL_PROFILE => unpack_packed_dual(payload)?,
+        SHORT_FULL_DUAL_PROFILE | LONG_FULL_DUAL_PROFILE => {
+            read_full_dual(code.metadata, &mut bits)?
+        },
         13..=15 | 17..=19 => {
             let spotify_id = bits
                 .rank(rank_width)?
