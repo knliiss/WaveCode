@@ -46,9 +46,9 @@ fn verify_photo(photo: &GrayImage, expected: &Content) {
 #[test]
 fn single_and_dual_read_with_camera_exposure_outside_original_128_threshold() {
     let codes = [
-        Content::Single(MusicCode::from_url(
-            "https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b",
-        ).unwrap()),
+        Content::Single(
+            MusicCode::from_url("https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b").unwrap(),
+        ),
         Content::DualLinks {
             first: MusicCode::from_url("https://www.deezer.com/track/12345?t=59").unwrap(),
             second: MusicCode::from_url("https://tidal.com/browse/track/67890?t=95").unwrap(),
