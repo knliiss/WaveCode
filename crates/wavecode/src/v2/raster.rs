@@ -389,7 +389,9 @@ fn read_frame(
     }
     let mut symbols = Vec::with_capacity(pairs.len());
     for (index, &(upper, lower)) in pairs.iter().enumerate() {
-        let left_pitch = (index > 0).then(|| (upper.u - pairs[index.saturating_sub(1)].0.u).abs());
+        let left_pitch = index
+            .checked_sub(1)
+            .map(|previous| (upper.u - pairs[previous].0.u).abs());
         let right_pitch = pairs.get(index + 1).map(|next| (next.0.u - upper.u).abs());
         let local_pitch = match (left_pitch, right_pitch) {
             (Some(left), Some(right)) => (left + right) / 2.0,
