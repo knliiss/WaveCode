@@ -10,7 +10,8 @@ use crate::Error;
 pub const LEVELS: u8 = 16;
 pub const BASE_HEIGHT_RATIO: f64 = 0.085;
 pub const HEIGHT_STEP_RATIO: f64 = 0.022;
-pub const RAIL_WIDTH_RATIO: f64 = 0.60;
+/// Shared optical width for Classic and Compact. Width never encodes bits.
+pub const RAIL_WIDTH_RATIO: f64 = 0.75;
 pub const PAYLOAD_GAP_PITCH_RATIO: f64 = 0.55;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
