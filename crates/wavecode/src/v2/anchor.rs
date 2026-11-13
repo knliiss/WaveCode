@@ -50,14 +50,14 @@ pub struct Meta {
 }
 
 fn distance_to_spine(x: f64, y: f64) -> f64 {
-    SPINE.windows(2)
+    SPINE
+        .windows(2)
         .map(|segment| {
             let (ax, ay) = segment[0];
             let (bx, by) = segment[1];
             let dx = bx - ax;
             let dy = by - ay;
-            let t = (((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy))
-                .clamp(0.0, 1.0);
+            let t = (((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy)).clamp(0.0, 1.0);
             (x - ax - t * dx).hypot(y - ay - t * dy)
         })
         .fold(f64::INFINITY, f64::min)
@@ -83,7 +83,9 @@ pub fn sites() -> Vec<DotSite> {
                 let x = ax + dx * t + side * normal_x * 1.55;
                 let y = ay + dy * t + side * normal_y * 1.55;
                 if distance_to_spine(x, y) > 0.62
-                    && contour.iter().all(|&(cx, cy)| (x - cx).hypot(y - cy) >= 0.84)
+                    && contour
+                        .iter()
+                        .all(|&(cx, cy)| (x - cx).hypot(y - cy) >= 0.84)
                 {
                     contour.push((x, y));
                 }
@@ -101,15 +103,22 @@ pub fn sites() -> Vec<DotSite> {
     let mut inside: Vec<(f64, f64)> = Vec::new();
     for (x, y) in candidates {
         if distance_to_spine(x, y) <= 0.57
-            || contour.iter().any(|&(cx, cy)| (x - cx).hypot(y - cy) <= 0.72)
-            || inside.iter().any(|&(cx, cy)| (x - cx).hypot(y - cy) <= 0.62)
+            || contour
+                .iter()
+                .any(|&(cx, cy)| (x - cx).hypot(y - cy) <= 0.72)
+            || inside
+                .iter()
+                .any(|&(cx, cy)| (x - cx).hypot(y - cy) <= 0.62)
         {
             continue;
         }
         inside.push((x, y));
     }
 
-    assert!(inside.len() >= METADATA_BITS, "W cannot hold sixty isolated interior circles");
+    assert!(
+        inside.len() >= METADATA_BITS,
+        "W cannot hold sixty isolated interior circles"
+    );
     let mut result = Vec::with_capacity(contour.len() + METADATA_BITS);
     for (x, y) in contour {
         result.push(DotSite {
@@ -153,8 +162,7 @@ fn message(version: u16, profile: u8, shape: u8) -> Result<u32, Error> {
 }
 
 fn codeword(version: u16, profile: u8, shape: u8) -> Result<u64, Error> {
-    let number = u64::from(message(version, profile, shape)?)
-        << (PARITY_BITS + RESERVED_BITS);
+    let number = u64::from(message(version, profile, shape)?) << (PARITY_BITS + RESERVED_BITS);
     Ok(number | remainder(number))
 }
 
@@ -182,9 +190,7 @@ fn visual_cost(bits: &[bool; METADATA_BITS], dots: &[DotSite]) -> i32 {
         if let Some(a) = first.bit {
             for second in dots.iter().skip(index + 1) {
                 if let Some(b) = second.bit {
-                    if (first.x - second.x).hypot(first.y - second.y) < 1.65
-                        && bits[a] == bits[b]
-                    {
+                    if (first.x - second.x).hypot(first.y - second.y) < 1.65 && bits[a] == bits[b] {
                         cost += 3;
                     }
                 }
@@ -225,7 +231,10 @@ fn syndrome_table() -> &'static SyndromeTable {
         let mut masks = HashMap::with_capacity(37_000);
         let mut small_errors = Vec::with_capacity(36_051);
         let mut register = |syndrome: u64, mask: u64| {
-            assert!(masks.insert(syndrome, mask).is_none(), "BCH 1-3-bit collision");
+            assert!(
+                masks.insert(syndrome, mask).is_none(),
+                "BCH 1-3-bit collision"
+            );
             small_errors.push((syndrome, mask));
         };
         register(0, 0);
@@ -244,7 +253,10 @@ fn syndrome_table() -> &'static SyndromeTable {
             }
         }
         assert_eq!(masks.len(), 36_051);
-        SyndromeTable { masks, small_errors }
+        SyndromeTable {
+            masks,
+            small_errors,
+        }
     })
 }
 
@@ -262,13 +274,17 @@ pub fn decode_version_profile(bits: [bool; METADATA_BITS]) -> Result<Meta, Error
     let mask = if let Some(&mask) = table.masks.get(&syndrome) {
         mask
     } else {
-        table.small_errors
+        table
+            .small_errors
             .iter()
             .find_map(|&(partial, first_mask)| {
-                table.masks.get(&(syndrome ^ partial)).and_then(|&second_mask| {
-                    let mask = first_mask ^ second_mask;
-                    (mask.count_ones() <= 6).then_some(mask)
-                })
+                table
+                    .masks
+                    .get(&(syndrome ^ partial))
+                    .and_then(|&second_mask| {
+                        let mask = first_mask ^ second_mask;
+                        (mask.count_ones() <= 6).then_some(mask)
+                    })
             })
             .ok_or(Error::Uncorrectable)?
     };
@@ -421,24 +437,34 @@ mod tests {
         for &(version, profile) in &[(0, 0), (2, 15), (2, 63), (1234, 42), (4095, 63)] {
             let clean = encode_version_profile(version, profile).unwrap();
             let decoded = decode_version_profile(clean).unwrap();
-            assert_eq!((decoded.version, decoded.profile, decoded.corrected_bits),
-                       (version, profile, 0));
+            assert_eq!(
+                (decoded.version, decoded.profile, decoded.corrected_bits),
+                (version, profile, 0)
+            );
             for bit in 0..METADATA_BITS {
                 let mut damaged = clean;
                 damaged[bit] = !damaged[bit];
                 assert_eq!(decode_version_profile(damaged).unwrap().corrected_bits, 1);
             }
             for &(a, b, c, d, e, f) in &[
-                (0, 1, 2, 3, 4, 5), (4, 12, 23, 36, 47, 59),
-                (1, 11, 21, 31, 41, 51), (3, 16, 22, 44, 48, 57),
+                (0, 1, 2, 3, 4, 5),
+                (4, 12, 23, 36, 47, 59),
+                (1, 11, 21, 31, 41, 51),
+                (3, 16, 22, 44, 48, 57),
             ] {
                 let mut damaged = clean;
                 for bit in [a, b, c, d, e, f] {
                     damaged[bit] = !damaged[bit];
                 }
                 let recovered = decode_version_profile(damaged).unwrap();
-                assert_eq!((recovered.version, recovered.profile, recovered.corrected_bits),
-                           (version, profile, 6));
+                assert_eq!(
+                    (
+                        recovered.version,
+                        recovered.profile,
+                        recovered.corrected_bits
+                    ),
+                    (version, profile, 6)
+                );
             }
         }
     }
@@ -451,7 +477,9 @@ mod tests {
         for value in &mut roots {
             *value = alpha;
             alpha <<= 1;
-            if alpha & 64 != 0 { alpha ^= 0x43; }
+            if alpha & 64 != 0 {
+                alpha ^= 0x43;
+            }
         }
         for exponent in 1..=12 {
             let x = roots[exponent];
@@ -461,12 +489,21 @@ mod tests {
                 let mut a = p;
                 let mut b = x;
                 while b != 0 {
-                    if b & 1 != 0 { product ^= a; }
+                    if b & 1 != 0 {
+                        product ^= a;
+                    }
                     b >>= 1;
                     a <<= 1;
-                    if a & 64 != 0 { a ^= 0x43; }
+                    if a & 64 != 0 {
+                        a ^= 0x43;
+                    }
                 }
-                p = product ^ if GENERATOR & (1_u64 << bit) != 0 { 1 } else { 0 };
+                p = product
+                    ^ if GENERATOR & (1_u64 << bit) != 0 {
+                        1
+                    } else {
+                        0
+                    };
             }
             assert_eq!(p, 0, "generator must vanish at root alpha^{exponent}");
         }
@@ -496,9 +533,11 @@ mod tests {
             Point { x: 290.0, y: 201.0 },
         ];
         let pose = AnchorPose::from_fiducials(expected).unwrap();
-        for (point, &(x, y)) in expected.iter().zip(&[
-            (0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)
-        ]) {
+        for (point, &(x, y)) in
+            expected
+                .iter()
+                .zip(&[(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)])
+        {
             let projected = pose.project(x, y).unwrap();
             assert!((projected.x - point.x).hypot(projected.y - point.y) < 1.0e-5);
         }

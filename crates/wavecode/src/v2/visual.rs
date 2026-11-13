@@ -259,7 +259,10 @@ mod tests {
                 .filter(|site| site.bit.is_none())
                 .count();
             assert_eq!(svg.matches("class=\"w-fixed-dot\"").count(), fixed);
-            assert_eq!(svg.matches("class=\"w-data-dot\"").count(), anchor::METADATA_BITS);
+            assert_eq!(
+                svg.matches("class=\"w-data-dot\"").count(),
+                anchor::METADATA_BITS
+            );
             assert!(!svg.contains("w-upper"));
             assert!(!svg.contains("w-lower"));
             assert!(svg.contains("data-version=\"2\""));
