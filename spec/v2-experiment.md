@@ -2,7 +2,7 @@
 
 > **Historical document only.** Its 11-pair rounded-rectangle W geometry is
 > **no longer used or accepted by the V2 optical renderer/scanner**. The
-> current V2 format is the **round-dot W with BCH(40,22), explicit 12-bit
+> current V2 format is the **fixed-contour round-dot W with BCH(60,24), explicit 12-bit
 > version and 6-bit profile** described in
 > [v2-dot-w-anchor.md](v2-dot-w-anchor.md). V1 remains untouched.
 >
