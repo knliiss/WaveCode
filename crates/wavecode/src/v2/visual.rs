@@ -50,6 +50,11 @@ pub struct Metrics {
     pub pitch: f64,
     /// Uniform scaling from the original 232-unit brand silhouette.
     pub w_pitch: f64,
+    /// Y offset for the original W coordinate system, including version extensions.
+    pub logo_y_offset: f64,
+    /// Shared optical center = midpoint of the W's original 32-unit slit.
+    pub center_y: f64,
+    pub center_gap: f64,
     pub upper_baseline: f64,
     pub lower_baseline: f64,
     pub base_height: f64,
@@ -69,21 +74,41 @@ impl RenderProfile {
             return Err(Error::InvalidGeometry);
         }
         let w_pitch = self.height * anchor::W_DOT_SCALE_RATIO;
-        // Both outward extension directions need canvas clearance.
-        let vertical_padding = anchor::VERSION_EXTENSION * w_pitch;
         let anchor_width = anchor::SHELL_WIDTH * w_pitch;
         let payload_x = self.quiet + anchor_width + self.pitch * optical::PAYLOAD_GAP_PITCH_RATIO;
         let width = payload_x + (symbols + 1) as f64 * self.pitch + self.quiet;
-        let gap = self.height * 0.060;
+
+        // The W and the data share the ORIGINAL center of the white slit
+        // (SVG y=258), never the midpoint of the black logo's bounding box.
+        let upper_inner_y = (anchor::UPPER_SLIT_Y - anchor::BRAND_ORIGIN_Y) * w_pitch;
+        let lower_inner_y = (anchor::LOWER_SLIT_Y - anchor::BRAND_ORIGIN_Y) * w_pitch;
+        let center_local = (anchor::SLIT_CENTER_Y - anchor::BRAND_ORIGIN_Y) * w_pitch;
+        let max_bar_height = optical::height_of(optical::LEVELS - 1, self.height)?;
+
+        // The payload can extend below the original logo. Derive the full
+        // canvas from BOTH geometries, plus equal outside whitespace.
+        let logo_min_y = -anchor::VERSION_EXTENSION * w_pitch;
+        let logo_max_y = (anchor::SHELL_HEIGHT + anchor::VERSION_EXTENSION) * w_pitch;
+        let min_y = logo_min_y.min(upper_inner_y - max_bar_height);
+        let max_y = logo_max_y.max(lower_inner_y + max_bar_height);
+        let vertical_margin = (self.height * 0.038).max(8.0);
+        let logo_y_offset = vertical_margin - min_y;
+        let upper_baseline = upper_inner_y + logo_y_offset;
+        let lower_baseline = lower_inner_y + logo_y_offset;
+        let center_y = center_local + logo_y_offset;
+
         Ok(Metrics {
             width,
-            height: self.height + 2.0 * vertical_padding,
+            height: max_y - min_y + 2.0 * vertical_margin,
             anchor_width,
             payload_x,
             pitch: self.pitch,
             w_pitch,
-            upper_baseline: self.height / 2.0 + vertical_padding - gap / 2.0,
-            lower_baseline: self.height / 2.0 + vertical_padding + gap / 2.0,
+            logo_y_offset,
+            center_y,
+            center_gap: lower_baseline - upper_baseline,
+            upper_baseline,
+            lower_baseline,
             base_height: self.height * optical::BASE_HEIGHT_RATIO,
             height_step: self.height * optical::HEIGHT_STEP_RATIO,
         })
@@ -126,7 +151,7 @@ fn marks(frame: &Frame, profile: RenderProfile) -> Result<(Metrics, Vec<Mark>), 
     for capsule in anchor::capsules_for_version(anchor::VERSION)? {
         result.push(Mark::Capsule(Rect {
             x: profile.quiet + capsule.x * metrics.w_pitch,
-            y: (capsule.y + anchor::VERSION_EXTENSION) * metrics.w_pitch,
+            y: capsule.y * metrics.w_pitch + metrics.logo_y_offset,
             width: capsule.width * metrics.w_pitch,
             height: capsule.height * metrics.w_pitch,
         }));
