@@ -101,8 +101,8 @@ fn dual_id_modes_never_infer_second_identity_and_preserve_seconds() {
         ("0000000000000000000000", None, 17, 27),
         ("0000000000000000000000", Some(59), 16, 31),
         ("zzzzzzzzzzzzzzzzzzzzzz", None, 16, 31),
-        ("7n42DGM5Tflk9n8mt7Fhc7", Some(255), 15, 31),
-        ("zzzzzzzzzzzzzzzzzzzzzz", Some(59), 13, 32),
+        ("7n42DGM5Tflk9n8mt7Fhc7", Some(255), 20, 32),
+        ("zzzzzzzzzzzzzzzzzzzzzz", Some(59), 20, 32),
     ] {
         short(
             Content::Dual {
@@ -125,7 +125,7 @@ fn minimum_possible_dual_visual_columns_with_fixed_rs4_and_crc16() {
         ("zzzzzzzzzzzzzzzzzzzzzz", None, 31),
         ("0000000000000000000000", Some(255), 31),
         ("7Zw3ftPZ2uDmW6wxFc2RYe", Some(255), 32),
-        ("zzzzzzzzzzzzzzzzzzzzzz", Some(255), 33),
+        ("zzzzzzzzzzzzzzzzzzzzzz", Some(255), 32),
     ];
     for (spotify_id, moment_seconds, optical_columns) in families {
         let content = Content::Dual {
@@ -219,16 +219,50 @@ fn legacy_fallback_is_bitwise_identical_for_unhandled_inputs() {
         single("https://open.spotify.com/track/0000000000000000000000?t=256"),
         single("https://www.deezer.com/track/4294967296"),
         single("https://music.apple.com/ua/song/123456"),
-        Content::Dual {
-            spotify_id: "zzzzzzzzzzzzzzzzzzzzzz".to_owned(),
-            youtube_music_id: "___________".to_owned(),
-            moment_seconds: Some(65535),
-        },
     ] {
         let legacy = v2::encode(&content).unwrap();
         let optimized = v2::encode_adaptive(&content).unwrap();
         assert_eq!(legacy, optimized, "{content:?}");
         assert_eq!(v2::decode(&optimized).unwrap().content, content);
+    }
+}
+
+#[test]
+fn full_dual_domain_uses_32_or_33_columns_without_losing_identifiers() {
+    for spotify in [
+        "0000000000000000000000",
+        "7n42DGM5Tflk9n8mt7Fhc8",
+        "zzzzzzzzzzzzzzzzzzzzzz",
+    ] {
+        for youtube in ["AAAAAAAAAAA", "JGwWNGJdvx8", "___________"] {
+            for moment in [None, Some(0), Some(255), Some(256), Some(65535)] {
+                let input = Content::Dual {
+                    spotify_id: spotify.to_owned(),
+                    youtube_music_id: youtube.to_owned(),
+                    moment_seconds: moment,
+                };
+                let frame = v2::encode_adaptive(&input).unwrap();
+                let width = v2::optical_column_count(&frame);
+                assert_eq!(v2::decode(&frame).unwrap().content, input);
+                assert!(width <= if moment.is_some_and(|time| time > 255) { 33 } else { 32 });
+                if moment.is_some_and(|time| time > 255) {
+                    assert_eq!(frame.metadata, 21);
+                    assert_eq!(width, 33);
+                }
+                if frame.metadata == 20 || frame.metadata == 21 {
+                    assert!(frame.symbols[0] & 0x80 != 0);
+                    assert_eq!(frame.symbols.len(), width);
+                    for (i, j) in [(0, 1), (2, width - 1)] {
+                        let mut damaged = frame.clone();
+                        damaged.symbols[i] ^= 0x80;
+                        damaged.symbols[j] ^= 0x5a;
+                        let decoded = v2::decode(&damaged).unwrap();
+                        assert_eq!(decoded.content, input);
+                        assert_eq!(decoded.corrected_symbols, 2);
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -280,7 +314,7 @@ fn all_opt_in_headers_keep_two_byte_error_correction() {
         assert_eq!(decoded.corrected_symbols, 2);
     }
     headers.sort_unstable();
-    assert_eq!(headers, [1, 3, 5, 7, 9, 11, 12, 13, 15, 16, 16, 17]);
+    assert_eq!(headers, [1, 3, 5, 7, 9, 11, 12, 16, 16, 17, 20, 20]);
 }
 
 #[test]
