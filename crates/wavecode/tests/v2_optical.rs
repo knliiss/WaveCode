@@ -64,6 +64,28 @@ fn rotated_with_white_space(input: &GrayImage, angle: f64) -> GrayImage {
 }
 
 #[test]
+fn classic_and_compact_render_styles_roundtrip_without_style_information() {
+    for content in samples() {
+        let frame = v2::encode_adaptive(&content).unwrap();
+        for style in [visual::RenderStyle::Classic, visual::RenderStyle::Compact] {
+            let png = visual::render_png_style(&frame, style).unwrap();
+            let recovered = raster::scan_png_or_jpeg(&png).unwrap();
+            assert_eq!(recovered.decoded.content, content);
+            assert_eq!(recovered.profile, frame.metadata);
+            assert_eq!(recovered.version, v2::anchor::VERSION);
+            let rotated = rotate180(&image::load_from_memory(&png).unwrap().to_luma8());
+            assert_eq!(raster::scan_gray(&rotated).unwrap().decoded.content, content);
+        }
+        let classic = visual::RenderStyle::Classic.profile()
+            .metrics(frame.symbols.len()).unwrap();
+        let compact = visual::RenderStyle::Compact.profile()
+            .metrics(frame.symbols.len()).unwrap();
+        assert!(compact.width < classic.width);
+        assert_eq!(classic.height, compact.height);
+    }
+}
+
+#[test]
 fn anchor_is_detected_and_payload_is_restored_at_cardinal_rotations() {
     for content in samples() {
         let picture = frame_image(&content);
