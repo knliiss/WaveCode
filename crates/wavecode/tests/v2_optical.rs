@@ -181,7 +181,10 @@ fn self_delimiting_dual_modes_scan_without_optical_header_or_layout_hints() {
         ("000SKiCQOM5vAG3pNoyji4", None, 19, 29),
         ("zzzzzzzzzzzzzzzzzzzzzz", None, 16, 31),
         ("0VjIjW4GlUZAMYd2vXMi3b", Some(59), 16, 31),
-        ("7n42DGM5Tflk9n8mt7Fhc7", Some(255), 15, 32),
+        ("7n42DGM5Tflk9n8mt7Fhc7", Some(255), 20, 32),
+        ("zzzzzzzzzzzzzzzzzzzzzz", Some(255), 20, 32),
+        ("zzzzzzzzzzzzzzzzzzzzzz", Some(256), 21, 33),
+        ("zzzzzzzzzzzzzzzzzzzzzz", Some(65535), 21, 33),
     ];
     for (spotify, moment, expected_profile, expected_columns) in scenarios {
         let content = Content::Dual {
@@ -205,6 +208,36 @@ fn self_delimiting_dual_modes_scan_without_optical_header_or_layout_hints() {
                 assert_eq!(restored.decoded.content, content);
                 assert_eq!(restored.profile, expected_profile);
                 assert_eq!(restored.version, v2::anchor::VERSION);
+            }
+        }
+    }
+}
+
+#[test]
+fn marker_disambiguates_implicit_dual_from_explicit_32_33_column_frames() {
+    let cases = [
+        Content::Dual {
+            spotify_id: "zzzzzzzzzzzzzzzzzzzzzz".into(),
+            youtube_music_id: "___________".into(),
+            moment_seconds: None,
+        },
+        Content::Dual {
+            spotify_id: "zzzzzzzzzzzzzzzzzzzzzz".into(),
+            youtube_music_id: "___________".into(),
+            moment_seconds: Some(65535),
+        },
+    ];
+    for content in cases {
+        let implicit = v2::encode_adaptive(&content).unwrap();
+        let explicit = v2::encode(&content).unwrap();
+        assert!(implicit.symbols[0] & 0x80 != 0);
+        assert!(v2::optical_column_count(&implicit) < v2::optical_column_count(&explicit));
+        for frame in [implicit, explicit] {
+            for style in [visual::RenderStyle::Compact, visual::RenderStyle::Classic] {
+                let png = visual::render_png_style(&frame, style).unwrap();
+                let read = raster::scan_png_or_jpeg(&png).unwrap();
+                assert_eq!(read.decoded.content, content);
+                assert_eq!(read.profile, frame.metadata);
             }
         }
     }
