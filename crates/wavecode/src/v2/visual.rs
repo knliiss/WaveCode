@@ -536,15 +536,15 @@ mod tests {
             for style in [RenderStyle::Classic, RenderStyle::Compact] {
                 let profile = style.profile();
                 let drawing = marks(&frame, profile).unwrap().1;
-                assert_eq!(
-                    drawing.len(),
-                    anchor::VERSION_SITES + expected * 2,
-                );
+                assert_eq!(drawing.len(), anchor::VERSION_SITES + expected * 2,);
                 let metrics = profile.metrics_for_frame(&frame).unwrap();
-                let first_bar = drawing.iter().find_map(|part| match part {
-                    Mark::Rail(rect, true) => Some(*rect),
-                    _ => None,
-                }).unwrap();
+                let first_bar = drawing
+                    .iter()
+                    .find_map(|part| match part {
+                        Mark::Rail(rect, true) => Some(*rect),
+                        _ => None,
+                    })
+                    .unwrap();
                 assert!(first_bar.x >= profile.quiet + metrics.anchor_width);
                 let svg = render_svg(&frame, profile).unwrap();
                 assert_eq!(svg.matches("class=\\\"data-upper\\\"").count(), expected);

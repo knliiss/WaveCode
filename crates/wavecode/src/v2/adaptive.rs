@@ -57,7 +57,10 @@ fn packed_high_no_time(spotify: Rank, youtube: u64) -> Result<[u8; 25], Error> {
     if spotify < minimum || spotify >= Rank::pow(62, 22) {
         return Err(Error::InvalidIdentifier);
     }
-    let offset = spotify.sub(minimum).to_bytes(17).ok_or(Error::InvalidIdentifier)?;
+    let offset = spotify
+        .sub(minimum)
+        .to_bytes(17)
+        .ok_or(Error::InvalidIdentifier)?;
     let mut output = [0_u8; 25];
     output[..17].copy_from_slice(&offset);
     output[17..].copy_from_slice(&youtube.to_be_bytes());
@@ -89,7 +92,11 @@ fn unpack_packed_dual(source: &[u8]) -> Result<Content, Error> {
         if rank >= Rank::pow(62, 22) {
             return Err(Error::InvalidCodeword);
         }
-        let video = u64::from_be_bytes(source[17..25].try_into().map_err(|_| Error::InvalidLength)?);
+        let video = u64::from_be_bytes(
+            source[17..25]
+                .try_into()
+                .map_err(|_| Error::InvalidLength)?,
+        );
         (rank, video, None)
     } else {
         let delta = subtract_ordinal(source, boundary).ok_or(Error::InvalidCodeword)?;
@@ -98,7 +105,9 @@ fn unpack_packed_dual(source: &[u8]) -> Result<Content, Error> {
         (rank, video, Some(u16::from(delta[24])))
     };
     Ok(Content::Dual {
-        spotify_id: spotify.to_digits(SPOTIFY, 22).ok_or(Error::InvalidCodeword)?,
+        spotify_id: spotify
+            .to_digits(SPOTIFY, 22)
+            .ok_or(Error::InvalidCodeword)?,
         youtube_music_id: youtube_id(youtube)?,
         moment_seconds: moment,
     })
@@ -257,7 +266,9 @@ pub(super) fn candidates(content: &Content) -> Result<Vec<Frame>, Error> {
                     }
                     Some(moment) if *moment <= 255 => {
                         if fits_128 {
-                            if let Some(value) = packed_short_moment(spotify, youtube, *moment as u8) {
+                            if let Some(value) =
+                                packed_short_moment(spotify, youtube, *moment as u8)
+                            {
                                 result.push(packed_dual_frame(value)?);
                             }
                             // A valid 32-column fallback for the ~2.72%

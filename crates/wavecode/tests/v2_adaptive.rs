@@ -134,7 +134,11 @@ fn minimum_possible_dual_visual_columns_with_fixed_rs4_and_crc16() {
             moment_seconds,
         };
         let frame = v2::encode_adaptive(&content).unwrap();
-        assert_eq!(v2::optical_column_count(&frame), optical_columns, "{content:?}");
+        assert_eq!(
+            v2::optical_column_count(&frame),
+            optical_columns,
+            "{content:?}"
+        );
         assert_eq!(v2::decode(&frame).unwrap().content, content);
     }
 }
