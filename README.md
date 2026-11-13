@@ -235,7 +235,7 @@ PNG/JPEG support is enabled by default and can be disabled for smaller integrati
 ## Experimental V2 (not released)
 
 WaveCode V2 is developed only on the `experiment/v2` branch. It has a fixed
-**round-dot W contour**, 60 smaller metadata dots and adaptive lossless
+**original 22-capsule W shell**, 60 inner metadata holes and adaptive lossless
 payload profiles. All format details, mathematical proofs, optical limitations,
 migration requirements and test commands live in **[one V2 specification](spec/v2.md)**.
 The stable V1 format and API remain unchanged; V2 is not yet merged into `main`.
@@ -248,7 +248,7 @@ cargo run -p wavecode --example v2_experiment -- scan dot-w.png
 ```
 
 The example generates `dot-w.png` and `dot-w.svg`. The GitHub Actions
-`V2 round-dot W preview` workflow also publishes optically verified examples.
+`V2 capsule-shell preview` workflow also publishes optically verified examples.
 
 ## Development
 
