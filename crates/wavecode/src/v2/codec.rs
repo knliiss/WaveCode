@@ -1,4 +1,4 @@
-//! Experimental short single-link and two-link payloads.
+//! Versioned Single and Dual payload encoding for WaveCode V2.
 //! Each GF(256) byte is represented by two 16-level optical rails;
 //! IDs are encoded losslessly without an identity database.
 use crate::identity;
@@ -325,7 +325,7 @@ pub fn encode(content: &Content) -> Result<Frame, Error> {
     encode_with_layout(content, layout)
 }
 
-/// Choose the shortest supported experimental frame, preserving a legacy V2
+/// Choose the shortest supported V2 frame, preserving its general
 /// fallback for every identifier and moment. This is opt-in: `encode` is unchanged.
 /// Metadata is normally one extra optical byte. Two V2 Dual classes are
 /// unambiguously self-delimiting by their Reed-Solomon codeword length:

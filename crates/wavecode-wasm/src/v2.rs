@@ -1,4 +1,4 @@
-//! Experimental W-anchored WaveCode V2 browser bridge.
+//! WaveCode V2 W-anchored browser and JavaScript interface.
 //! The stable V1 ABI remains unchanged; every V2 entry point is explicitly prefixed.
 use serde_json::{json, Value};
 use wasm_bindgen::prelude::*;
@@ -266,7 +266,7 @@ pub fn v2_decode_frame(metadata: u8, symbols: &[u8]) -> Result<String, JsValue> 
 }
 
 /// Return decoded URLs and the W-local orientation in image pixels.
-/// This remains an isolated-mark experimental reader, not a production finder.
+/// Reads a sufficiently isolated V2 mark; this is not a general multi-code finder.
 #[wasm_bindgen]
 pub fn v2_scan_image(image: &[u8]) -> Result<String, JsValue> {
     if image.len() > MAX_IMAGE_BYTES {
