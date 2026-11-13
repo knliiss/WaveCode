@@ -6,7 +6,7 @@ use wavecode::{v2, MusicCode, Track};
 
 use super::js_error;
 
-const MAX_URL_BYTES: usize = 4096;
+const MAX_URL_BYTES: usize = 6096;
 const MAX_IMAGE_BYTES: usize = 16 * 1024 * 1024;
 
 fn layout_name(layout: v2::Layout) -> &'static str {
@@ -22,7 +22,7 @@ fn encoded_json(frame: &v2::Frame) -> Result<String, JsValue> {
     serde_json::to_string(&json!({
         "format": "v2-dot-bch",
         "version": v2::anchor::VERSION,
-        "anchor": "round-dot-w-bch40",
+        "anchor": "round-dot-w-bch60",
         "layout": layout_name(decoded.layout),
         "metadata": frame.metadata,
         "symbols": &frame.symbols,
@@ -53,7 +53,7 @@ fn decoded_value(decoded: &v2::Decoded) -> Result<Value, wavecode::Error> {
     Ok(json!({
         "format": "v2-dot-bch",
         "version": v2::anchor::VERSION,
-        "anchor": "round-dot-w-bch40",
+        "anchor": "round-dot-w-bch60",
         "layout": layout_name(decoded.layout),
         "urls": urls,
         "corrected_symbols": decoded.corrected_symbols,
