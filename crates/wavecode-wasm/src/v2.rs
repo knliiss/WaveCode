@@ -189,6 +189,56 @@ pub fn v2_render_png_with_spacing(
     .map_err(js_error)
 }
 
+/// Independently size W while retaining the exact payload scale and gaps.
+/// Height units are output pixels; no scale parameter enters frame metadata.
+#[wasm_bindgen]
+pub fn v2_render_svg_with_geometry(
+    metadata: u8,
+    symbols: &[u8],
+    pitch: f64,
+    payload_height: f64,
+    quiet: f64,
+    payload_center_gap: f64,
+    logo_payload_gap: f64,
+    logo_height: f64,
+) -> Result<String, JsValue> {
+    let frame = verified_frame(metadata, symbols)?;
+    v2::visual::render_svg_with_spacing_and_logo_height(
+        &frame,
+        profile(pitch, payload_height, quiet),
+        v2::visual::VisualSpacing {
+            payload_center_gap,
+            logo_payload_gap,
+        },
+        logo_height,
+    )
+    .map_err(js_error)
+}
+
+#[wasm_bindgen]
+pub fn v2_render_png_with_geometry(
+    metadata: u8,
+    symbols: &[u8],
+    pitch: f64,
+    payload_height: f64,
+    quiet: f64,
+    payload_center_gap: f64,
+    logo_payload_gap: f64,
+    logo_height: f64,
+) -> Result<Vec<u8>, JsValue> {
+    let frame = verified_frame(metadata, symbols)?;
+    v2::visual::render_png_with_spacing_and_logo_height(
+        &frame,
+        profile(pitch, payload_height, quiet),
+        v2::visual::VisualSpacing {
+            payload_center_gap,
+            logo_payload_gap,
+        },
+        logo_height,
+    )
+    .map_err(js_error)
+}
+
 /// Render a named visual style without storing style data in the encoded frame.
 #[wasm_bindgen]
 pub fn v2_render_svg_style(metadata: u8, symbols: &[u8], style: &str) -> Result<String, JsValue> {
