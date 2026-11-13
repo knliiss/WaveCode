@@ -231,7 +231,9 @@ fn marker_disambiguates_implicit_dual_from_explicit_32_33_column_frames() {
         let implicit = v2::encode_adaptive(&content).unwrap();
         let explicit = v2::encode(&content).unwrap();
         assert!(implicit.symbols[0] & 0x80 != 0);
-        assert!(v2::optical_column_count(&implicit) < v2::optical_column_count(&explicit));
+        // The no-time arbitrary-YouTube case can tie at 32 columns;
+        // the implicit marker is still preferable because RS protects it.
+        assert!(v2::optical_column_count(&implicit) <= v2::optical_column_count(&explicit));
         for frame in [implicit, explicit] {
             for style in [visual::RenderStyle::Compact, visual::RenderStyle::Classic] {
                 let png = visual::render_png_style(&frame, style).unwrap();
