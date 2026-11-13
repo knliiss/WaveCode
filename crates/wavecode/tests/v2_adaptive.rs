@@ -220,7 +220,7 @@ fn all_twelve_micro_dual_lengths_are_lossless_and_correct_two_errors() {
             }
             let rank_bits = 8 * columns - 114 - usize::from(seconds.is_some()) * 8;
             let max_rank = (1_u128 << rank_bits) - 1;
-            for spotify_rank in [0, max_rank] {
+            for spotify_rank in [max_rank / 2 + 1, max_rank] {
                 let input = Content::Dual {
                     spotify_id: spotify_22_from_u128(spotify_rank),
                     youtube_music_id: "__________8".into(),
