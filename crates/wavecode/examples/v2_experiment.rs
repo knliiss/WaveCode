@@ -67,21 +67,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             visual::render_svg_with_spacing(&frame, profile, spacing)?,
         )?;
         let geometry = profile.metrics_with_spacing_for_frame(&frame, spacing)?;
+        let visible_columns = v2::optical_column_count(&frame);
         println!(
-            "Experimental V2: {} payload columns + mandatory W, total {:.0} × {:.0}px",
-            frame.symbols.len() + 1,
-            geometry.width,
-            geometry.height
+            "Experimental V2: {} optical columns + W, total {:.0} × {:.0}px",
+            visible_columns, geometry.width, geometry.height
         );
         println!("Version-only W: {} (12-bit BCH field)", v2::anchor::VERSION);
-        println!("First optical payload column: profile {}", frame.metadata);
+        let routing = if visible_columns == frame.symbols.len() {
+            "implicit (RS-protected marker or column count)"
+        } else {
+            "explicit first optical payload column"
+        };
+        println!("Routing profile: {} ({routing})", frame.metadata);
         println!(
             "Visual gaps: payload center {:.1}px; W-to-payload {:.1}px",
             spacing.payload_center_gap, spacing.logo_payload_gap
         );
         println!(
-            "Payload columns saved against original V2: {}",
-            original.symbols.len() - frame.symbols.len()
+            "Optical columns saved vs nonadaptive V2: {}",
+            v2::optical_column_count(&original) - visible_columns
         );
         println!("PNG: {target}\nSVG: {}", svg_file.display());
         Ok(())
