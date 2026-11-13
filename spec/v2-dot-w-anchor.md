@@ -16,7 +16,7 @@ Generate internal candidates between the boundaries on the offset rails **P(s) �
 
 Shift the normalized sites by (2.0,1.2) into a **20.0 × 12.5** bounding coordinate frame. The image scale is **height × 0.055** pixels per normalized unit. The payload begins to the right of the W's reserved width, with a quiet gap. This geometry is shared by the SVG/PNG writers and the scanner.
 
-The forbidden white channel is the constant tube around the complete W spine. Even the largest dynamic dot cannot enter the tube of half-width **0.32** normalized units, and no immutable contour dot enters it. Variable radii cannot modify the outside silhouette because all variable centers lie strictly inward from the fixed-boundary centers with clearance. The central upper crest, both lower valleys, and their adjacent negative spaces are therefore fixed features.
+The forbidden white channel is the constant tube around the complete W spine. The measured geometric clearance from the spine to every circle edge is **at least 0.30 normalized units** for fixed contour circles and **at least 0.35** for inner variable circles. Thus the center-line negative space is independent of all metadata. Variable radii cannot modify the outside silhouette because all variable centers lie strictly inward from the fixed-boundary centers with clearance. The central upper crest, both lower valleys, and their adjacent negative spaces are fixed features. The current deterministic grid resolves to **57 fixed contour circles plus 60 variable inner circles**, 117 in the W overall.
 
 ## Encoded bits
 
