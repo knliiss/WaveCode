@@ -176,7 +176,9 @@ fn perspective_reader_does_not_require_fixed_payload_gaps() {
 #[test]
 fn self_delimiting_dual_modes_scan_without_optical_header_or_layout_hints() {
     let scenarios = [
-        ("0000000000000000000000", None, 14, 30),
+        ("0000000000000000000000", None, 17, 27),
+        ("00006rS8oxBA9U5pIjyIaG", None, 18, 28),
+        ("000SKiCQOM5vAG3pNoyji4", None, 19, 29),
         ("zzzzzzzzzzzzzzzzzzzzzz", None, 16, 31),
         ("0VjIjW4GlUZAMYd2vXMi3b", Some(59), 16, 31),
         ("7n42DGM5Tflk9n8mt7Fhc7", Some(255), 15, 32),
