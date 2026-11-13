@@ -406,7 +406,7 @@ mod tests {
     #[test]
     fn w_contour_gap_and_sixty_inner_sites_are_invariant() {
         let dots = sites();
-        assert!(dots.len() >= 105);
+        assert_eq!(dots.len(), 117, "V2 optical geometry must be version-stable");
         assert_eq!(
             dots.iter().filter(|dot| dot.bit.is_some()).count(),
             METADATA_BITS
@@ -417,18 +417,39 @@ mod tests {
 
         let fixed: Vec<_> = dots.iter().filter(|dot| dot.bit.is_none()).collect();
         let inner: Vec<_> = dots.iter().filter(|dot| dot.bit.is_some()).collect();
-        assert!(fixed.len() >= 45);
+        assert_eq!(fixed.len(), 57, "all fixed contour sites must remain unchanged");
         for dot in &inner {
             let dist = distance_to_spine(dot.x - 2.0, dot.y - 1.2);
-            assert!(dist - DOT_LARGE_RADIUS >= 0.32, "central gap violated");
+            assert!(dist - DOT_LARGE_RADIUS >= 0.35, "central gap violated");
             assert!(fixed.iter().all(|outer| {
                 (dot.x - outer.x).hypot(dot.y - outer.y)
                     > DOT_FIXED_RADIUS + DOT_LARGE_RADIUS + 0.04
             }));
         }
-        for dot in fixed {
+        for dot in &fixed {
             let dist = distance_to_spine(dot.x - 2.0, dot.y - 1.2);
-            assert!(dist - DOT_FIXED_RADIUS >= 0.29);
+            assert!(dist - DOT_FIXED_RADIUS >= 0.30);
+        }
+        // No two discs may merge, even when every metadata dot is at its
+        // maximum size. Contour and central negative space must be immutable.
+        for (i, first) in dots.iter().enumerate() {
+            for second in dots.iter().skip(i + 1) {
+                let first_radius = if first.bit.is_some() {
+                    DOT_LARGE_RADIUS
+                } else {
+                    DOT_FIXED_RADIUS
+                };
+                let second_radius = if second.bit.is_some() {
+                    DOT_LARGE_RADIUS
+                } else {
+                    DOT_FIXED_RADIUS
+                };
+                assert!(
+                    (first.x - second.x).hypot(first.y - second.y)
+                        > first_radius + second_radius + 0.10,
+                    "W dots collide at positions {i} and another site"
+                );
+            }
         }
     }
 
