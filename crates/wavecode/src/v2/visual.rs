@@ -223,6 +223,7 @@ fn marks(frame: &Frame, profile: RenderProfile) -> Result<(Metrics, Vec<Mark>), 
     marks_with_spacing(frame, profile, VisualSpacing::for_profile(profile))
 }
 
+#[cfg(test)]
 fn marks_with_spacing(
     frame: &Frame,
     profile: RenderProfile,
