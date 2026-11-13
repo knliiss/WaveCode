@@ -25,15 +25,6 @@ const PARITY_BITS: usize = 33;
 const RESERVED_BITS: usize = 3;
 const CODEWORD_MASK: u64 = (1_u64 << METADATA_BITS) - 1;
 
-const SPINE: [(f64, f64); 5] = [
-    (0.0, 0.0),
-    (4.0, 10.0),
-    (8.0, 1.6),
-    (12.0, 10.0),
-    (16.0, 0.0),
-];
-const INNER_COUNTS: [usize; 4] = [11, 10, 10, 11];
-
 #[derive(Clone, Copy, Debug)]
 pub struct DotSite {
     pub x: f64,
