@@ -1,27 +1,38 @@
-//! WaveCode V2 round-dot W-anchor. No legacy rectangular W rails are emitted.
-//! An immutable thick W outline and 40 inner round sites carry metadata-only
-//! BCH(40,22,>=7): 12-bit version, 6-bit profile, 4-bit aesthetic selector.
+//! V2 W finder: fully fixed circular contour and sixty smaller variable dots.
+//! Twelve version bits, six profile bits, six aesthetic bits and BCH(60,24,d>=13).
+//! The W never encodes any track identity.
 use crate::Error;
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
 pub const VERSION: u16 = 2;
-pub const METADATA_BITS: usize = 40;
+pub const METADATA_BITS: usize = 60;
 pub const VERSION_BITS: usize = 12;
 pub const PROFILE_BITS: usize = 6;
-pub const SHAPE_BITS: usize = 4;
-pub const W_X_MAX: f64 = 18.0;
-pub const W_Y_MAX: f64 = 10.5;
+pub const SHAPE_BITS: usize = 6;
+pub const W_X_MAX: f64 = 20.0;
+pub const W_Y_MAX: f64 = 12.5;
 pub const W_DOT_SCALE_RATIO: f64 = 0.055;
-pub const DOT_SMALL_RADIUS: f64 = 0.30;
-pub const DOT_LARGE_RADIUS: f64 = 0.45;
-pub const DOT_FIXED_RADIUS: f64 = 0.38;
+pub const DOT_SMALL_RADIUS: f64 = 0.165;
+pub const DOT_LARGE_RADIUS: f64 = 0.235;
+pub const DOT_FIXED_RADIUS: f64 = 0.32;
 
-// BCH generator: x^18+x^17+x^16+x^15+x^9+x^7+x^6+x^3+x^2+x+1.
-// Minimal factors are 0x43, 0x57 and 0x67 over GF(64) (x^6+x+1).
-const GENERATOR: u64 = 0x782cf;
-const PARITY_BITS: usize = 18;
+// BCH(63,30,d>=13) with primitive field x^6+x+1, roots alpha^1..alpha^12.
+// After shortening by three and freezing three more message bits to zero,
+// the resulting (60,24,d>=13) subcode still corrects six unknown bit errors.
+const GENERATOR: u64 = 0x37cd0eb67;
+const PARITY_BITS: usize = 33;
+const RESERVED_BITS: usize = 3;
 const CODEWORD_MASK: u64 = (1_u64 << METADATA_BITS) - 1;
+
+const SPINE: [(f64, f64); 5] = [
+    (0.0, 0.0),
+    (4.0, 10.0),
+    (8.0, 1.6),
+    (12.0, 10.0),
+    (16.0, 0.0),
+];
+const INNER_COUNTS: [usize; 4] = [11, 10, 10, 11];
 
 #[derive(Clone, Copy, Debug)]
 pub struct DotSite {
@@ -38,62 +49,95 @@ pub struct Meta {
     pub corrected_bits: u8,
 }
 
-/// A geometrically thick W using staggered rows. All circle centers remain
-/// fixed regardless of metadata. Information sites sit on the stroke interior.
+fn distance_to_spine(x: f64, y: f64) -> f64 {
+    SPINE.windows(2)
+        .map(|segment| {
+            let (ax, ay) = segment[0];
+            let (bx, by) = segment[1];
+            let dx = bx - ax;
+            let dy = by - ay;
+            let t = (((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy))
+                .clamp(0.0, 1.0);
+            (x - ax - t * dx).hypot(y - ay - t * dy)
+        })
+        .fold(f64::INFINITY, f64::min)
+}
+
+/// The W silhouette and the spine's white channel are immutable.
+/// Static circles trace both stroke boundaries. All sixty coding dots
+/// are strictly inside the boundaries and smaller than contour circles.
+/// Absolute centers are fixed; only interior radii carry metadata.
 pub fn sites() -> Vec<DotSite> {
-    const PATH: [(f64, f64); 5] = [
-        (0.0, 0.0),
-        (4.0, 10.0),
-        (8.0, 1.6),
-        (12.0, 10.0),
-        (16.0, 0.0),
-    ];
-    let mut dots = Vec::new();
-    let mut scores = Vec::new();
-    for row in 0..11 {
-        for column in 0..15 {
-            let x = f64::from(column) * 1.2 + f64::from(row % 2) * 0.6;
-            let y = f64::from(row) * 1.05;
-            let distance = PATH
-                .windows(2)
-                .map(|segment| {
-                    let (ax, ay) = segment[0];
-                    let (bx, by) = segment[1];
-                    let dx = bx - ax;
-                    let dy = by - ay;
-                    let projected =
-                        (((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy)).clamp(0.0, 1.0);
-                    (x - ax - projected * dx).hypot(y - ay - projected * dy)
-                })
-                .fold(f64::INFINITY, f64::min);
-            if distance <= 1.3 {
-                let index = dots.len();
-                dots.push(DotSite { x, y, bit: None });
-                if (1.0..=15.0).contains(&x) && (0.3..9.5).contains(&y) {
-                    scores.push((distance, (x - 8.0).abs(), index));
+    let mut contour: Vec<(f64, f64)> = Vec::new();
+    let mut candidates: Vec<(f64, f64)> = Vec::new();
+    for (arm, segment) in SPINE.windows(2).enumerate() {
+        let (ax, ay) = segment[0];
+        let (bx, by) = segment[1];
+        let dx = bx - ax;
+        let dy = by - ay;
+        let length = dx.hypot(dy);
+        let (normal_x, normal_y) = (-dy / length, dx / length);
+        for side in [-1.0_f64, 1.0] {
+            for index in 0..17 {
+                let t = f64::from(index) / 16.0;
+                let x = ax + dx * t + side * normal_x * 1.55;
+                let y = ay + dy * t + side * normal_y * 1.55;
+                if distance_to_spine(x, y) > 0.62
+                    && contour.iter().all(|&(cx, cy)| (x - cx).hypot(y - cy) >= 0.68)
+                {
+                    contour.push((x, y));
                 }
+            }
+            let count = INNER_COUNTS[arm];
+            for index in 0..count {
+                let t = (index as f64 + 0.5) / count as f64;
+                let x = ax + dx * t + side * normal_x * 0.78;
+                let y = ay + dy * t + side * normal_y * 0.78;
+                candidates.push((x, y));
             }
         }
     }
-    scores.sort_by(|a, b| {
-        a.0.total_cmp(&b.0)
-            .then_with(|| a.1.total_cmp(&b.1))
-            .then_with(|| a.2.cmp(&b.2))
-    });
-    assert!(scores.len() >= METADATA_BITS, "not enough inner W sites");
-    // Deliberately disperse consecutive code bits across the four arms.
-    for (bit, (_, _, index)) in scores.into_iter().take(METADATA_BITS).enumerate() {
-        dots[index].bit = Some((bit * 17) % METADATA_BITS);
+
+    let mut inside: Vec<(f64, f64)> = Vec::new();
+    for (x, y) in candidates {
+        if distance_to_spine(x, y) <= 0.57
+            || contour.iter().any(|&(cx, cy)| (x - cx).hypot(y - cy) <= 0.61)
+            || inside.iter().any(|&(cx, cy)| (x - cx).hypot(y - cy) <= 0.48)
+        {
+            continue;
+        }
+        inside.push((x, y));
     }
-    dots
+
+    assert!(inside.len() >= METADATA_BITS, "W cannot hold sixty isolated interior circles");
+    let mut result = Vec::with_capacity(contour.len() + METADATA_BITS);
+    for (x, y) in contour {
+        result.push(DotSite {
+            x: x + 2.0,
+            y: y + 1.2,
+            bit: None,
+        });
+    }
+    for position in 0..METADATA_BITS {
+        // Evenly select 60 of the candidates across the entire W, never
+        // truncating the last arm. 17 is coprime with 60.
+        let index = position * inside.len() / METADATA_BITS;
+        let (x, y) = inside[index];
+        result.push(DotSite {
+            x: x + 2.0,
+            y: y + 1.2,
+            bit: Some((position * 17) % METADATA_BITS),
+        });
+    }
+    result
 }
 
-fn remainder(mut polynomial: u64) -> u32 {
+fn remainder(mut polynomial: u64) -> u64 {
     while polynomial >= (1_u64 << PARITY_BITS) {
         let shift = 63_usize - polynomial.leading_zeros() as usize - PARITY_BITS;
         polynomial ^= GENERATOR << shift;
     }
-    polynomial as u32
+    polynomial
 }
 
 fn message(version: u16, profile: u8, shape: u8) -> Result<u32, Error> {
@@ -109,107 +153,135 @@ fn message(version: u16, profile: u8, shape: u8) -> Result<u32, Error> {
 }
 
 fn codeword(version: u16, profile: u8, shape: u8) -> Result<u64, Error> {
-    let number = u64::from(message(version, profile, shape)?) << PARITY_BITS;
-    Ok(number | u64::from(remainder(number)))
+    let number = u64::from(message(version, profile, shape)?)
+        << (PARITY_BITS + RESERVED_BITS);
+    Ok(number | remainder(number))
 }
 
 fn code_bits(word: u64) -> [bool; METADATA_BITS] {
-    std::array::from_fn(|i| word & (1_u64 << (METADATA_BITS - 1 - i)) != 0)
+    std::array::from_fn(|index| word & (1_u64 << (METADATA_BITS - index - 1)) != 0)
 }
 
 fn visual_cost(bits: &[bool; METADATA_BITS], dots: &[DotSite]) -> i32 {
-    let mut count = [0_i32; 4];
-    let mut score = 0_i32;
-    for site in dots {
-        if let Some(bit) = site.bit {
+    let mut large_by_arm = [0_i32; 4];
+    let mut used_by_arm = [0_i32; 4];
+    let mut cost = 0_i32;
+    for dot in dots {
+        if let Some(bit) = dot.bit {
+            let arm = ((dot.x - 2.0) / 4.0).floor().clamp(0.0, 3.0) as usize;
+            used_by_arm[arm] += 1;
             if bits[bit] {
-                count[(site.x / 4.5).floor().clamp(0.0, 3.0) as usize] += 1;
+                large_by_arm[arm] += 1;
             }
         }
     }
-    for count in count {
-        score += (count - 5).abs() * 7;
+    for (total, large) in used_by_arm.into_iter().zip(large_by_arm) {
+        cost += (large * 2 - total).abs() * 6;
     }
-    for (i, a) in dots.iter().enumerate() {
-        for b in dots.iter().skip(i + 1) {
-            if let (Some(bit_a), Some(bit_b)) = (a.bit, b.bit) {
-                if (a.x - b.x).hypot(a.y - b.y) < 1.5 && bits[bit_a] == bits[bit_b] {
-                    score += 2;
+    for (index, first) in dots.iter().enumerate() {
+        if let Some(a) = first.bit {
+            for second in dots.iter().skip(index + 1) {
+                if let Some(b) = second.bit {
+                    if (first.x - second.x).hypot(first.y - second.y) < 1.65
+                        && bits[a] == bits[b]
+                    {
+                        cost += 3;
+                    }
                 }
             }
         }
     }
-    score
+    cost
 }
 
-/// Exactly 12 version bits, 6 profile bits and 4 freely chosen visual bits.
-/// The 16 valid aesthetic alternatives all decode to the same routing metadata.
+/// All 64 BCH-valid aesthetic alternatives represent the same routing bits.
 pub fn encode_version_profile(version: u16, profile: u8) -> Result<[bool; METADATA_BITS], Error> {
     let dots = sites();
-    let mut best = None;
-    for shape in 0..16_u8 {
+    let mut best: Option<(i32, [bool; METADATA_BITS])> = None;
+    for shape in 0..64_u8 {
         let bits = code_bits(codeword(version, profile, shape)?);
         let cost = visual_cost(&bits, &dots);
-        if best.is_none_or(|(old_cost, _)| cost < old_cost) {
+        if best.as_ref().is_none_or(|(previous, _)| cost < *previous) {
             best = Some((cost, bits));
         }
     }
     Ok(best.ok_or(Error::InvalidCodeword)?.1)
 }
 
-/// Emit only V2, with the exact version stored in the BCH-protected W.
 pub fn encode_meta(profile: u8) -> Result<[bool; METADATA_BITS], Error> {
     encode_version_profile(VERSION, profile)
 }
 
-fn syndrome_table() -> &'static HashMap<u32, (u64, u8)> {
-    static TABLE: OnceLock<HashMap<u32, (u64, u8)>> = OnceLock::new();
+struct SyndromeTable {
+    masks: HashMap<u64, u64>,
+    small_errors: Vec<(u64, u64)>,
+}
+
+fn syndrome_table() -> &'static SyndromeTable {
+    static TABLE: OnceLock<SyndromeTable> = OnceLock::new();
     TABLE.get_or_init(|| {
-        let signatures: [u32; METADATA_BITS] =
-            std::array::from_fn(|i| remainder(1_u64 << (METADATA_BITS - 1 - i)));
-        let mut result = HashMap::with_capacity(11_000);
-        for i in 0..METADATA_BITS {
-            result.insert(signatures[i], (1_u64 << (METADATA_BITS - 1 - i), 1));
-            for j in (i + 1)..METADATA_BITS {
-                let pair = signatures[i] ^ signatures[j];
-                let pair_mask =
-                    (1_u64 << (METADATA_BITS - 1 - i)) | (1_u64 << (METADATA_BITS - 1 - j));
-                result.insert(pair, (pair_mask, 2));
-                for (k, &signature) in signatures.iter().enumerate().skip(j + 1) {
-                    let triple = pair ^ signature;
-                    let triple_mask = pair_mask | (1_u64 << (METADATA_BITS - 1 - k));
-                    result.insert(triple, (triple_mask, 3));
+        let signatures: [u64; METADATA_BITS] =
+            std::array::from_fn(|i| remainder(1_u64 << (METADATA_BITS - i - 1)));
+        let mut masks = HashMap::with_capacity(37_000);
+        let mut small_errors = Vec::with_capacity(36_051);
+        let mut register = |syndrome: u64, mask: u64| {
+            assert!(masks.insert(syndrome, mask).is_none(), "BCH 1-3-bit collision");
+            small_errors.push((syndrome, mask));
+        };
+        register(0, 0);
+        for (a, &single) in signatures.iter().enumerate() {
+            let mask_a = 1_u64 << (METADATA_BITS - a - 1);
+            register(single, mask_a);
+            for (b, &second) in signatures.iter().enumerate().skip(a + 1) {
+                let mask_b = mask_a | (1_u64 << (METADATA_BITS - b - 1));
+                register(single ^ second, mask_b);
+                for (c, &third) in signatures.iter().enumerate().skip(b + 1) {
+                    register(
+                        single ^ second ^ third,
+                        mask_b | (1_u64 << (METADATA_BITS - c - 1)),
+                    );
                 }
             }
         }
-        assert_eq!(result.len(), 10_700, "BCH error patterns collided");
-        result
+        assert_eq!(masks.len(), 36_051);
+        SyndromeTable { masks, small_errors }
     })
 }
 
+/// Meet-in-the-middle six-error correction: split any <=6 bit-error
+/// pattern into two subsets of size <=3. Their syndromes XOR to the
+/// observed syndrome. Distinct solutions of weight <=6 cannot exist
+/// because the BCH code has minimum Hamming distance at least 13.
 pub fn decode_version_profile(bits: [bool; METADATA_BITS]) -> Result<Meta, Error> {
     let mut word = 0_u64;
     for bit in bits {
         word = (word << 1) | u64::from(bit);
     }
     let syndrome = remainder(word);
-    let (mask, corrected_bits) = if syndrome == 0 {
-        (0, 0)
+    let table = syndrome_table();
+    let mask = if let Some(&mask) = table.masks.get(&syndrome) {
+        mask
     } else {
-        *syndrome_table()
-            .get(&syndrome)
+        table.small_errors
+            .iter()
+            .find_map(|&(partial, first_mask)| {
+                table.masks.get(&(syndrome ^ partial)).and_then(|&second_mask| {
+                    let mask = first_mask ^ second_mask;
+                    (mask.count_ones() <= 6).then_some(mask)
+                })
+            })
             .ok_or(Error::Uncorrectable)?
     };
-    let repaired = (word ^ mask) & CODEWORD_MASK;
-    if remainder(repaired) != 0 {
+    let recovered = (word ^ mask) & CODEWORD_MASK;
+    if remainder(recovered) != 0 || ((recovered >> PARITY_BITS) & 7) != 0 {
         return Err(Error::Uncorrectable);
     }
-    let data = repaired >> PARITY_BITS;
+    let information = recovered >> (PARITY_BITS + RESERVED_BITS);
     Ok(Meta {
-        version: (data >> (PROFILE_BITS + SHAPE_BITS)) as u16,
-        profile: ((data >> SHAPE_BITS) & 63) as u8,
-        shape: (data & 15) as u8,
-        corrected_bits,
+        version: (information >> (PROFILE_BITS + SHAPE_BITS)) as u16,
+        profile: ((information >> SHAPE_BITS) & 63) as u8,
+        shape: (information & 63) as u8,
+        corrected_bits: mask.count_ones() as u8,
     })
 }
 
@@ -316,87 +388,107 @@ mod tests {
     use super::*;
 
     #[test]
-    fn bch_all_three_bit_flips_repair_correct_version_and_profile() {
-        let samples = [(2, 0), (2, 15), (2, 63), (17, 7), (4095, 63)];
-        for (version, profile) in samples {
-            let encoded = encode_version_profile(version, profile).unwrap();
-            let plain = decode_version_profile(encoded).unwrap();
-            assert_eq!((plain.version, plain.profile), (version, profile));
-            assert_eq!(plain.corrected_bits, 0);
-            for a in 0..METADATA_BITS {
-                let mut single = encoded;
-                single[a] = !single[a];
-                assert_eq!(decode_version_profile(single).unwrap().corrected_bits, 1);
-                for b in a + 1..METADATA_BITS {
-                    let mut double = single;
-                    double[b] = !double[b];
-                    let meta = decode_version_profile(double).unwrap();
-                    assert_eq!(
-                        (meta.version, meta.profile, meta.corrected_bits),
-                        (version, profile, 2)
-                    );
-                }
-            }
+    fn w_contour_gap_and_sixty_inner_sites_are_invariant() {
+        let dots = sites();
+        assert!(dots.len() >= 105);
+        assert_eq!(
+            dots.iter().filter(|dot| dot.bit.is_some()).count(),
+            METADATA_BITS
+        );
+        let mut order: Vec<_> = dots.iter().filter_map(|dot| dot.bit).collect();
+        order.sort_unstable();
+        assert_eq!(order, (0..METADATA_BITS).collect::<Vec<_>>());
+
+        let fixed: Vec<_> = dots.iter().filter(|dot| dot.bit.is_none()).collect();
+        let inner: Vec<_> = dots.iter().filter(|dot| dot.bit.is_some()).collect();
+        assert!(fixed.len() >= 45);
+        for dot in &inner {
+            let dist = distance_to_spine(dot.x - 2.0, dot.y - 1.2);
+            assert!(dist - DOT_LARGE_RADIUS >= 0.32, "central gap violated");
+            assert!(fixed.iter().all(|outer| {
+                (dot.x - outer.x).hypot(dot.y - outer.y)
+                    > DOT_FIXED_RADIUS + DOT_LARGE_RADIUS + 0.04
+            }));
         }
-        let encoded = encode_meta(41).unwrap();
-        for a in 0..METADATA_BITS {
-            for b in a + 1..METADATA_BITS {
-                for c in b + 1..METADATA_BITS {
-                    let mut damaged = encoded;
-                    damaged[a] = !damaged[a];
-                    damaged[b] = !damaged[b];
-                    damaged[c] = !damaged[c];
-                    let restored = decode_version_profile(damaged).unwrap();
-                    assert_eq!(
-                        (restored.version, restored.profile, restored.corrected_bits),
-                        (VERSION, 41, 3)
-                    );
+        for dot in fixed {
+            let dist = distance_to_spine(dot.x - 2.0, dot.y - 1.2);
+            assert!(dist - DOT_FIXED_RADIUS >= 0.29);
+        }
+    }
+
+    #[test]
+    fn six_corrupt_bits_are_algebraically_corrected() {
+        for &(version, profile) in &[(0, 0), (2, 15), (2, 63), (1234, 42), (4095, 63)] {
+            let clean = encode_version_profile(version, profile).unwrap();
+            let decoded = decode_version_profile(clean).unwrap();
+            assert_eq!((decoded.version, decoded.profile, decoded.corrected_bits),
+                       (version, profile, 0));
+            for bit in 0..METADATA_BITS {
+                let mut damaged = clean;
+                damaged[bit] = !damaged[bit];
+                assert_eq!(decode_version_profile(damaged).unwrap().corrected_bits, 1);
+            }
+            for &(a, b, c, d, e, f) in &[
+                (0, 1, 2, 3, 4, 5), (4, 12, 23, 36, 47, 59),
+                (1, 11, 21, 31, 41, 51), (3, 16, 22, 44, 48, 57),
+            ] {
+                let mut damaged = clean;
+                for bit in [a, b, c, d, e, f] {
+                    damaged[bit] = !damaged[bit];
                 }
+                let recovered = decode_version_profile(damaged).unwrap();
+                assert_eq!((recovered.version, recovered.profile, recovered.corrected_bits),
+                           (version, profile, 6));
             }
         }
     }
 
     #[test]
-    fn version_is_explicit_not_inferred_from_payload_geometry() {
-        for version in [0, 1, 2, 3, 255, 1024, 4095] {
-            let bits = encode_version_profile(version, 63).unwrap();
-            let meta = decode_version_profile(bits).unwrap();
-            assert_eq!((meta.version, meta.profile), (version, 63));
-            assert_eq!(decode_meta(bits).is_ok(), version == VERSION);
+    fn bch_generator_has_all_required_roots() {
+        // Check the six GF(64) cyclotomic cosets needed for roots 1..12.
+        let mut alpha = 1_u8;
+        let mut roots = [0_u8; 63];
+        for value in &mut roots {
+            *value = alpha;
+            alpha <<= 1;
+            if alpha & 64 != 0 { alpha ^= 0x43; }
+        }
+        for exponent in 1..=12 {
+            let x = roots[exponent];
+            let mut p = 0_u8;
+            for bit in (0..=PARITY_BITS).rev() {
+                let mut product = 0_u8;
+                let mut a = p;
+                let mut b = x;
+                while b != 0 {
+                    if b & 1 != 0 { product ^= a; }
+                    b >>= 1;
+                    a <<= 1;
+                    if a & 64 != 0 { a ^= 0x43; }
+                }
+                p = product ^ if GENERATOR & (1_u64 << bit) != 0 { 1 } else { 0 };
+            }
+            assert_eq!(p, 0, "generator must vanish at root alpha^{exponent}");
+        }
+        assert_eq!(GENERATOR >> PARITY_BITS, 1);
+    }
+
+    #[test]
+    fn every_profile_keeps_version_and_selects_aesthetically_valid_code() {
+        let dots = sites();
+        for profile in 0..64_u8 {
+            let bits = encode_meta(profile).unwrap();
+            let recovered = decode_version_profile(bits).unwrap();
+            assert_eq!((recovered.version, recovered.profile), (VERSION, profile));
+            let base = code_bits(codeword(VERSION, profile, 0).unwrap());
+            assert!(visual_cost(&bits, &dots) <= visual_cost(&base, &dots));
         }
         assert!(encode_version_profile(4096, 0).is_err());
         assert!(encode_version_profile(2, 64).is_err());
     }
 
     #[test]
-    fn dot_layout_has_fixed_contour_and_exactly_40_information_sites() {
-        let dots = sites();
-        assert!(dots.len() >= 70);
-        assert_eq!(
-            dots.iter().filter(|dot| dot.bit.is_some()).count(),
-            METADATA_BITS
-        );
-        let mut indexes = dots.iter().filter_map(|dot| dot.bit).collect::<Vec<_>>();
-        indexes.sort_unstable();
-        assert_eq!(indexes, (0..METADATA_BITS).collect::<Vec<_>>());
-        assert!(dots.iter().filter(|dot| dot.bit.is_none()).count() >= 24);
-    }
-
-    #[test]
-    fn four_aesthetic_bits_never_change_routing() {
-        for profile in 0..64 {
-            let selected = encode_meta(profile).unwrap();
-            let answer = decode_version_profile(selected).unwrap();
-            assert_eq!((answer.version, answer.profile), (VERSION, profile));
-            let dots = sites();
-            let best_cost = visual_cost(&selected, &dots);
-            let base = code_bits(codeword(VERSION, profile, 0).unwrap());
-            assert!(best_cost <= visual_cost(&base, &dots));
-        }
-    }
-
-    #[test]
-    fn pose_from_w_fiducials_recovers_projective_coordinates() {
+    fn pose_recovers_projected_coordinates() {
         let expected = [
             Point { x: 180.0, y: 70.0 },
             Point { x: 280.0, y: 88.0 },
@@ -404,11 +496,9 @@ mod tests {
             Point { x: 290.0, y: 201.0 },
         ];
         let pose = AnchorPose::from_fiducials(expected).unwrap();
-        for (point, &(x, y)) in
-            expected
-                .iter()
-                .zip(&[(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)])
-        {
+        for (point, &(x, y)) in expected.iter().zip(&[
+            (0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)
+        ]) {
             let projected = pose.project(x, y).unwrap();
             assert!((projected.x - point.x).hypot(projected.y - point.y) < 1.0e-5);
         }
