@@ -255,6 +255,41 @@ fn frame(header: u8, payload: BitWriter) -> Result<Frame, Error> {
     })
 }
 
+// A length-specific Dual mode for an unusually small Spotify rank.
+// The first bit marks a protected implicit header, the second bit
+// distinguishes no timestamp from a complete 8-bit timestamp.
+// For N columns the remaining capacity is 8N-48-2-64 = 8N-114
+// Spotify bits (no time), or 8N-122 (with an 8-bit timestamp).
+// N=15..26 consumes exactly N optical columns with CRC16+RS4.
+fn small_dual_frame(
+    spotify: Rank,
+    youtube: u64,
+    moment: Option<u16>,
+) -> Result<Option<Frame>, Error> {
+    if moment.is_some_and(|value| value > 255) {
+        return Ok(None);
+    }
+    for columns in 15_usize..=26 {
+        if moment.is_some() && columns == 15 {
+            continue;
+        }
+        let bits = 8 * columns - 114 - usize::from(moment.is_some()) * 8;
+        if spotify >= Rank::pow(2, bits) {
+            continue;
+        }
+        let mut writer = BitWriter::default();
+        writer.push(1, 1);
+        writer.push(u64::from(moment.is_some()), 1);
+        writer.rank(spotify, bits)?;
+        writer.push(youtube, 64);
+        if let Some(seconds) = moment {
+            writer.push(u64::from(seconds), 8);
+        }
+        return Ok(Some(frame((columns + 7) as u8, writer)?));
+    }
+    Ok(None)
+}
+
 pub(super) fn candidates(content: &Content) -> Result<Vec<Frame>, Error> {
     let mut result = Vec::new();
     match content {
@@ -335,6 +370,9 @@ pub(super) fn candidates(content: &Content) -> Result<Vec<Frame>, Error> {
             if let (Some(spotify), Some(youtube)) =
                 (spotify_rank(spotify_id), youtube_rank(youtube_music_id))
             {
+                if let Some(short) = small_dual_frame(spotify, youtube, *moment_seconds)? {
+                    result.push(short);
+                }
                 let fits_128 = spotify < Rank::pow(2, 128);
                 if moment_seconds.is_none() {
                     for (width, profile) in [(104_usize, 17_u8), (112, 18), (120, 19)] {
@@ -421,9 +459,15 @@ pub(super) fn decode(code: &Frame) -> Result<Decoded, Error> {
         18 => (Layout::Dual, 112, false),
         19 => (Layout::Dual, 120, false),
         SHORT_FULL_DUAL_PROFILE | LONG_FULL_DUAL_PROFILE => (Layout::Dual, 0, false),
+        22..=33 => (Layout::Dual, 0, false),
         _ => return Err(Error::UnsupportedVersion),
     };
     if code.metadata == PACKED_DUAL_PROFILE && code.symbols.len() != 31 {
+        return Err(Error::InvalidLength);
+    }
+    if (22..=33).contains(&code.metadata)
+        && code.symbols.len() != usize::from(code.metadata) - 7
+    {
         return Err(Error::InvalidLength);
     }
     if matches!(
@@ -494,6 +538,32 @@ pub(super) fn decode(code: &Frame) -> Result<Decoded, Error> {
             })
         }
         PACKED_DUAL_PROFILE => unpack_packed_dual(payload)?,
+        22..=33 => {
+            if bits.take(1)? != 1 {
+                return Err(Error::InvalidCodeword);
+            }
+            let with_moment = bits.take(1)? != 0;
+            let columns = usize::from(code.metadata) - 7;
+            if with_moment && columns == 15 {
+                return Err(Error::InvalidCodeword);
+            }
+            let width = 8 * columns - 114 - usize::from(with_moment) * 8;
+            let spotify_id = bits
+                .rank(width)?
+                .to_digits(SPOTIFY, 22)
+                .ok_or(Error::InvalidCodeword)?;
+            let youtube_music_id = youtube_id(bits.take(64)?)?;
+            let moment_seconds = if with_moment {
+                Some(bits.take(8)? as u16)
+            } else {
+                None
+            };
+            Content::Dual {
+                spotify_id,
+                youtube_music_id,
+                moment_seconds,
+            }
+        },
         SHORT_FULL_DUAL_PROFILE | LONG_FULL_DUAL_PROFILE => {
             read_full_dual(code.metadata, &mut bits)?
         }
