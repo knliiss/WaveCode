@@ -151,6 +151,29 @@ fn arbitrary_gaps_remain_scanable_when_rotated_and_inverted() {
 }
 
 #[test]
+fn perspective_reader_does_not_require_fixed_payload_gaps() {
+    let sample = samples()[0].clone();
+    let frame = v2::encode_adaptive(&sample).unwrap();
+    for (middle_gap, logo_gap) in [(6.0, 260.0), (90.0, 4.0)] {
+        let png = visual::render_png_with_spacing(
+            &frame,
+            visual::RenderStyle::Classic.profile(),
+            visual::VisualSpacing {
+                payload_center_gap: middle_gap,
+                logo_payload_gap: logo_gap,
+            },
+        )
+        .unwrap();
+        let image = image::load_from_memory(&png).unwrap().to_luma8();
+        for factor in [0.06, -0.06] {
+            let perspective = keystone(&image, factor);
+            let decoded = raster::scan_gray(&perspective).unwrap();
+            assert_eq!(decoded.decoded.content, sample);
+        }
+    }
+}
+
+#[test]
 fn anchor_is_detected_and_payload_is_restored_at_cardinal_rotations() {
     for content in samples() {
         let picture = frame_image(&content);
