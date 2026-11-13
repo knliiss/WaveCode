@@ -11,9 +11,9 @@ const PARITY: usize = reed_solomon::PARITY_SYMBOLS;
 
 // There are 62^22 Base62 IDs. The 128-bit subset plus a canonical
 // 64-bit YouTube ID already fills the 30-column optical class exactly.
-// The 31-column class has 200 information bits (27 data bytes including
-// CRC16, and four RS parity bytes). Fill its first range with every
-// high-Spotify/no-time pair; use the remaining range for short-time pairs.
+// The 31-column class has 200 information bits. Its first contiguous
+// range now covers EVERY no-time Spotify22 + YouTube66 pair, not just
+// canonical YouTube IDs. Remaining ordinals carry short-time pairs.
 // This is a bijective enumerative encoding, not a music-ID dictionary.
 pub(super) const PACKED_DUAL_PROFILE: u8 = 16;
 const SHORT_FULL_DUAL_PROFILE: u8 = 20;
@@ -164,28 +164,35 @@ fn packed_dual_frame(data: [u8; 25]) -> Result<Frame, Error> {
 fn unpack_packed_dual(source: &[u8]) -> Result<Content, Error> {
     let source: [u8; 25] = source.try_into().map_err(|_| Error::InvalidLength)?;
     let boundary = packed_boundary()?;
-    let (spotify, youtube, moment) = if source < boundary {
-        let rank = Rank::from_bytes(&source[..17]).add(Rank::pow(2, 128));
-        if rank >= Rank::pow(62, 22) {
+    let (spotify, youtube_music_id, moment) = if source < boundary {
+        let mut spotify_bytes = [0_u8; 17];
+        let mut carry = 0_u8;
+        for (index, byte) in source[..17].iter().copied().enumerate() {
+            spotify_bytes[index] = (byte >> 2) | carry;
+            carry = byte << 6;
+        }
+        let spotify = Rank::from_bytes(&spotify_bytes);
+        if spotify >= Rank::pow(62, 22) {
             return Err(Error::InvalidCodeword);
         }
-        let video = u64::from_be_bytes(
-            source[17..25]
-                .try_into()
-                .map_err(|_| Error::InvalidLength)?,
-        );
-        (rank, video, None)
+        let mut youtube_bytes = [0_u8; 9];
+        youtube_bytes[0] = source[16] & 3;
+        youtube_bytes[1..].copy_from_slice(&source[17..25]);
+        let youtube = Rank::from_bytes(&youtube_bytes)
+            .to_digits(YOUTUBE, 11)
+            .ok_or(Error::InvalidCodeword)?;
+        (spotify, youtube, None)
     } else {
         let delta = subtract_ordinal(source, boundary).ok_or(Error::InvalidCodeword)?;
-        let rank = Rank::from_bytes(&delta[..16]);
-        let video = u64::from_be_bytes(delta[16..24].try_into().map_err(|_| Error::InvalidLength)?);
-        (rank, video, Some(u16::from(delta[24])))
+        let spotify = Rank::from_bytes(&delta[..16]);
+        let video = u64::from_be_bytes(
+            delta[16..24].try_into().map_err(|_| Error::InvalidLength)?
+        );
+        (spotify, youtube_id(video)?, Some(u16::from(delta[24])))
     };
     Ok(Content::Dual {
-        spotify_id: spotify
-            .to_digits(SPOTIFY, 22)
-            .ok_or(Error::InvalidCodeword)?,
-        youtube_music_id: youtube_id(youtube)?,
+        spotify_id: spotify.to_digits(SPOTIFY, 22).ok_or(Error::InvalidCodeword)?,
+        youtube_music_id,
         moment_seconds: moment,
     })
 }
@@ -347,9 +354,8 @@ pub(super) fn candidates(content: &Content) -> Result<Vec<Frame>, Error> {
                         result.push(frame(14, out)?);
                     }
                     None => {
-                        // Every 22-character Base62 ID above 2^128 is
-                        // represented exactly in the 31-column class.
-                        result.push(packed_dual_frame(packed_high_no_time(spotify, youtube)?)?);
+                        // The full no-time mixed-radix class is added below,
+                        // including every noncanonical 66-bit YouTube ID.
                     }
                     Some(moment) if *moment <= 255 => {
                         if fits_128 {
@@ -386,6 +392,9 @@ pub(super) fn candidates(content: &Content) -> Result<Vec<Frame>, Error> {
         if let Some(spotify) = spotify_rank(spotify_id) {
             if youtube_music_id.len() == 11 {
                 if let Some(youtube) = Rank::from_digits(youtube_music_id, YOUTUBE) {
+                    if moment_seconds.is_none() {
+                        result.push(packed_dual_frame(full_no_time_ordinal(spotify, youtube)?)?);
+                    }
                     result.push(full_dual_frame(spotify, youtube, *moment_seconds)?);
                 }
             }
