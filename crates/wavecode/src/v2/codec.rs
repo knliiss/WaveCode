@@ -326,12 +326,25 @@ pub fn implicit_dual_profile(optical_columns: usize) -> Option<u8> {
     }
 }
 
-/// In 32/33-column Dual frames, an RS-protected high bit marks the
-/// self-contained source profile. Regular explicit profile symbols are <64,
-/// so their on-wire first symbol is disjoint from this marker.
+/// Profile 22..33: 15..26 visible Dual columns for unusually small
+/// Spotify ranks with canonical YouTube IDs. Their first protected source
+/// bit is one, disjoint from any existing explicit metadata byte (<64).
+/// The next bit distinguishes no moment (0) and an 8-bit moment (1).
+/// The CRC includes the implicit profile, and RS protects the marker.
+pub fn marked_dual_profile(columns: usize) -> Option<u8> {
+    match columns {
+        15..=26 => Some((columns + 7) as u8),
+        32 => Some(20),
+        33 => Some(21),
+        _ => None,
+    }
+}
+
+/// The metadata header is omitted only when the protected marker or exact
+/// column count determines the mode; styling, W spacing and colors don't.
 pub fn implicit_dual_profile_for_frame(frame: &Frame) -> bool {
     implicit_dual_profile(frame.symbols.len()) == Some(frame.metadata)
-        || matches!((frame.symbols.len(), frame.metadata), (32, 20) | (33, 21))
+        || marked_dual_profile(frame.symbols.len()) == Some(frame.metadata)
 }
 
 pub fn optical_column_count(frame: &Frame) -> usize {
