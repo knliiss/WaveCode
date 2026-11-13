@@ -235,8 +235,10 @@ PNG/JPEG support is enabled by default and can be disabled for smaller integrati
 ## Experimental V2 (not released)
 
 WaveCode V2 is developed only on the `experiment/v2` branch. It has a fixed
-**original 22-capsule W shell**, 60 inner metadata holes and adaptive lossless
-payload profiles. All format details, mathematical proofs, optical limitations,
+**original 22-capsule W shell** with only the protected 12-bit version in
+its subtly varied capsule lengths. There are **no microscopic holes**: the
+routing profile is an extra optical symbol at the beginning of the payload,
+followed by adaptive lossless content. All format details, mathematical proofs, optical limitations,
 migration requirements and test commands live in **[one V2 specification](spec/v2.md)**.
 The stable V1 format and API remain unchanged; V2 is not yet merged into `main`.
 
