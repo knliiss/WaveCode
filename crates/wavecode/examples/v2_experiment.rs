@@ -66,7 +66,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &svg_file,
             visual::render_svg_with_spacing(&frame, profile, spacing)?,
         )?;
-        let geometry = profile.metrics_with_spacing(frame.symbols.len(), spacing)?;
+        let geometry = profile.metrics_with_spacing_for_frame(&frame, spacing)?;
         println!(
             "Experimental V2: {} payload columns + mandatory W, total {:.0} × {:.0}px",
             frame.symbols.len() + 1,
