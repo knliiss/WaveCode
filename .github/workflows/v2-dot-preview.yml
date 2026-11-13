@@ -1,4 +1,4 @@
-name: V2 round-dot W preview
+name: V2 capsule-shell preview
 
 on:
   workflow_dispatch:
@@ -40,7 +40,7 @@ jobs:
           done
       - uses: actions/upload-artifact@v4
         with:
-          name: wavecode-v2-round-dot-previews
+          name: wavecode-v2-capsule-shell-previews
           path: previews/
           if-no-files-found: error
           retention-days: 30
