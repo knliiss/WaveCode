@@ -11,5 +11,6 @@ pub mod raster;
 pub mod visual;
 
 pub use codec::{
-    decode, encode, encode_adaptive, encode_with_layout, Content, Decoded, Frame, Layout,
+    decode, encode, encode_adaptive, encode_with_layout, optical_column_count, Content, Decoded,
+    Frame, Layout,
 };
