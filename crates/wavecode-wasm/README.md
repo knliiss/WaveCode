@@ -33,7 +33,7 @@ The public JS functions match their equivalents in `include/wavecode.h`.
 
 V1 exports above remain unchanged. The V2 functions are opt-in and are **not yet
 production camera-scanning APIs**. Every new V2 frame contains the W locator on
-the left; it carries routing metadata only. Track identities remain fully in
+the left; it carries only the exact optical version. Track identities remain fully in
 the CRC/RS-protected payload.
 
 ```js
@@ -62,7 +62,7 @@ const decoded = JSON.parse(v2_scan_image(png));
 
 console.log(frame.layout); // compact
 console.log(frame.version); // 2, stored explicitly as 12 BCH-protected W bits
-console.log(frame.anchor); // capsule-shell-60-holes-bch60
+console.log(frame.anchor); // capsule-version-bch22
 console.log(decoded.urls); // original music URL
 console.log(decoded.anchor.towards_payload); // image-space direction
 console.log(decoded.anchor.corners); // four corners of fitted W coordinate frame
@@ -79,7 +79,8 @@ console.log(recovered.urls); // both independent platform URLs
 
 The original `v2_render_svg` and `v2_render_png` arguments are **pitch, height, and quiet zone in pixels**. Named presets `classic` and `compact` instead use `v2_render_svg_style` / `v2_render_png_style`; these do **not** re-encode the payload or write the style into a frame.
 
-V2 payload bars now have **one constant width** and **16 possible heights on each rail** (256 one-byte symbols). The byte mapping is shared between styles and the image reader never needs a style name to decode. The W shape and its 60 protected microholes are unchanged. `Classic` and `Compact` have the same nominal height; Compact uses narrower column spacing and a smaller quiet margin. Height-level resolution is slightly reduced relative to the previous unreleased 3-bit-height + width-bit experimental format, so phone-camera reliability still requires testing.
+V2 payload bars have **one constant width** and **16 possible heights per rail** (256 one-byte symbols). The W has **22 solid capsules with small outward length variations** encoding ONLY the 12-bit version (BCH(22,12,d>=5)); there are no tiny holes. The original 32-unit central channel remains unchanged. A separate **first optical payload column** carries the routing profile (currently modes 0..15). The CRC includes that profile; the RS parity currently protects subsequent identity payload and CRC, but NOT the independent profile column. Classic and Compact differ only in spacing and quiet margin. Real camera and printed dimensions need validation.
+
 The encoder uses the shortest available safe adaptive V2 payload mode and returns a JSON object with `format`, `version`, `anchor`, `layout`, `metadata`, and
 `symbols`; the symbols must be passed as a `Uint8Array`. The scanner returns
 JSON with `format`, `version`, `metadata`, `anchor_corrected_bits`, `layout`, `urls`, `corrected_symbols`, `bounds`, and
@@ -93,8 +94,4 @@ low-resolution printing need more experiments. **Do not replace the V1
 production scanner with V2 automatically.** V2 functions and JSON objects are
 experimental and may change before the optical format is frozen.
 
-The **W preserves all 22 original rounded capsules** as an immutable optical finder. Exactly 60 small transparent holes inside their black strokes carry BCH routing metadata. Their centers stay fixed; only the hole radii change. The original 32-unit central channel is unchanged. The BCH-protected metadata is exactly 12-bit version (`2` in V2),
-6-bit adaptive payload profile, and 6-bit visual-choice selector. Legacy
-rectangular V2 W anchors are intentionally not recognized by the V2 image
-scanner. This does not affect V1. The source-only V2 profile fallback still
-supports arbitrary platform IDs and long timestamps with the original capsule-shell W.
+The W identifies optical pose and contains only the BCH-protected version. It never carries a platform, timecode, music identity, or style. The obsolete 60-microhole V2 prototypes are not supported by this current experimental scanner. Stable V1 is unchanged. See the single authoritative [V2 specification](../../spec/v2.md).
