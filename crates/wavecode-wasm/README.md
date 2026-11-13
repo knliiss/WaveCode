@@ -15,8 +15,8 @@ import init, { encode_url, decode_symbols, render_svg, render_png, scan_image, s
 
 await init();
 const symbols = encode_url('https://music.youtube.com/watch?v=dQw4w9WgXcQ&t=59');
-const svg = render_svg(symbols, 960, 240);
-const pngBytes = render_png(symbols, 960, 240);
+const svg = render_svg(symbols, 960, 260);
+const pngBytes = render_png(symbols, 960, 260);
 console.log(decode_symbols(symbols));
 console.log(scan_image(pngBytes));
 console.log(JSON.parse(scan_all(pngBytes)));
@@ -57,7 +57,7 @@ const decoded = JSON.parse(v2_scan_image(png));
 
 console.log(frame.layout); // compact
 console.log(frame.version); // 2, stored explicitly as 12 BCH-protected W bits
-console.log(frame.anchor); // round-dot-w-bch40
+console.log(frame.anchor); // round-dot-w-bch60
 console.log(decoded.urls); // original music URL
 console.log(decoded.anchor.towards_payload); // image-space direction
 console.log(decoded.anchor.corners); // four corners of fitted W coordinate frame
@@ -87,9 +87,9 @@ production scanner with V2 automatically.** V2 functions and JSON objects are
 experimental and may change before the optical format is frozen.
 
 The **W itself contains no rectangles or capsules**: its fixed outer circular
-mosaic and 40 variable-size interior circles form the finder and routing
+mosaic and 60 smaller variable-size interior circles form the finder and routing
 header. The BCH-protected metadata is exactly 12-bit version (`2` in V2),
-6-bit adaptive payload profile, and 4-bit visual-choice selector. Legacy
+6-bit adaptive payload profile, and 6-bit visual-choice selector. Legacy
 rectangular V2 W anchors are intentionally not recognized by the V2 image
 scanner. This does not affect V1. The source-only V2 profile fallback still
 supports arbitrary platform IDs and long timestamps with the new round-dot W.
