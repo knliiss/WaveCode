@@ -1,6 +1,6 @@
 //! V2 reader for the BCH-protected, round-dot W locator. The former
 //! eleven-pair rectangular anchor is deliberately not recognized here.
-//! First identify the thick circular W; it determines orientation, scale
+//! First identify the fixed circular W contour; it determines orientation, scale
 //! and a CRC-protected metadata profile before decoding the payload rails.
 use image::{GrayImage, RgbImage};
 
@@ -182,7 +182,7 @@ fn dot_cluster(components: &[Component]) -> Result<Vec<&Component>, Error> {
     // Dot centers form one connected geometric cluster. Ignore detached
     // specks instead of stretching the W bounds to unrelated marks.
     let median_diameter = (median_area / std::f64::consts::PI).sqrt() * 2.0;
-    let link_radius = 2.25 * median_diameter;
+    let link_radius = 3.5 * median_diameter;
     let mut seen = vec![false; candidates.len()];
     let mut largest = Vec::new();
     for start in 0..candidates.len() {
@@ -333,7 +333,9 @@ fn read_frame(
     for (site, observed) in sites.iter().zip(&fit.site_parts) {
         if let Some(index) = site.bit {
             if let Some(part) = observed {
-                bits[index] = part.area() > fixed_area * 1.17;
+                let small_area = (anchor::DOT_SMALL_RADIUS / anchor::DOT_FIXED_RADIUS).powi(2);
+                let large_area = (anchor::DOT_LARGE_RADIUS / anchor::DOT_FIXED_RADIUS).powi(2);
+                bits[index] = part.area() > fixed_area * (small_area + large_area) / 2.0;
             }
         }
     }
