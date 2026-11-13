@@ -1,53 +1,31 @@
-//! V2 W finder: original 22-capsule brand silhouette with 60 interior holes.
-//! Twelve version bits, six profile bits, six aesthetic bits and BCH(60,24,d>=13).
-//! The W never encodes any track identity.
+//! V2 finder: the 22 original WaveCode capsules encode only the exact
+//! 12-bit optical format version through subtle outward length extensions.
+//! Their horizontal centers, widths, baseline and central white channel
+//! remain invariant. The 6-bit payload profile is NOT encoded in the W.
+//!
+//! BCH(22,12,d>=5), shortened from BCH(31,21,5), corrects up to two
+//! misclassified capsule lengths without microscopic holes or cutouts.
 use crate::Error;
-use std::collections::HashMap;
-use std::sync::OnceLock;
 
 pub const VERSION: u16 = 2;
-pub const METADATA_BITS: usize = 60;
 pub const VERSION_BITS: usize = 12;
-pub const PROFILE_BITS: usize = 6;
-pub const SHAPE_BITS: usize = 6;
+pub const VERSION_SITES: usize = 22;
+pub const VERSION_EXTENSION: f64 = 5.0;
 pub const W_X_MAX: f64 = 360.0;
 pub const W_Y_MAX: f64 = 232.0;
 pub const W_DOT_SCALE_RATIO: f64 = 1.0 / 232.0;
-pub const DOT_SMALL_RADIUS: f64 = 1.5;
-pub const DOT_LARGE_RADIUS: f64 = 2.4;
-pub const DOT_FIXED_RADIUS: f64 = 10.0;
-
-// BCH(63,30,d>=13) with primitive field x^6+x+1, roots alpha^1..alpha^12.
-// After shortening by three and freezing three more message bits to zero,
-// the resulting (60,24,d>=13) subcode still corrects six unknown bit errors.
-const GENERATOR: u64 = 0x37cd0eb67;
-const PARITY_BITS: usize = 33;
-const RESERVED_BITS: usize = 3;
-const CODEWORD_MASK: u64 = (1_u64 << METADATA_BITS) - 1;
-
-#[derive(Clone, Copy, Debug)]
-pub struct DotSite {
-    pub x: f64,
-    pub y: f64,
-    pub bit: Option<usize>,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Meta {
-    pub version: u16,
-    pub profile: u8,
-    pub shape: u8,
-    pub corrected_bits: u8,
-}
-
-/// Dimensions of the exact original WaveCode brand shell, excluding its
-/// surrounding 512x512 artwork whitespace.
 pub const SHELL_WIDTH: f64 = 360.0;
 pub const SHELL_HEIGHT: f64 = 232.0;
 pub const CAPSULE_WIDTH: f64 = 20.0;
 pub const CAPSULE_RADIUS: f64 = 10.0;
 pub const BRAND_ORIGIN_X: f64 = 76.0;
 pub const BRAND_ORIGIN_Y: f64 = 129.0;
+
+// Binary BCH(31,21,5) with GF(32) primitive polynomial x^5+x^2+1.
+// Generator: (x^5+x^2+1)(x^5+x^4+x^3+x^2+1) = 0x769.
+// Shortening nine information bits gives (22,12,d>=5).
+const BCH_GENERATOR: u32 = 0x769;
+const CHECK_BITS: usize = 10;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Capsule {
@@ -67,38 +45,8 @@ const LOWER_HEIGHT: [f64; 11] = [
     30.0, 50.0, 70.0, 87.0, 59.0, 31.0, 56.0, 85.0, 66.0, 47.0, 29.0,
 ];
 
-// All 60 centers use the coordinate system of the original 512x512 brand SVG.
-// They are distributed across all 22 capsules. No hole may alter the capsule
-// envelope or the 32-unit white channel between y=242 and y=274.
-const UPPER_HOLES: [&[f64]; 11] = [
-    &[166.0, 180.0, 208.0, 222.0],
-    &[182.5, 210.5, 224.5],
-    &[211.0, 225.0],
-    &[223.5],
-    &[186.0, 214.0, 228.0],
-    &[143.5, 157.5, 171.5, 199.5, 213.5, 227.5],
-    &[186.0, 214.0, 228.0],
-    &[225.0],
-    &[208.5, 222.5],
-    &[183.0, 211.0, 225.0],
-    &[158.0, 172.0, 186.0, 214.0, 228.0],
-];
-const LOWER_HOLES: [&[f64]; 11] = [
-    &[289.0],
-    &[292.0, 306.0],
-    &[288.0, 316.0, 330.0],
-    &[289.5, 303.5, 331.5, 345.5],
-    &[289.5, 303.5, 317.5],
-    &[289.5],
-    &[288.0, 302.0, 316.0],
-    &[288.5, 302.5, 330.5, 344.5],
-    &[293.0, 307.0, 321.0],
-    &[290.5, 304.5],
-    &[288.5],
-];
-
-/// Upper/lower capsule geometry is exactly the original brand mark.
-pub fn capsules() -> [Capsule; 22] {
+/// The original brand mark: unchanged outer profiles for optical reference.
+pub fn capsules() -> [Capsule; VERSION_SITES] {
     std::array::from_fn(|index| {
         let col = index % 11;
         let upper = index < 11;
@@ -119,194 +67,80 @@ pub fn capsules() -> [Capsule; 22] {
     })
 }
 
-/// BCH bit sites are fixed-center transparent holes within the original 22
-/// opaque brand capsules. Bit 0 and bit 1 are different hole *radii*.
-/// Indices are assigned by column, upper before lower, ascending Y.
-/// The coprime stride interleaves the bits across the entire logo.
-pub fn sites() -> Vec<DotSite> {
-    let mut dots = Vec::with_capacity(METADATA_BITS);
-    for col in 0..11 {
-        for holes in [UPPER_HOLES[col], LOWER_HOLES[col]] {
-            for &svg_y in holes {
-                let ordinal = dots.len();
-                dots.push(DotSite {
-                    x: col as f64 * 34.0 + 10.0,
-                    y: svg_y - BRAND_ORIGIN_Y,
-                    bit: Some((ordinal * 17) % METADATA_BITS),
-                });
-            }
-        }
+fn remainder(mut polynomial: u32) -> u16 {
+    while polynomial >= (1 << CHECK_BITS) {
+        let shift = 31 - polynomial.leading_zeros() as usize - CHECK_BITS;
+        polynomial ^= BCH_GENERATOR << shift;
     }
-    assert_eq!(dots.len(), METADATA_BITS, "invalid W hole allocation");
-    dots
+    polynomial as u16
 }
 
-fn remainder(mut polynomial: u64) -> u64 {
-    while polynomial >= (1_u64 << PARITY_BITS) {
-        let shift = 63_usize - polynomial.leading_zeros() as usize - PARITY_BITS;
-        polynomial ^= GENERATOR << shift;
-    }
-    polynomial
-}
-
-fn message(version: u16, profile: u8, shape: u8) -> Result<u32, Error> {
-    if version >= (1 << VERSION_BITS)
-        || profile >= (1 << PROFILE_BITS)
-        || shape >= (1 << SHAPE_BITS)
-    {
-        return Err(Error::InvalidCodeword);
-    }
-    Ok((u32::from(version) << (PROFILE_BITS + SHAPE_BITS))
-        | (u32::from(profile) << SHAPE_BITS)
-        | u32::from(shape))
-}
-
-fn codeword(version: u16, profile: u8, shape: u8) -> Result<u64, Error> {
-    let number = u64::from(message(version, profile, shape)?) << (PARITY_BITS + RESERVED_BITS);
-    Ok(number | remainder(number))
-}
-
-fn code_bits(word: u64) -> [bool; METADATA_BITS] {
-    std::array::from_fn(|index| word & (1_u64 << (METADATA_BITS - index - 1)) != 0)
-}
-
-fn visual_cost(bits: &[bool; METADATA_BITS], dots: &[DotSite]) -> i32 {
-    let mut large_by_arm = [0_i32; 4];
-    let mut used_by_arm = [0_i32; 4];
-    let mut cost = 0_i32;
-    for dot in dots {
-        if let Some(bit) = dot.bit {
-            let arm = ((dot.x - 10.0) / 85.0).floor().clamp(0.0, 3.0) as usize;
-            used_by_arm[arm] += 1;
-            if bits[bit] {
-                large_by_arm[arm] += 1;
-            }
-        }
-    }
-    for (total, large) in used_by_arm.into_iter().zip(large_by_arm) {
-        cost += (large * 2 - total).abs() * 6;
-    }
-    for (index, first) in dots.iter().enumerate() {
-        if let Some(a) = first.bit {
-            for second in dots.iter().skip(index + 1) {
-                if let Some(b) = second.bit {
-                    if (first.x - second.x).hypot(first.y - second.y) < 1.65 && bits[a] == bits[b] {
-                        cost += 3;
-                    }
-                }
-            }
-        }
-    }
-    cost
-}
-
-/// All 64 BCH-valid aesthetic alternatives represent the same routing bits.
-pub fn encode_version_profile(version: u16, profile: u8) -> Result<[bool; METADATA_BITS], Error> {
-    let dots = sites();
-    let mut best: Option<(i32, [bool; METADATA_BITS])> = None;
-    for shape in 0..64_u8 {
-        let bits = code_bits(codeword(version, profile, shape)?);
-        let cost = visual_cost(&bits, &dots);
-        if best.as_ref().is_none_or(|(previous, _)| cost < *previous) {
-            best = Some((cost, bits));
-        }
-    }
-    Ok(best.ok_or(Error::InvalidCodeword)?.1)
-}
-
-pub fn encode_meta(profile: u8) -> Result<[bool; METADATA_BITS], Error> {
-    encode_version_profile(VERSION, profile)
-}
-
-struct SyndromeTable {
-    masks: HashMap<u64, u64>,
-    small_errors: Vec<(u64, u64)>,
-}
-
-fn syndrome_table() -> &'static SyndromeTable {
-    static TABLE: OnceLock<SyndromeTable> = OnceLock::new();
-    TABLE.get_or_init(|| {
-        let signatures: [u64; METADATA_BITS] =
-            std::array::from_fn(|i| remainder(1_u64 << (METADATA_BITS - i - 1)));
-        let mut masks = HashMap::with_capacity(37_000);
-        let mut small_errors = Vec::with_capacity(36_051);
-        let mut register = |syndrome: u64, mask: u64| {
-            assert!(
-                masks.insert(syndrome, mask).is_none(),
-                "BCH 1-3-bit collision"
-            );
-            small_errors.push((syndrome, mask));
-        };
-        register(0, 0);
-        for (a, &single) in signatures.iter().enumerate() {
-            let mask_a = 1_u64 << (METADATA_BITS - a - 1);
-            register(single, mask_a);
-            for (b, &second) in signatures.iter().enumerate().skip(a + 1) {
-                let mask_b = mask_a | (1_u64 << (METADATA_BITS - b - 1));
-                register(single ^ second, mask_b);
-                for (c, &third) in signatures.iter().enumerate().skip(b + 1) {
-                    register(
-                        single ^ second ^ third,
-                        mask_b | (1_u64 << (METADATA_BITS - c - 1)),
-                    );
-                }
-            }
-        }
-        assert_eq!(masks.len(), 36_051);
-        SyndromeTable {
-            masks,
-            small_errors,
-        }
-    })
-}
-
-/// Meet-in-the-middle six-error correction: split any <=6 bit-error
-/// pattern into two subsets of size <=3. Their syndromes XOR to the
-/// observed syndrome. Distinct solutions of weight <=6 cannot exist
-/// because the BCH code has minimum Hamming distance at least 13.
-pub fn decode_version_profile(bits: [bool; METADATA_BITS]) -> Result<Meta, Error> {
-    let mut word = 0_u64;
-    for bit in bits {
-        word = (word << 1) | u64::from(bit);
-    }
-    let syndrome = remainder(word);
-    let table = syndrome_table();
-    let mask = if let Some(&mask) = table.masks.get(&syndrome) {
-        mask
-    } else {
-        table
-            .small_errors
-            .iter()
-            .find_map(|&(partial, first_mask)| {
-                table
-                    .masks
-                    .get(&(syndrome ^ partial))
-                    .and_then(|&second_mask| {
-                        let mask = first_mask ^ second_mask;
-                        (mask.count_ones() <= 6).then_some(mask)
-                    })
-            })
-            .ok_or(Error::Uncorrectable)?
-    };
-    let recovered = (word ^ mask) & CODEWORD_MASK;
-    if remainder(recovered) != 0 || ((recovered >> PARITY_BITS) & 7) != 0 {
-        return Err(Error::Uncorrectable);
-    }
-    let information = recovered >> (PARITY_BITS + RESERVED_BITS);
-    Ok(Meta {
-        version: (information >> (PROFILE_BITS + SHAPE_BITS)) as u16,
-        profile: ((information >> SHAPE_BITS) & 63) as u8,
-        shape: (information & 63) as u8,
-        corrected_bits: mask.count_ones() as u8,
-    })
-}
-
-pub fn decode_meta(bits: [bool; METADATA_BITS]) -> Result<(u8, bool), Error> {
-    let meta = decode_version_profile(bits)?;
-    if meta.version != VERSION {
+fn codeword(version: u16) -> Result<u32, Error> {
+    if u32::from(version) >= 1 << VERSION_BITS {
         return Err(Error::UnsupportedVersion);
     }
-    Ok((meta.profile, meta.corrected_bits > 0))
+    let payload = u32::from(version) << CHECK_BITS;
+    Ok(payload | u32::from(remainder(payload)))
+}
+
+/// Only the exact optical version, not the payload profile, changes the W.
+/// Position i is the i-th original capsule (upper 0..10; lower 11..21).
+pub fn encode_version(version: u16) -> Result<[bool; VERSION_SITES], Error> {
+    let word = codeword(version)?;
+    Ok(std::array::from_fn(|i| {
+        word & (1 << (VERSION_SITES - 1 - i)) != 0
+    }))
+}
+
+/// Current 22-capsule W variant; no data-specific input is permitted.
+pub fn capsules_for_version(version: u16) -> Result<[Capsule; VERSION_SITES], Error> {
+    let mut shape = capsules();
+    for (index, state) in encode_version(version)?.into_iter().enumerate() {
+        if state {
+            if index < 11 {
+                shape[index].y -= VERSION_EXTENSION;
+            }
+            shape[index].height += VERSION_EXTENSION;
+        }
+    }
+    Ok(shape)
+}
+
+/// Repair zero, one or two incorrectly classified version carriers.
+pub fn decode_version(bits: [bool; VERSION_SITES]) -> Result<(u16, u8), Error> {
+    let mut received = 0_u32;
+    for bit in bits {
+        received = (received << 1) | u32::from(bit);
+    }
+    let syndrome = remainder(received);
+    let (mask, corrected) = if syndrome == 0 {
+        (0, 0)
+    } else {
+        let mut matched = None;
+        for a in 0..VERSION_SITES {
+            let single = 1_u32 << (VERSION_SITES - a - 1);
+            if remainder(single) == syndrome {
+                matched = Some((single, 1));
+                break;
+            }
+            for b in a + 1..VERSION_SITES {
+                let pair = single | (1_u32 << (VERSION_SITES - b - 1));
+                if remainder(pair) == syndrome {
+                    matched = Some((pair, 2));
+                    break;
+                }
+            }
+            if matched.is_some() {
+                break;
+            }
+        }
+        matched.ok_or(Error::Uncorrectable)?
+    };
+    let corrected_word = received ^ mask;
+    if remainder(corrected_word) != 0 {
+        return Err(Error::Uncorrectable);
+    }
+    Ok(((corrected_word >> CHECK_BITS) as u16, corrected))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -404,138 +238,56 @@ mod tests {
     use super::*;
 
     #[test]
-    fn original_brand_shell_and_sixty_hole_sites_are_exact() {
-        let shell = capsules();
-        let holes = sites();
-        assert_eq!(shell.len(), 22);
-        assert_eq!(holes.len(), METADATA_BITS);
-        let counts: [usize; 11] = [5, 5, 5, 5, 6, 7, 6, 5, 5, 5, 6];
-        let upper_counts: [usize; 11] = [4, 3, 2, 1, 3, 6, 3, 1, 2, 3, 5];
-        for col in 0..11 {
-            assert_eq!(UPPER_HOLES[col].len(), upper_counts[col]);
-            assert_eq!(UPPER_HOLES[col].len() + LOWER_HOLES[col].len(), counts[col]);
-            assert_eq!(shell[col].x, col as f64 * 34.0);
-            assert_eq!(shell[col + 11].x, col as f64 * 34.0);
-            assert_eq!(shell[col].y + shell[col].height, 242.0 - BRAND_ORIGIN_Y);
-            assert_eq!(shell[col + 11].y, 274.0 - BRAND_ORIGIN_Y);
-        }
-        let mut bit_order: Vec<_> = holes.iter().filter_map(|site| site.bit).collect();
-        bit_order.sort_unstable();
-        assert_eq!(bit_order, (0..METADATA_BITS).collect::<Vec<_>>());
-        for site in &holes {
-            let owner = shell
-                .iter()
-                .filter(|bar| {
-                    site.x == bar.x + bar.width / 2.0
-                        && site.y >= bar.y + CAPSULE_RADIUS
-                        && site.y <= bar.y + bar.height - CAPSULE_RADIUS
-                })
-                .collect::<Vec<_>>();
-            assert_eq!(owner.len(), 1, "hole outside a single opaque capsule");
-            let bar = owner[0];
-            assert!(site.y - bar.y > DOT_LARGE_RADIUS + 8.0);
-            assert!(bar.y + bar.height - site.y > DOT_LARGE_RADIUS + 8.0);
-            assert!(bar.width / 2.0 - DOT_LARGE_RADIUS > 7.0);
-        }
-        // Hole centers never touch their neighbors at the maximum radius.
-        for (i, first) in holes.iter().enumerate() {
-            for second in holes.iter().skip(i + 1) {
-                assert!(
-                    (first.x - second.x).hypot(first.y - second.y) > 2.0 * DOT_LARGE_RADIUS + 3.0
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn six_corrupt_bits_are_algebraically_corrected() {
-        for &(version, profile) in &[(0, 0), (2, 15), (2, 63), (1234, 42), (4095, 63)] {
-            let clean = encode_version_profile(version, profile).unwrap();
-            let decoded = decode_version_profile(clean).unwrap();
-            assert_eq!(
-                (decoded.version, decoded.profile, decoded.corrected_bits),
-                (version, profile, 0)
-            );
-            for bit in 0..METADATA_BITS {
-                let mut damaged = clean;
-                damaged[bit] = !damaged[bit];
-                assert_eq!(decode_version_profile(damaged).unwrap().corrected_bits, 1);
-            }
-            for &(a, b, c, d, e, f) in &[
-                (0, 1, 2, 3, 4, 5),
-                (4, 12, 23, 36, 47, 59),
-                (1, 11, 21, 31, 41, 51),
-                (3, 16, 22, 44, 48, 57),
-            ] {
-                let mut damaged = clean;
-                for bit in [a, b, c, d, e, f] {
-                    damaged[bit] = !damaged[bit];
+    fn the_w_carries_only_version_and_preserves_central_white_channel() {
+        let reference = capsules();
+        let v2 = capsules_for_version(VERSION).unwrap();
+        let other = capsules_for_version(4095).unwrap();
+        for i in 0..VERSION_SITES {
+            let original = reference[i];
+            for variant in [v2[i], other[i]] {
+                assert_eq!(variant.x, original.x);
+                assert_eq!(variant.width, original.width);
+                let extended = variant.height - original.height;
+                assert!(extended == 0.0 || extended == VERSION_EXTENSION);
+                if i < 11 {
+                    assert_eq!(variant.y + variant.height, 242.0 - BRAND_ORIGIN_Y);
+                } else {
+                    assert_eq!(variant.y, 274.0 - BRAND_ORIGIN_Y);
                 }
-                let recovered = decode_version_profile(damaged).unwrap();
-                assert_eq!(
-                    (
-                        recovered.version,
-                        recovered.profile,
-                        recovered.corrected_bits
-                    ),
-                    (version, profile, 6)
-                );
             }
         }
+        assert!(capsules_for_version(4096).is_err());
     }
 
     #[test]
-    fn bch_generator_has_all_required_roots() {
-        // Check the six GF(64) cyclotomic cosets needed for roots 1..12.
-        let mut alpha = 1_u8;
-        let mut roots = [0_u8; 63];
-        for value in &mut roots {
-            *value = alpha;
-            alpha <<= 1;
-            if alpha & 64 != 0 {
-                alpha ^= 0x43;
-            }
+    fn all_4096_version_words_have_minimum_hamming_distance_five() {
+        let mut words = Vec::with_capacity(4096);
+        for version in 0..4096 {
+            let encoded = codeword(version).unwrap();
+            assert_eq!(remainder(encoded), 0);
+            words.push(encoded);
         }
-        for (exponent, &x) in roots.iter().enumerate().take(13).skip(1) {
-            let mut p = 0_u8;
-            for bit in (0..=PARITY_BITS).rev() {
-                let mut product = 0_u8;
-                let mut a = p;
-                let mut b = x;
-                while b != 0 {
-                    if b & 1 != 0 {
-                        product ^= a;
-                    }
-                    b >>= 1;
-                    a <<= 1;
-                    if a & 64 != 0 {
-                        a ^= 0x43;
-                    }
+        // For a binary linear code, the minimum distance equals the
+        // minimum nonzero codeword Hamming weight.
+        assert_eq!(words.iter().skip(1).map(|x| x.count_ones()).min(), Some(5));
+    }
+
+    #[test]
+    fn two_capsule_classification_errors_are_corrected() {
+        for version in [0, 1, 2, 17, 255, 1024, 4095] {
+            let original = encode_version(version).unwrap();
+            assert_eq!(decode_version(original).unwrap(), (version, 0));
+            for a in 0..VERSION_SITES {
+                let mut single = original;
+                single[a] = !single[a];
+                assert_eq!(decode_version(single).unwrap(), (version, 1));
+                for b in a + 1..VERSION_SITES {
+                    let mut pair = single;
+                    pair[b] = !pair[b];
+                    assert_eq!(decode_version(pair).unwrap(), (version, 2));
                 }
-                p = product
-                    ^ if GENERATOR & (1_u64 << bit) != 0 {
-                        1
-                    } else {
-                        0
-                    };
             }
-            assert_eq!(p, 0, "generator must vanish at root alpha^{exponent}");
         }
-        assert_eq!(GENERATOR >> PARITY_BITS, 1);
-    }
-
-    #[test]
-    fn every_profile_keeps_version_and_selects_aesthetically_valid_code() {
-        let dots = sites();
-        for profile in 0..64_u8 {
-            let bits = encode_meta(profile).unwrap();
-            let recovered = decode_version_profile(bits).unwrap();
-            assert_eq!((recovered.version, recovered.profile), (VERSION, profile));
-            let base = code_bits(codeword(VERSION, profile, 0).unwrap());
-            assert!(visual_cost(&bits, &dots) <= visual_cost(&base, &dots));
-        }
-        assert!(encode_version_profile(4096, 0).is_err());
-        assert!(encode_version_profile(2, 64).is_err());
     }
 
     #[test]
@@ -553,7 +305,8 @@ mod tests {
                 .zip(&[(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)])
         {
             let projected = pose.project(x, y).unwrap();
-            assert!((projected.x - point.x).hypot(projected.y - point.y) < 1.0e-5);
+            assert!((projected.x - point.x).hypot(point.y - projected.y) < 1.0e-5);
         }
     }
+
 }
