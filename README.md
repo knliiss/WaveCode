@@ -62,7 +62,7 @@ cargo run --release -p wavecode --example v2 -- scan dual.png
 
 The `dual-adaptive` CLI above retains the shortest specialized **Spotify + YouTube Music** V2 profiles, including an optional shared moment. For **any two supported platforms** (including two links from the same platform), use Rust `Content::DualLinks { first, second }` or the browser WASM `v2_encode_links(first_url, second_url, first_moment, second_moment)` API. Each moment may be independent. Both IDs are stored locally and losslessly, without assuming they refer to the same song.
 
-The generic V2 profile is 36 with two identity records and independent time modes. It may require more optical columns than a specialized pair; the W and decoding version remain unchanged. Every previously issued V2 frame remains readable.
+Generic V2 Dual uses reversible profiles **36/37** with independent identity records and time modes. The adaptive profile 37 shortens common 32-bit numeric identities and canonical YouTube IDs; for example, Deezer + TIDAL with small IDs needs **17 rather than 25 optical columns**. Both preserve CRC-16 and four Reed–Solomon parity bytes. Larger pairs may still require more columns than a specialized pair; the W and decoding version remain unchanged. Every previously issued V2 frame remains readable.
 
 ### V2 · independent proportions
 
