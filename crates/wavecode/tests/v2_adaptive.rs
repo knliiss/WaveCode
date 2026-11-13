@@ -98,7 +98,7 @@ fn spotify_range_classes_are_reversible_at_boundaries() {
 #[test]
 fn dual_id_modes_never_infer_second_identity_and_preserve_seconds() {
     for (spotify, time, header, symbols) in [
-        ("0000000000000000000000", None, 14, 30),
+        ("0000000000000000000000", None, 17, 27),
         ("0000000000000000000000", Some(59), 16, 31),
         ("zzzzzzzzzzzzzzzzzzzzzz", None, 16, 31),
         ("7n42DGM5Tflk9n8mt7Fhc7", Some(255), 15, 31),
@@ -140,6 +140,41 @@ fn minimum_possible_dual_visual_columns_with_fixed_rs4_and_crc16() {
             "{content:?}"
         );
         assert_eq!(v2::decode(&frame).unwrap().content, content);
+    }
+}
+
+#[test]
+fn shorter_dual_classes_are_exact_at_every_bit_width_boundary() {
+    for (spotify, profile, columns) in [
+        ("0000000000000000000000", 17, 27),
+        ("00006rS8oxBA9U5pIjyIaF", 17, 27),
+        ("00006rS8oxBA9U5pIjyIaG", 18, 28),
+        ("000SKiCQOM5vAG3pNoyji3", 18, 28),
+        ("000SKiCQOM5vAG3pNoyji4", 19, 29),
+        ("01szWVIyZES2MJoAMUmjwV", 19, 29),
+        ("01szWVIyZES2MJoAMUmjwW", 14, 30),
+        ("7n42DGM5Tflk9n8mt7Fhc7", 14, 30),
+        ("7n42DGM5Tflk9n8mt7Fhc8", 16, 31),
+    ] {
+        for youtube in ["AAAAAAAAAAA", "JGwWNGJdvx8", "__________8"] {
+            let content = Content::Dual {
+                spotify_id: spotify.into(),
+                youtube_music_id: youtube.into(),
+                moment_seconds: None,
+            };
+            let frame = v2::encode_adaptive(&content).unwrap();
+            assert_eq!(frame.metadata, profile, "{spotify}");
+            assert_eq!(frame.symbols.len(), columns, "{spotify}");
+            assert_eq!(v2::optical_column_count(&frame), columns, "{spotify}");
+            assert_eq!(v2::implicit_dual_profile(columns), Some(profile));
+            assert_eq!(v2::decode(&frame).unwrap().content, content);
+            let mut damaged = frame.clone();
+            damaged.symbols[2] ^= 0x51;
+            damaged.symbols[frame.symbols.len()-2] ^= 0xa9;
+            let decoded = v2::decode(&damaged).unwrap();
+            assert_eq!(decoded.content, content);
+            assert_eq!(decoded.corrected_symbols, 2);
+        }
     }
 }
 
@@ -245,7 +280,7 @@ fn all_opt_in_headers_keep_two_byte_error_correction() {
         assert_eq!(decoded.corrected_symbols, 2);
     }
     headers.sort_unstable();
-    assert_eq!(headers, [1, 3, 5, 7, 9, 11, 12, 13, 14, 15, 16, 16]);
+    assert_eq!(headers, [1, 3, 5, 7, 9, 11, 12, 13, 15, 16, 16, 17]);
 }
 
 #[test]
