@@ -1,10 +1,32 @@
 //! WaveCode V2 original 22-capsule W with sixty small BCH-coded interior holes.
 //! All outer capsule silhouettes and their central white channel are invariant.
-use super::{anchor, Frame};
+use super::{anchor, optical, Frame};
 use crate::Error;
 
-const PAYLOAD_NARROW: f64 = 0.40;
-const PAYLOAD_WIDE: f64 = 0.70;
+/// Style affects geometry only; the optical alphabet is fixed for all styles.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RenderStyle {
+    Classic,
+    Compact,
+}
+
+impl RenderStyle {
+    pub const fn profile(self) -> RenderProfile {
+        match self {
+            Self::Classic => RenderProfile {
+                pitch: 18.0,
+                height: 180.0,
+                quiet: 18.0,
+            },
+            Self::Compact => RenderProfile {
+                pitch: 16.0,
+                height: 180.0,
+                quiet: 16.0,
+            },
+        }
+    }
+}
+
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RenderProfile {
@@ -15,11 +37,7 @@ pub struct RenderProfile {
 
 impl Default for RenderProfile {
     fn default() -> Self {
-        Self {
-            pitch: 18.0,
-            height: 180.0,
-            quiet: 18.0,
-        }
+        RenderStyle::Classic.profile()
     }
 }
 
@@ -52,7 +70,7 @@ impl RenderProfile {
         }
         let w_pitch = self.height * anchor::W_DOT_SCALE_RATIO;
         let anchor_width = anchor::SHELL_WIDTH * w_pitch;
-        let payload_x = self.quiet + anchor_width + self.pitch * 0.8;
+        let payload_x = self.quiet + anchor_width + self.pitch * optical::PAYLOAD_GAP_PITCH_RATIO;
         let width = payload_x + symbols as f64 * self.pitch + self.quiet;
         let gap = self.height * 0.060;
         Ok(Metrics {
@@ -64,8 +82,8 @@ impl RenderProfile {
             w_pitch,
             upper_baseline: self.height / 2.0 - gap / 2.0,
             lower_baseline: self.height / 2.0 + gap / 2.0,
-            base_height: self.height * 0.10,
-            height_step: self.height * 0.026,
+            base_height: self.height * optical::BASE_HEIGHT_RATIO,
+            height_step: self.height * optical::HEIGHT_STEP_RATIO,
         })
     }
 }
@@ -143,16 +161,10 @@ fn marks(frame: &Frame, profile: RenderProfile) -> Result<(Metrics, Vec<Mark>), 
     }
     for (index, &symbol) in frame.symbols.iter().enumerate() {
         let center = metrics.payload_x + (index as f64 + 0.5) * profile.pitch;
-        let upper_level = symbol >> 5 & 7;
-        let lower_level = symbol >> 2 & 7;
-        let upper_wide = symbol & 2 != 0;
-        let lower_wide = symbol & 1 != 0;
-        for (upper, level, wide) in [
-            (true, upper_level, upper_wide),
-            (false, lower_level, lower_wide),
-        ] {
-            let width = profile.pitch * if wide { PAYLOAD_WIDE } else { PAYLOAD_NARROW };
-            let height = metrics.base_height + f64::from(level) * metrics.height_step;
+        let logical = optical::OpticalSymbol::from_byte(symbol);
+        for (upper, level) in [(true, logical.upper), (false, logical.lower)] {
+            let width = profile.pitch * optical::RAIL_WIDTH_RATIO;
+            let height = optical::height_of(level, profile.height)?;
             let y = if upper {
                 metrics.upper_baseline - height
             } else {
@@ -188,6 +200,11 @@ pub fn render_svg(frame: &Frame, profile: RenderProfile) -> Result<String, Error
     }
     svg.push_str("</svg>\n");
     Ok(svg)
+}
+
+/// Apply one of the validated visual presets without changing the frame.
+pub fn render_svg_style(frame: &Frame, style: RenderStyle) -> Result<String, Error> {
+    render_svg(frame, style.profile())
 }
 
 #[cfg(feature = "raster")]
@@ -245,6 +262,11 @@ pub fn render_png(frame: &Frame, profile: RenderProfile) -> Result<Vec<u8>, Erro
         .write_to(&mut output, ImageOutputFormat::Png)
         .map_err(|_| Error::InvalidGeometry)?;
     Ok(output.into_inner())
+}
+
+#[cfg(feature = "raster")]
+pub fn render_png_style(frame: &Frame, style: RenderStyle) -> Result<Vec<u8>, Error> {
+    render_png(frame, style.profile())
 }
 
 #[cfg(test)]
