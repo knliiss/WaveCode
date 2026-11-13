@@ -3,6 +3,7 @@ mod rank;
 mod reed_solomon;
 mod scrambling;
 pub mod v1;
+pub mod v2;
 mod visual;
 
 use rank::Rank;
@@ -199,7 +200,10 @@ impl Track {
     }
 
     pub(crate) fn supports_moment(&self) -> bool {
-        !matches!(self, Self::TikTokVideo(_) | Self::TikTokShort(_) | Self::InstagramReel(_))
+        !matches!(
+            self,
+            Self::TikTokVideo(_) | Self::TikTokShort(_) | Self::InstagramReel(_)
+        )
     }
 }
 

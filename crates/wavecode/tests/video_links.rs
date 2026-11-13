@@ -132,10 +132,8 @@ fn short_tiktok_codes_preserve_case_leading_zeroes_and_distinct_ranks() {
         assert_eq!(v1::decode(&symbols).unwrap().code.to_url().unwrap(), source);
     }
 
-    let numeric = MusicCode::from_url(
-        "https://www.tiktok.com/@creator/video/7300873037530795272",
-    )
-    .unwrap();
+    let numeric =
+        MusicCode::from_url("https://www.tiktok.com/@creator/video/7300873037530795272").unwrap();
     let short = MusicCode::from_url("https://vt.tiktok.com/ZSp94BeDn/").unwrap();
     assert_ne!(v1::encode(&numeric).unwrap(), v1::encode(&short).unwrap());
 }
