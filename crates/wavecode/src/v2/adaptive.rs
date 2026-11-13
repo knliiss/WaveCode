@@ -417,11 +417,11 @@ pub(super) fn decode(code: &Frame) -> Result<Decoded, Error> {
     if code.metadata == PACKED_DUAL_PROFILE && code.symbols.len() != 31 {
         return Err(Error::InvalidLength);
     }
-    if matches!(
-        (code.metadata, code.symbols.len()),
-        (SHORT_FULL_DUAL_PROFILE, 32) | (LONG_FULL_DUAL_PROFILE, 33)
-    ) == false
-        && matches!(code.metadata, SHORT_FULL_DUAL_PROFILE | LONG_FULL_DUAL_PROFILE)
+    if matches!(code.metadata, SHORT_FULL_DUAL_PROFILE | LONG_FULL_DUAL_PROFILE)
+        && !matches!(
+            (code.metadata, code.symbols.len()),
+            (SHORT_FULL_DUAL_PROFILE, 32) | (LONG_FULL_DUAL_PROFILE, 33)
+        )
     {
         return Err(Error::InvalidLength);
     }
