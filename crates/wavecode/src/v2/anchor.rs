@@ -83,7 +83,7 @@ pub fn sites() -> Vec<DotSite> {
                 let x = ax + dx * t + side * normal_x * 1.55;
                 let y = ay + dy * t + side * normal_y * 1.55;
                 if distance_to_spine(x, y) > 0.62
-                    && contour.iter().all(|&(cx, cy)| (x - cx).hypot(y - cy) >= 0.68)
+                    && contour.iter().all(|&(cx, cy)| (x - cx).hypot(y - cy) >= 0.84)
                 {
                     contour.push((x, y));
                 }
@@ -101,8 +101,8 @@ pub fn sites() -> Vec<DotSite> {
     let mut inside: Vec<(f64, f64)> = Vec::new();
     for (x, y) in candidates {
         if distance_to_spine(x, y) <= 0.57
-            || contour.iter().any(|&(cx, cy)| (x - cx).hypot(y - cy) <= 0.61)
-            || inside.iter().any(|&(cx, cy)| (x - cx).hypot(y - cy) <= 0.48)
+            || contour.iter().any(|&(cx, cy)| (x - cx).hypot(y - cy) <= 0.72)
+            || inside.iter().any(|&(cx, cy)| (x - cx).hypot(y - cy) <= 0.62)
         {
             continue;
         }
