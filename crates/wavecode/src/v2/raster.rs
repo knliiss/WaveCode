@@ -75,7 +75,7 @@ struct Projection {
     transverse: f64,
 }
 
-fn connected(image: &GrayImage, light: bool) -> Result<Vec<Component>, Error> {
+fn connected(image: &GrayImage, threshold: u8, light: bool) -> Result<Vec<Component>, Error> {
     let (width, height) = image.dimensions();
     let total = u64::from(width) * u64::from(height);
     if total == 0 || total > MAX_PIXELS {
@@ -95,9 +95,9 @@ fn connected(image: &GrayImage, light: bool) -> Result<Vec<Component>, Error> {
             let ink = |px: usize, py: usize| {
                 let gray = image.get_pixel(px as u32, py as u32).0[0];
                 if light {
-                    gray >= 128
+                    gray >= threshold
                 } else {
-                    gray < 128
+                    gray <= threshold
                 }
             };
             if !ink(x, y) {
@@ -608,12 +608,72 @@ fn scan_components(parts: &[Component]) -> Result<Located, Error> {
     Err(Error::InvalidFrame)
 }
 
-/// The prototype recognizes the original capsule W with version-only length
-/// modulation. Real mobile photos,
-/// extreme perspective, motion blur and reflections still need field tests.
+/// Otsu's between-class variance locates the ink/background boundary even
+/// when camera exposure places both tones above or below a fixed 128 cut.
+/// Compute the histogram once and try further masks only if the fast path
+/// failed. All matches must still pass BCH, Reed-Solomon and CRC checks.
+fn otsu_threshold(image: &GrayImage) -> u8 {
+    let mut histogram = [0_u64; 256];
+    for pixel in image.pixels() {
+        histogram[pixel[0] as usize] += 1;
+    }
+
+    let total = u64::from(image.width()) * u64::from(image.height());
+    let weighted_total: f64 = histogram
+        .iter()
+        .enumerate()
+        .map(|(level, count)| level as f64 * *count as f64)
+        .sum();
+    let mut left_count = 0_u64;
+    let mut left_sum = 0.0_f64;
+    let mut best_score = -1.0_f64;
+    let mut threshold = 128;
+
+    for (level, &count) in histogram.iter().enumerate().take(255) {
+        left_count += count;
+        left_sum += level as f64 * count as f64;
+        if left_count == 0 || left_count == total {
+            continue;
+        }
+        let difference =
+            left_sum / left_count as f64
+                - (weighted_total - left_sum) / (total - left_count) as f64;
+        let score = left_count as f64 * (total - left_count) as f64 * difference * difference;
+        if score > best_score {
+            best_score = score;
+            threshold = level as u8;
+        }
+    }
+    threshold
+}
+
+/// Scan the original V2 W and two-rail alphabet with exposure-aware
+/// segmentation. A white/black PNG still takes the existing fast path.
+/// Fallbacks remain bounded so camera processing cannot run unbounded work.
 pub fn scan_gray(image: &GrayImage) -> Result<Located, Error> {
-    for light in [false, true] {
-        if let Ok(parts) = connected(image, light) {
+    for (threshold, light) in [(128, false), (128, true)] {
+        if let Ok(parts) = connected(image, threshold, light) {
+            if let Ok(frame) = scan_components(&parts) {
+                return Ok(frame);
+            }
+        }
+    }
+
+    let adaptive = otsu_threshold(image);
+    let mut attempted = vec![(128, false), (128, true)];
+    for (threshold, light) in [
+        (adaptive, false),
+        (adaptive.saturating_add(1), true),
+        (adaptive.saturating_add(12), false),
+        (adaptive.saturating_sub(12), true),
+        (150, false),
+        (180, true),
+    ] {
+        if attempted.contains(&(threshold, light)) {
+            continue;
+        }
+        attempted.push((threshold, light));
+        if let Ok(parts) = connected(image, threshold, light) {
             if let Ok(frame) = scan_components(&parts) {
                 return Ok(frame);
             }
