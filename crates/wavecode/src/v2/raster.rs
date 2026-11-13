@@ -297,7 +297,7 @@ fn fit<'a>(dots: &[&'a Component], sites: &[DotSite], angle: f64) -> Option<Fit<
         score += 4.0;
     }
     let matched = site_parts.iter().filter(|part| part.is_some()).count();
-    if matched < sites.len().saturating_sub(4) {
+    if matched < sites.len().saturating_sub(16) {
         return None;
     }
     Some(Fit {
