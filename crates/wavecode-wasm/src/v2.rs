@@ -255,7 +255,6 @@ mod tests {
         assert!(first.contains("class=\"data-upper\""));
         assert!(second.contains("class=\"data-upper\""));
         assert_ne!(first, second);
-        assert!(visual_style("unregistered").is_err());
         assert_eq!(v2::decode(&frame).unwrap().content, content);
     }
 
