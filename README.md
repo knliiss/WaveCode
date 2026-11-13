@@ -243,12 +243,17 @@ The stable V1 format and API remain unchanged; V2 is not yet merged into `main`.
 On Windows PowerShell, run the commands on separate lines:
 
 ```powershell
-cargo run -p wavecode --example v2_experiment -- encode-adaptive "https://music.youtube.com/watch?v=JGwWNGJdvx8&t=59" dot-w.png
-cargo run -p wavecode --example v2_experiment -- scan dot-w.png
+cargo run -p wavecode --example v2_experiment -- encode-adaptive "https://music.youtube.com/watch?v=JGwWNGJdvx8&t=59" classic.png classic
+cargo run -p wavecode --example v2_experiment -- encode-adaptive "https://music.youtube.com/watch?v=JGwWNGJdvx8&t=59" compact.png compact
+cargo run -p wavecode --example v2_experiment -- scan classic.png
+cargo run -p wavecode --example v2_experiment -- scan compact.png
 ```
 
-The example generates `dot-w.png` and `dot-w.svg`. The GitHub Actions
-`V2 capsule-shell preview` workflow also publishes optically verified examples.
+Each command generates a PNG and a matching SVG. Both **Classic** and **Compact**
+styles use the same encoded byte sequence: the dual-rail bars have constant
+width and 16 height levels per rail. The scanner requires no style metadata.
+The GitHub Actions `V2 independent optical-style previews` workflow publishes
+examples of both styles after scanning each generated mark.
 
 ## Development
 
