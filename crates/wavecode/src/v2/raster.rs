@@ -362,11 +362,10 @@ fn decode_payload_symbols(mut symbols: Vec<u8>) -> Result<(u8, Decoded), Error> 
         let decoded = codec::decode(&Frame { metadata, symbols })?;
         return Ok((metadata, decoded));
     }
-    if let Some(implicit_metadata) = match symbols.len() {
-        32 => Some(20),
-        33 => Some(21),
-        _ => None,
-    } {
+    // For 15–26 and 32–33 columns, the RS-protected high-bit marker
+    // disambiguates compact Dual from conventional explicit profile glyphs.
+    // Both candidates are checked; no raw first-byte heuristic is trusted.
+    if let Some(implicit_metadata) = codec::marked_dual_profile(symbols.len()) {
         let implicit = codec::decode(&Frame {
             metadata: implicit_metadata,
             symbols: symbols.clone(),
