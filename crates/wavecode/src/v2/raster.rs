@@ -451,14 +451,7 @@ fn read_frame(
 
 fn scan_components(components: &[Component]) -> Result<Located, Error> {
     let sites = anchor::sites();
-    let dots = match dot_cluster(components) {
-        Ok(dots) => dots,
-        Err(error) => {
-            eprintln!("v2 debug: dot_cluster rejected {} components: {error:?}", components.len());
-            return Err(error);
-        }
-    };
-    eprintln!("v2 debug: {} components, {} W dots, {} required sites", components.len(), dots.len(), sites.len());
+    let dots = dot_cluster(components)?;
     let initial = principal_angle(&dots);
     let mut candidates = Vec::new();
     // Try both ends because only the actual W may be on the left of data;
@@ -473,11 +466,9 @@ fn scan_components(components: &[Component]) -> Result<Located, Error> {
         }
     }
     candidates.sort_by(|a, b| a.score.total_cmp(&b.score));
-    eprintln!("v2 debug: {} template candidates, angle {initial}, best score {:?}", candidates.len(), candidates.first().map(|f| f.score));
     for candidate in candidates {
-        match read_frame(components, &dots, &sites, &candidate) {
-            Ok(frame) => return Ok(frame),
-            Err(error) => eprintln!("v2 debug: template score {} failed: {error:?}", candidate.score),
+        if let Ok(frame) = read_frame(components, &dots, &sites, &candidate) {
+            return Ok(frame);
         }
     }
     Err(Error::InvalidFrame)
