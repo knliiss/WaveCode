@@ -308,10 +308,30 @@ pub fn encode(content: &Content) -> Result<Frame, Error> {
 
 /// Choose the shortest supported experimental frame, preserving a legacy V2
 /// fallback for every identifier and moment. This is opt-in: `encode` is unchanged.
+/// Metadata is normally one extra optical byte. Two V2 Dual classes are
+/// unambiguously self-delimiting by their Reed-Solomon codeword length:
+/// 30 columns -> compact no-time dual (profile 14), 31 -> mixed-radix
+/// dual domain (profile 16). This has no dependence on gaps or style.
+pub fn implicit_dual_profile(optical_columns: usize) -> Option<u8> {
+    match optical_columns {
+        30 => Some(14),
+        31 => Some(16),
+        _ => None,
+    }
+}
+
+pub fn optical_column_count(frame: &Frame) -> usize {
+    if implicit_dual_profile(frame.symbols.len()) == Some(frame.metadata) {
+        frame.symbols.len()
+    } else {
+        frame.symbols.len() + 1
+    }
+}
+
 pub fn encode_adaptive(content: &Content) -> Result<Frame, Error> {
     let mut shortest = encode(content)?;
     for candidate in super::adaptive::candidates(content)? {
-        if candidate.symbols.len() < shortest.symbols.len() {
+        if optical_column_count(&candidate) < optical_column_count(&shortest) {
             shortest = candidate;
         }
     }
