@@ -177,6 +177,7 @@ fn perspective_reader_does_not_require_fixed_payload_gaps() {
 fn self_delimiting_dual_modes_scan_without_optical_header_or_layout_hints() {
     let scenarios = [
         ("0000000000000000000000", None, 17, 27),
+        ("zzzzzzzzzzzzzzzzzzzzzz", None, 16, 31),
         ("00006rS8oxBA9U5pIjyIaG", None, 18, 28),
         ("000SKiCQOM5vAG3pNoyji4", None, 19, 29),
         ("zzzzzzzzzzzzzzzzzzzzzz", None, 16, 31),
@@ -230,8 +231,13 @@ fn marker_disambiguates_implicit_dual_from_explicit_32_33_column_frames() {
     for content in cases {
         let implicit = v2::encode_adaptive(&content).unwrap();
         let explicit = v2::encode(&content).unwrap();
-        assert!(implicit.symbols[0] & 0x80 != 0);
-        // The no-time arbitrary-YouTube case can tie at 32 columns;
+        if implicit.metadata == 20 || implicit.metadata == 21 {
+            assert!(implicit.symbols[0] & 0x80 != 0);
+        } else {
+            assert_eq!(implicit.metadata, 16);
+            assert_eq!(implicit.symbols.len(), 31);
+        }
+        // The no-time arbitrary-YouTube case can now use 31 columns;
         // the implicit marker is still preferable because RS protects it.
         assert!(v2::optical_column_count(&implicit) <= v2::optical_column_count(&explicit));
         for frame in [implicit, explicit] {
