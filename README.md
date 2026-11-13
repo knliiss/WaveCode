@@ -60,7 +60,7 @@ cargo run --release -p wavecode --example v2 -- dual-adaptive \
 cargo run --release -p wavecode --example v2 -- scan dual.png
 ```
 
-Dual stores **both platform IDs**, without assuming they refer to the same recording. The Rust and WASM APIs also support a shared optional start time. It is never resolved from an external matching service.
+Dual stores **both platform IDs**, without assuming they refer to the same recording. For a shared start time in the CLI, append the same `?t=59` value to either or both input URLs (conflicting times are rejected). Rust and WASM also accept an explicit shared time. It is never resolved from an external matching service.
 
 ### V2 · independent proportions
 

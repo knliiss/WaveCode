@@ -123,13 +123,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             )?
         }
         Some("dual" | "dual-adaptive") if (5..=9).contains(&args.len()) => {
-            let spotify_id = match MusicCode::from_url(&args[2])?.track {
+            let spotify = MusicCode::from_url(&args[2])?;
+            let youtube = MusicCode::from_url(&args[3])?;
+            let spotify_id = match spotify.track {
                 Track::Spotify(id) => id,
                 _ => return Err(input_error("expected Spotify track URL").into()),
             };
-            let youtube_music_id = match MusicCode::from_url(&args[3])?.track {
+            let youtube_music_id = match youtube.track {
                 Track::YouTubeMusic(id) => id,
                 _ => return Err(input_error("expected YouTube Music watch URL").into()),
+            };
+            let moment_seconds = match (spotify.moment_seconds, youtube.moment_seconds) {
+                (Some(a), Some(b)) if a != b => {
+                    return Err(input_error("Dual links contain conflicting start times").into());
+                }
+                (Some(seconds), _) | (_, Some(seconds)) => Some(seconds),
+                (None, None) => None,
             };
             let style = visual_style(args.get(5))?;
             let spacing = visual_spacing(style, args.get(6), args.get(7))?;
@@ -137,7 +146,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Content::Dual {
                     spotify_id,
                     youtube_music_id,
-                    moment_seconds: None,
+                    moment_seconds,
                 },
                 &args[4],
                 args[1] == "dual-adaptive",
@@ -171,11 +180,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     youtube_music_id,
                     moment_seconds,
                 } => {
-                    let moment = moment_seconds
+                    let spotify_time = moment_seconds
+                        .map(|seconds| format!("?t={seconds}"))
+                        .unwrap_or_default();
+                    let youtube_time = moment_seconds
                         .map(|seconds| format!("&t={seconds}"))
                         .unwrap_or_default();
-                    println!("https://open.spotify.com/track/{spotify_id}");
-                    println!("https://music.youtube.com/watch?v={youtube_music_id}{moment}");
+                    println!("https://open.spotify.com/track/{spotify_id}{spotify_time}");
+                    println!("https://music.youtube.com/watch?v={youtube_music_id}{youtube_time}");
                 }
             }
         }
