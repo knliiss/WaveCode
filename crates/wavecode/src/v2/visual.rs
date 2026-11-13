@@ -237,9 +237,8 @@ fn marks_with_spacing_and_logo_height(
     spacing: VisualSpacing,
     logo_height: f64,
 ) -> Result<(Metrics, Vec<Mark>), Error> {
-    let metrics = profile.metrics_with_spacing_and_logo_height_for_frame(
-        frame, spacing, logo_height,
-    )?;
+    let metrics =
+        profile.metrics_with_spacing_and_logo_height_for_frame(frame, spacing, logo_height)?;
     let mut result =
         Vec::with_capacity(anchor::VERSION_SITES + codec::optical_column_count(frame) * 2);
 
