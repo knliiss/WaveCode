@@ -1,5 +1,5 @@
-//! WaveCode V2 static-contour W with sixty small inner BCH dots and dual-rail payload.
-//! No capsule or rectangle is permitted inside the logo itself.
+//! WaveCode V2 original 22-capsule W with sixty small BCH-coded interior holes.
+//! All outer capsule silhouettes and their central white channel are invariant.
 use super::{anchor, Frame};
 use crate::Error;
 
@@ -51,7 +51,7 @@ impl RenderProfile {
             return Err(Error::InvalidGeometry);
         }
         let w_pitch = self.height * anchor::W_DOT_SCALE_RATIO;
-        let anchor_width = (anchor::W_X_MAX + 1.2) * w_pitch;
+        let anchor_width = anchor::SHELL_WIDTH * w_pitch;
         let payload_x = self.quiet + anchor_width + self.pitch * 0.8;
         let width = payload_x + symbols as f64 * self.pitch + self.quiet;
         let gap = self.height * 0.060;
@@ -83,32 +83,30 @@ struct Circle {
     cx: f64,
     cy: f64,
     r: f64,
-    encoded: bool,
 }
 
 enum Mark {
-    Dot(Circle),
+    Capsule(Rect),
+    Hole(Circle),
     Rail(Rect, bool),
 }
 
 impl Mark {
     fn svg(&self) -> String {
         match self {
-            Self::Dot(circle) => format!(
-                "  <circle class=\"{}\" cx=\"{:.3}\" cy=\"{:.3}\" r=\"{:.3}\" fill=\"black\"/>\n",
-                if circle.encoded { "w-data-dot" } else { "w-fixed-dot" },
-                circle.cx,
-                circle.cy,
-                circle.r,
-            ),
-            Self::Rail(rect, upper) => format!(
+            Self::Capsule(rect) | Self::Rail(rect, _) => format!(
                 "  <rect class=\"{}\" x=\"{:.3}\" y=\"{:.3}\" width=\"{:.3}\" height=\"{:.3}\" rx=\"{:.3}\" fill=\"black\"/>\n",
-                if *upper { "data-upper" } else { "data-lower" },
-                rect.x,
-                rect.y,
-                rect.width,
-                rect.height,
-                rect.width / 2.0,
+                match self {
+                    Self::Capsule(_) => "w-capsule",
+                    Self::Rail(_, true) => "data-upper",
+                    Self::Rail(_, false) => "data-lower",
+                    Self::Hole(_) => unreachable!(),
+                },
+                rect.x, rect.y, rect.width, rect.height, rect.width / 2.0,
+            ),
+            Self::Hole(hole) => format!(
+                "  <circle class=\"w-hole\" cx=\"{:.3}\" cy=\"{:.3}\" r=\"{:.3}\" fill=\"white\"/>\n",
+                hole.cx, hole.cy, hole.r,
             ),
         }
     }
@@ -117,19 +115,30 @@ impl Mark {
 fn marks(frame: &Frame, profile: RenderProfile) -> Result<(Metrics, Vec<Mark>), Error> {
     let metrics = profile.metrics(frame.symbols.len())?;
     let encoded = anchor::encode_meta(frame.metadata)?;
-    let mut result = Vec::with_capacity(anchor::sites().len() + frame.symbols.len() * 2);
+    let mut result = Vec::with_capacity(22 + anchor::METADATA_BITS + frame.symbols.len() * 2);
 
+    // Draw the original brand shells first. Every pixel on their outside
+    // boundary is invariant under routing metadata and BCH shape selection.
+    for capsule in anchor::capsules() {
+        result.push(Mark::Capsule(Rect {
+            x: profile.quiet + capsule.x * metrics.w_pitch,
+            y: capsule.y * metrics.w_pitch,
+            width: capsule.width * metrics.w_pitch,
+            height: capsule.height * metrics.w_pitch,
+        }));
+    }
+    // Draw 60 transparent holes *after* the opaque capsules.
     for site in anchor::sites() {
-        let radius = match site.bit {
-            Some(index) if encoded[index] => anchor::DOT_LARGE_RADIUS,
-            Some(_) => anchor::DOT_SMALL_RADIUS,
-            None => anchor::DOT_FIXED_RADIUS,
+        let bit = site.bit.ok_or(Error::InvalidGeometry)?;
+        let radius = if encoded[bit] {
+            anchor::DOT_LARGE_RADIUS
+        } else {
+            anchor::DOT_SMALL_RADIUS
         } * metrics.w_pitch;
-        result.push(Mark::Dot(Circle {
-            cx: profile.quiet + (site.x + 0.6) * metrics.w_pitch,
-            cy: profile.height / 2.0 + (site.y - anchor::W_Y_MAX / 2.0) * metrics.w_pitch,
+        result.push(Mark::Hole(Circle {
+            cx: profile.quiet + site.x * metrics.w_pitch,
+            cy: site.y * metrics.w_pitch,
             r: radius,
-            encoded: site.bit.is_some(),
         }));
     }
     for (index, &symbol) in frame.symbols.iter().enumerate() {
@@ -166,7 +175,7 @@ fn marks(frame: &Frame, profile: RenderProfile) -> Result<(Metrics, Vec<Mark>), 
 pub fn render_svg(frame: &Frame, profile: RenderProfile) -> Result<String, Error> {
     let (metrics, marks) = marks(frame, profile)?;
     let mut svg = format!(
-        "<svg xmlns=\"http://www.w3.org/2000/svg\" data-wavecode=\"v2-dot-bch\" data-version=\"{}\" data-profile=\"{}\" width=\"{:.3}\" height=\"{:.3}\" viewBox=\"0 0 {:.3} {:.3}\">\n  <rect width=\"100%\" height=\"100%\" fill=\"white\"/>\n",
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" data-wavecode=\"v2-capsule-holes-bch60\" data-version=\"{}\" data-profile=\"{}\" width=\"{:.3}\" height=\"{:.3}\" viewBox=\"0 0 {:.3} {:.3}\">\n  <rect width=\"100%\" height=\"100%\" fill=\"white\"/>\n",
         anchor::VERSION,
         frame.metadata,
         metrics.width,
@@ -194,22 +203,22 @@ pub fn render_png(frame: &Frame, profile: RenderProfile) -> Result<Vec<u8>, Erro
     );
     for mark in marks {
         match mark {
-            Mark::Dot(circle) => {
-                let top = (circle.cy - circle.r).floor().max(0.0) as u32;
-                let bottom = (circle.cy + circle.r).ceil().min(f64::from(image.height())) as u32;
-                let left = (circle.cx - circle.r).floor().max(0.0) as u32;
-                let right = (circle.cx + circle.r).ceil().min(f64::from(image.width())) as u32;
+            Mark::Hole(hole) => {
+                let top = (hole.cy - hole.r).floor().max(0.0) as u32;
+                let bottom = (hole.cy + hole.r).ceil().min(f64::from(image.height())) as u32;
+                let left = (hole.cx - hole.r).floor().max(0.0) as u32;
+                let right = (hole.cx + hole.r).ceil().min(f64::from(image.width())) as u32;
                 for y in top..bottom {
                     for x in left..right {
-                        let dx = f64::from(x) + 0.5 - circle.cx;
-                        let dy = f64::from(y) + 0.5 - circle.cy;
-                        if dx * dx + dy * dy <= circle.r * circle.r {
-                            image.put_pixel(x, y, Luma([0]));
+                        let dx = f64::from(x) + 0.5 - hole.cx;
+                        let dy = f64::from(y) + 0.5 - hole.cy;
+                        if dx * dx + dy * dy <= hole.r * hole.r {
+                            image.put_pixel(x, y, Luma([255]));
                         }
                     }
                 }
             }
-            Mark::Rail(rect, _) => {
+            Mark::Capsule(rect) | Mark::Rail(rect, _) => {
                 let radius = rect.width.min(rect.height) / 2.0;
                 let cx = rect.x + rect.width / 2.0;
                 let cy = rect.y + rect.height / 2.0;
@@ -247,75 +256,35 @@ mod tests {
     };
 
     #[test]
-    fn w_is_entirely_circular_and_always_left_of_data() {
+    fn v2_logo_keeps_original_twenty_two_capsules_and_sixty_holes() {
         for input in [
             "https://music.youtube.com/watch?v=JGwWNGJdvx8",
             "https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b",
         ] {
             let frame = encode(&Content::Single(MusicCode::from_url(input).unwrap())).unwrap();
             let svg = render_svg(&frame, RenderProfile::default()).unwrap();
-            let fixed = anchor::sites()
-                .iter()
-                .filter(|site| site.bit.is_none())
-                .count();
-            assert_eq!(svg.matches("class=\"w-fixed-dot\"").count(), fixed);
-            assert_eq!(
-                svg.matches("class=\"w-data-dot\"").count(),
-                anchor::METADATA_BITS
-            );
-            assert!(!svg.contains("w-upper"));
-            assert!(!svg.contains("w-lower"));
-            assert!(svg.contains("data-version=\"2\""));
-            assert_eq!(
-                svg.matches("class=\"data-upper\"").count(),
-                frame.symbols.len()
-            );
-            assert!(
-                svg.find("class=\"w-fixed-dot\"").unwrap()
-                    < svg.find("class=\"data-upper\"").unwrap()
-            );
+            assert_eq!(svg.matches("class=\\\"w-capsule\\\"").count(), 22);
+            assert_eq!(svg.matches("class=\\\"w-hole\\\"").count(), 60);
+            assert!(svg.contains("data-version=\\\"2\\\""));
+            assert_eq!(svg.matches("class=\\\"data-upper\\\"").count(), frame.symbols.len());
+            assert!(svg.find("class=\\\"w-hole\\\"").unwrap() < svg.find("class=\\\"data-upper\\\"").unwrap());
         }
     }
 
     #[test]
-    fn changing_profile_never_changes_the_w_centers_or_outer_silhouette() {
-        let a = marks(
-            &Frame {
-                metadata: 1,
-                symbols: vec![0; 14],
-            },
-            RenderProfile::default(),
-        )
-        .unwrap()
-        .1;
-        let b = marks(
-            &Frame {
-                metadata: 15,
-                symbols: vec![0; 14],
-            },
-            RenderProfile::default(),
-        )
-        .unwrap()
-        .1;
-        let dots_a: Vec<_> = a
-            .iter()
-            .filter_map(|mark| match mark {
-                Mark::Dot(dot) => Some(dot),
-                _ => None,
-            })
-            .collect();
-        let dots_b: Vec<_> = b
-            .iter()
-            .filter_map(|mark| match mark {
-                Mark::Dot(dot) => Some(dot),
-                _ => None,
-            })
-            .collect();
-        assert_eq!(dots_a.len(), dots_b.len());
-        for (x, y) in dots_a.into_iter().zip(dots_b) {
-            assert_eq!((x.cx, x.cy), (y.cx, y.cy));
-            if !x.encoded {
-                assert_eq!(x.r, y.r);
+    fn all_brand_capsules_and_hole_centers_remain_fixed_when_metadata_changes() {
+        let a = marks(&Frame { metadata: 1, symbols: vec![0; 14] }, RenderProfile::default()).unwrap().1;
+        let b = marks(&Frame { metadata: 15, symbols: vec![0; 14] }, RenderProfile::default()).unwrap().1;
+        for (first, second) in a.iter().zip(&b) {
+            match (first, second) {
+                (Mark::Capsule(one), Mark::Capsule(two)) => {
+                    assert_eq!((one.x, one.y, one.width, one.height), (two.x, two.y, two.width, two.height));
+                }
+                (Mark::Hole(one), Mark::Hole(two)) => {
+                    assert_eq!((one.cx, one.cy), (two.cx, two.cy));
+                }
+                (Mark::Rail(..), Mark::Rail(..)) => {}
+                _ => panic!("nonidentical mark ordering"),
             }
         }
     }
