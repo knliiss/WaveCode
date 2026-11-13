@@ -192,6 +192,7 @@ pub fn v2_render_png_with_spacing(
 /// Independently size W while retaining the exact payload scale and gaps.
 /// Height units are output pixels; no scale parameter enters frame metadata.
 #[wasm_bindgen]
+#[allow(clippy::too_many_arguments)]
 pub fn v2_render_svg_with_geometry(
     metadata: u8,
     symbols: &[u8],
@@ -216,6 +217,7 @@ pub fn v2_render_svg_with_geometry(
 }
 
 #[wasm_bindgen]
+#[allow(clippy::too_many_arguments)]
 pub fn v2_render_png_with_geometry(
     metadata: u8,
     symbols: &[u8],
