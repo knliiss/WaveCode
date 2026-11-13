@@ -232,6 +232,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 PNG/JPEG support is enabled by default and can be disabled for smaller integrations with `--no-default-features`.
 
+## Experimental V2 (not released)
+
+WaveCode V2 is developed only on the `experiment/v2` branch. It has a fixed
+**round-dot W contour**, 60 smaller metadata dots and adaptive lossless
+payload profiles. All format details, mathematical proofs, optical limitations,
+migration requirements and test commands live in **[one V2 specification](spec/v2.md)**.
+The stable V1 format and API remain unchanged; V2 is not yet merged into `main`.
+
+On Windows PowerShell, run the commands on separate lines:
+
+```powershell
+cargo run -p wavecode --example v2_experiment -- encode-adaptive "https://music.youtube.com/watch?v=JGwWNGJdvx8&t=59" dot-w.png
+cargo run -p wavecode --example v2_experiment -- scan dot-w.png
+```
+
+The example generates `dot-w.png` and `dot-w.svg`. The GitHub Actions
+`V2 round-dot W preview` workflow also publishes optically verified examples.
+
 ## Development
 
 ```bash
