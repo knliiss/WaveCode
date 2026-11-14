@@ -1125,15 +1125,15 @@ pub fn scan_gray_anchor_guided(image: &GrayImage) -> Result<Located, Error> {
         }
     }
     for source in candidates.into_iter().take(4) {
-        let rectification =
-            AnchorRectification::new(source, width, height).ok_or(Error::InvalidGeometry)?;
-        let corrected = rectification.rectify(image);
-        if let Ok(mut decoded) = scan_gray(&corrected) {
-            if rectification
-                .restore_geometry(&mut decoded, width, height)
-                .is_ok()
-            {
-                return Ok(decoded);
+        if let Some(rectification) = AnchorRectification::new(source, width, height) {
+            let corrected = rectification.rectify(image);
+            if let Ok(mut decoded) = scan_gray(&corrected) {
+                if rectification
+                    .restore_geometry(&mut decoded, width, height)
+                    .is_ok()
+                {
+                    return Ok(decoded);
+                }
             }
         }
     }
