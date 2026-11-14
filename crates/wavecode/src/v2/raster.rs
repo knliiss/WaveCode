@@ -836,6 +836,327 @@ fn restore_camera_geometry(
     Ok(())
 }
 
+/// Fit a projective plane to the known centers of all 22 W capsules.
+/// Only the printed W geometry is used: payload spacing, rail heights, and
+/// visual margins must not influence the recovered camera transform.
+fn projective_shell_pose(parts: &[&Component], angle: f64) -> Option<(AnchorPose, f64)> {
+    if parts.len() != anchor::VERSION_SITES {
+        return None;
+    }
+    let (sin, cos) = angle.sin_cos();
+    let mut measured = [Point { x: 0.0, y: 0.0 }; anchor::VERSION_SITES];
+    let mut column_positions = [0.0; 11];
+    let mut transverse_span = 0.0_f64;
+    for (col, pair) in parts.chunks_exact(2).enumerate() {
+        let one = pair[0].projected(sin, cos);
+        let two = pair[1].projected(sin, cos);
+        let (upper, lower) = if one.v < two.v {
+            (pair[0], pair[1])
+        } else {
+            (pair[1], pair[0])
+        };
+        measured[col] = Point {
+            x: upper.cx,
+            y: upper.cy,
+        };
+        measured[col + 11] = Point {
+            x: lower.cx,
+            y: lower.cy,
+        };
+        column_positions[col] = (one.u + two.u) / 2.0;
+        transverse_span += (one.v - two.v).abs();
+    }
+    let width = column_positions[10] - column_positions[0];
+    let pitch = width / 10.0;
+    if !(3.0..=200.0).contains(&pitch) {
+        return None;
+    }
+    if !(pitch * 0.8..=pitch * 8.0).contains(&(transverse_span / 11.0)) {
+        return None;
+    }
+    for col in 0..11 {
+        let first = parts[col * 2].projected(sin, cos);
+        let second = parts[col * 2 + 1].projected(sin, cos);
+        if (first.u - second.u).abs() > pitch * 0.70 {
+            return None;
+        }
+        if col > 0 {
+            let step = column_positions[col] - column_positions[col - 1];
+            if !(pitch * 0.48..=pitch * 1.8).contains(&step) {
+                return None;
+            }
+        }
+    }
+
+    let reference = anchor::capsules();
+    let cx = measured.iter().map(|p| p.x).sum::<f64>() / measured.len() as f64;
+    let cy = measured.iter().map(|p| p.y).sum::<f64>() / measured.len() as f64;
+    let scale = width.max(1.0);
+    let mut matrix = [[0.0_f64; 9]; 8];
+    for (index, point) in measured.iter().enumerate() {
+        let capsule = reference[index];
+        let x = (capsule.x + capsule.width * 0.5) / anchor::W_X_MAX;
+        let y = (capsule.y + capsule.height * 0.5) / anchor::W_Y_MAX;
+        let px = (point.x - cx) / scale;
+        let py = (point.y - cy) / scale;
+        let rows = [
+            [x, y, 1.0, 0.0, 0.0, 0.0, -px * x, -px * y, px],
+            [0.0, 0.0, 0.0, x, y, 1.0, -py * x, -py * y, py],
+        ];
+        for row in rows {
+            for i in 0..8 {
+                matrix[i][8] += row[i] * row[8];
+                for j in 0..8 {
+                    matrix[i][j] += row[i] * row[j];
+                }
+            }
+        }
+    }
+    for col in 0..8 {
+        let pivot =
+            (col..8).max_by(|&a, &b| matrix[a][col].abs().total_cmp(&matrix[b][col].abs()))?;
+        if matrix[pivot][col].abs() < 1.0e-9 {
+            return None;
+        }
+        matrix.swap(pivot, col);
+        let divisor = matrix[col][col];
+        for value in &mut matrix[col][col..] {
+            *value /= divisor;
+        }
+        let pivot_row = matrix[col];
+        for (row_index, row) in matrix.iter_mut().enumerate() {
+            if row_index == col {
+                continue;
+            }
+            let factor = row[col];
+            for (value, known) in row[col..].iter_mut().zip(&pivot_row[col..]) {
+                *value -= factor * known;
+            }
+        }
+    }
+    let h: [f64; 8] = std::array::from_fn(|index| matrix[index][8]);
+    let project = |x: f64, y: f64| -> Option<Point> {
+        let d = h[6] * x + h[7] * y + 1.0;
+        if !d.is_finite() || d.abs() < 0.1 {
+            return None;
+        }
+        let px = cx + scale * (h[0] * x + h[1] * y + h[2]) / d;
+        let py = cy + scale * (h[3] * x + h[4] * y + h[5]) / d;
+        (px.is_finite() && py.is_finite()).then_some(Point { x: px, y: py })
+    };
+    let mut squared_error = 0.0;
+    let mut max_error = 0.0_f64;
+    for (index, actual) in measured.iter().enumerate() {
+        let capsule = reference[index];
+        let expected = project(
+            (capsule.x + capsule.width * 0.5) / anchor::W_X_MAX,
+            (capsule.y + capsule.height * 0.5) / anchor::W_Y_MAX,
+        )?;
+        let error = (actual.x - expected.x).hypot(actual.y - expected.y);
+        squared_error += error * error;
+        max_error = max_error.max(error);
+    }
+    let rms = (squared_error / measured.len() as f64).sqrt();
+    if rms > pitch * 0.33 || max_error > pitch * 0.82 {
+        return None;
+    }
+    let corners = [
+        project(0.0, 0.0)?,
+        project(1.0, 0.0)?,
+        project(0.0, 1.0)?,
+        project(1.0, 1.0)?,
+    ];
+    let horizontal = (corners[0].x - corners[1].x).hypot(corners[0].y - corners[1].y);
+    let vertical = (corners[0].x - corners[2].x).hypot(corners[0].y - corners[2].y);
+    if horizontal < 25.0 || vertical < 15.0 || horizontal > 2200.0 || vertical > 1400.0 {
+        return None;
+    }
+    let pose = AnchorPose::from_fiducials(corners).ok()?;
+    Some((pose, rms))
+}
+
+/// Find a W projective pose even when an affine 22-capsule W fit fails.
+/// Each candidate is verified later by full version+BCH and payload RS/CRC.
+fn find_projective_shells(parts: &[Component]) -> Vec<AnchorPose> {
+    if parts.len() < 22 {
+        return Vec::new();
+    }
+    let roll = estimate_roll(parts);
+    let mut candidates = Vec::new();
+    for flipped in [false, true] {
+        let base = roll + if flipped { std::f64::consts::PI } else { 0.0 };
+        for delta in [-0.30, -0.15, 0.0, 0.15, 0.30] {
+            let angle = base + delta;
+            let (sin, cos) = angle.sin_cos();
+            let mut sorted: Vec<_> = parts
+                .iter()
+                .filter(|part| part.pixels.len() >= 15)
+                .collect();
+            sorted.sort_by(|a, b| (a.cx * cos + a.cy * sin).total_cmp(&(b.cx * cos + b.cy * sin)));
+            for window in sorted.windows(anchor::VERSION_SITES) {
+                if let Some((pose, error)) = projective_shell_pose(window, angle) {
+                    candidates.push((error, pose));
+                }
+            }
+        }
+    }
+    candidates.sort_by(|a, b| a.0.total_cmp(&b.0));
+    candidates.truncate(4);
+    candidates.into_iter().map(|(_, pose)| pose).collect()
+}
+
+struct AnchorRectification {
+    source: AnchorPose,
+    origin_x: f64,
+    origin_y: f64,
+    pixel_scale: f64,
+}
+
+impl AnchorRectification {
+    fn new(source: AnchorPose, width: u32, height: u32) -> Option<Self> {
+        let a = source.project(0.0, 0.0)?;
+        let b = source.project(1.0, 0.0)?;
+        let c = source.project(0.0, 1.0)?;
+        let d = source.project(1.0, 1.0)?;
+        let horizontal =
+            ((b.x - a.x).hypot(b.y - a.y) + (d.x - c.x).hypot(d.y - c.y)) / (2.0 * anchor::W_X_MAX);
+        let vertical =
+            ((c.x - a.x).hypot(c.y - a.y) + (d.x - b.x).hypot(d.y - b.y)) / (2.0 * anchor::W_Y_MAX);
+        let pixel_scale = horizontal.max(vertical).min(2.5);
+        if !(0.18..=2.5).contains(&pixel_scale) {
+            return None;
+        }
+        let middle = source.project(0.5, 0.5)?;
+        let center_x = middle.x.clamp(
+            pixel_scale * anchor::W_X_MAX * 0.5 + 5.0,
+            (f64::from(width) * 0.32).max(pixel_scale * anchor::W_X_MAX * 0.5 + 5.0),
+        );
+        let center_y = middle.y.clamp(
+            pixel_scale * anchor::W_Y_MAX * 0.5 + 5.0,
+            (f64::from(height) - pixel_scale * anchor::W_Y_MAX * 0.5 - 5.0)
+                .max(pixel_scale * anchor::W_Y_MAX * 0.5 + 5.0),
+        );
+        Some(Self {
+            source,
+            origin_x: center_x - pixel_scale * anchor::W_X_MAX * 0.5,
+            origin_y: center_y - pixel_scale * anchor::W_Y_MAX * 0.5,
+            pixel_scale,
+        })
+    }
+
+    fn to_source(&self, x: f64, y: f64) -> Option<Point> {
+        self.source.project(
+            (x - self.origin_x) / (self.pixel_scale * anchor::W_X_MAX),
+            (y - self.origin_y) / (self.pixel_scale * anchor::W_Y_MAX),
+        )
+    }
+
+    fn rectify(&self, image: &GrayImage) -> GrayImage {
+        let (width, height) = image.dimensions();
+        GrayImage::from_fn(width, height, |x, y| {
+            let value = self
+                .to_source(f64::from(x), f64::from(y))
+                .map(|point| bilinear(image, point.x, point.y))
+                .unwrap_or(255);
+            image::Luma([value])
+        })
+    }
+
+    fn restore_geometry(&self, result: &mut Located, width: u32, height: u32) -> Result<(), Error> {
+        let corners = [(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)]
+            .map(|(x, y)| result.pose.project(x, y).ok_or(Error::InvalidGeometry))
+            .map(|point| {
+                point.and_then(|p| self.to_source(p.x, p.y).ok_or(Error::InvalidGeometry))
+            });
+        let [a, b, c, d] = corners;
+        result.pose = AnchorPose::from_fiducials([a?, b?, c?, d?])?;
+        let bounds = result.bounds;
+        let rectangle = [
+            (f64::from(bounds.left), f64::from(bounds.top)),
+            (f64::from(bounds.left + bounds.width), f64::from(bounds.top)),
+            (
+                f64::from(bounds.left),
+                f64::from(bounds.top + bounds.height),
+            ),
+            (
+                f64::from(bounds.left + bounds.width),
+                f64::from(bounds.top + bounds.height),
+            ),
+        ];
+        let mapped: Vec<_> = rectangle
+            .iter()
+            .map(|&(x, y)| self.to_source(x, y).ok_or(Error::InvalidGeometry))
+            .collect::<Result<_, _>>()?;
+        let left = mapped
+            .iter()
+            .map(|p| p.x)
+            .fold(f64::INFINITY, f64::min)
+            .floor()
+            .clamp(0.0, f64::from(width));
+        let top = mapped
+            .iter()
+            .map(|p| p.y)
+            .fold(f64::INFINITY, f64::min)
+            .floor()
+            .clamp(0.0, f64::from(height));
+        let right = mapped
+            .iter()
+            .map(|p| p.x)
+            .fold(f64::NEG_INFINITY, f64::max)
+            .ceil()
+            .clamp(0.0, f64::from(width));
+        let bottom = mapped
+            .iter()
+            .map(|p| p.y)
+            .fold(f64::NEG_INFINITY, f64::max)
+            .ceil()
+            .clamp(0.0, f64::from(height));
+        if right <= left || bottom <= top {
+            return Err(Error::InvalidGeometry);
+        }
+        result.bounds = Bounds {
+            left: left as u32,
+            top: top as u32,
+            width: (right - left) as u32,
+            height: (bottom - top) as u32,
+        };
+        Ok(())
+    }
+}
+
+/// Derive candidate camera homographies from the W itself and verify every
+/// rectification with the unchanged optical decoder. No fixed yaw/tilt guess.
+pub fn scan_gray_anchor_guided(image: &GrayImage) -> Result<Located, Error> {
+    let (width, height) = image.dimensions();
+    if width == 0 || height == 0 || u64::from(width) * u64::from(height) > MAX_PIXELS {
+        return Err(Error::InvalidFrame);
+    }
+    let threshold = otsu_threshold(image);
+    let mut candidates = Vec::new();
+    for (level, light) in [(128, false), (threshold, false), (threshold, true)] {
+        if let Ok(parts) = connected(image, level, light) {
+            candidates.extend(find_projective_shells(&parts));
+        }
+        if candidates.len() >= 4 {
+            break;
+        }
+    }
+    for source in candidates.into_iter().take(4) {
+        if let Some(rectification) = AnchorRectification::new(source, width, height) {
+            let corrected = rectification.rectify(image);
+            if let Ok(mut decoded) = scan_gray(&corrected) {
+                if rectification
+                    .restore_geometry(&mut decoded, width, height)
+                    .is_ok()
+                {
+                    return Ok(decoded);
+                }
+            }
+        }
+    }
+    Err(Error::InvalidFrame)
+}
+
 /// Check the face-on frame once, then try a bounded range of perspective
 /// hypotheses on the same grayscale image. This avoids re-decoding an image
 /// and repeating exposure segmentation for every adjacent camera angle.
@@ -849,6 +1170,9 @@ pub fn scan_gray_oblique_batch(
         return Err(Error::InvalidFrame);
     }
     if let Ok(result) = scan_gray(image) {
+        return Ok(result);
+    }
+    if let Ok(result) = scan_gray_anchor_guided(image) {
         return Ok(result);
     }
     for offset in 0..count.min(OBLIQUE_VIEWS.len()) {
