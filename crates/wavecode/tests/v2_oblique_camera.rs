@@ -140,6 +140,25 @@ fn w_anchor_recovers_uncalibrated_compact_dual_perspective() {
     assert_eq!(located.version, 2);
 }
 
+
+#[test]
+fn w_anchor_recovers_an_off_center_code_without_angle_presets() {
+    let expected = Content::Single(
+        MusicCode::from_url("https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b").unwrap(),
+    );
+    let original = clean_card(&expected);
+    let mut shifted = GrayImage::from_pixel(1280, 720, Luma([242]));
+    imageops::overlay(&mut shifted, &original, -170, 65);
+    let frame = perspective_photo(&shifted, 0.38, -0.23);
+    assert_eq!(
+        raster::scan_gray_anchor_guided(&frame)
+            .unwrap()
+            .decoded
+            .content,
+        expected
+    );
+}
+
 #[test]
 fn w_anchor_does_not_accept_a_blank_scene() {
     let photo = GrayImage::from_pixel(1280, 720, Luma([242]));
