@@ -175,7 +175,7 @@ impl ShellFit<'_> {
     }
 }
 
-fn estimate_roll(components: &[Component]) -> f64 {
+fn estimate_roll<'a>(components: impl IntoIterator<Item = &'a Component>) -> f64 {
     let (mut cos_sum, mut sin_sum) = (0.0, 0.0);
     for component in components {
         if component.pixels.len() < 80 {
@@ -977,11 +977,11 @@ fn projective_shell_pose(parts: &[&Component], angle: f64) -> Option<(AnchorPose
 
 /// Find a W projective pose even when an affine 22-capsule W fit fails.
 /// Each candidate is verified later by full version+BCH and payload RS/CRC.
-fn find_projective_shells(parts: &[Component]) -> Vec<AnchorPose> {
+fn find_projective_shells(parts: &[&Component]) -> Vec<AnchorPose> {
     if parts.len() < 22 {
         return Vec::new();
     }
-    let roll = estimate_roll(parts);
+    let roll = estimate_roll(parts.iter().copied());
     let mut candidates = Vec::new();
     for flipped in [false, true] {
         let base = roll + if flipped { std::f64::consts::PI } else { 0.0 };
@@ -990,6 +990,7 @@ fn find_projective_shells(parts: &[Component]) -> Vec<AnchorPose> {
             let (sin, cos) = angle.sin_cos();
             let mut sorted: Vec<_> = parts
                 .iter()
+                .copied()
                 .filter(|part| part.pixels.len() >= 15)
                 .collect();
             sorted.sort_by(|a, b| (a.cx * cos + a.cy * sin).total_cmp(&(b.cx * cos + b.cy * sin)));
@@ -1132,24 +1133,57 @@ pub fn scan_gray_anchor_guided(image: &GrayImage) -> Result<Located, Error> {
         return Err(Error::InvalidFrame);
     }
     let threshold = otsu_threshold(image);
-    let mut candidates = Vec::new();
+    let mut attempts = 0;
     for (level, light) in [(128, false), (threshold, false), (threshold, true)] {
-        if let Ok(parts) = connected(image, level, light) {
-            candidates.extend(find_projective_shells(&parts));
-        }
-        if candidates.len() >= 4 {
-            break;
-        }
-    }
-    for source in candidates.into_iter().take(4) {
-        if let Some(rectification) = AnchorRectification::new(source, width, height) {
-            let corrected = rectification.rectify(image);
-            if let Ok(mut decoded) = scan_gray(&corrected) {
-                if rectification
-                    .restore_geometry(&mut decoded, width, height)
-                    .is_ok()
+        let Ok(parts) = connected(image, level, light) else {
+            continue;
+        };
+        // Crop only the candidate component list, never the image pixels.
+        // Printed decorations above and below the code must not interrupt
+        // the 22 consecutive W components in projected reading order.
+        let mut seen_centers: Vec<Point> = Vec::new();
+        for (top, bottom) in [
+            (0.18, 0.82),
+            (0.30, 0.70),
+            (0.0, 1.0),
+            (0.0, 0.60),
+            (0.40, 1.0),
+        ] {
+            let subset: Vec<&Component> = parts
+                .iter()
+                .filter(|part| {
+                    part.cy >= top * f64::from(height)
+                        && part.cy <= bottom * f64::from(height)
+                })
+                .collect();
+            if subset.len() < anchor::VERSION_SITES {
+                continue;
+            }
+            for source in find_projective_shells(&subset) {
+                let Some(center) = source.project(0.5, 0.5) else {
+                    continue;
+                };
+                if seen_centers
+                    .iter()
+                    .any(|known| (known.x - center.x).hypot(known.y - center.y) < 18.0)
                 {
-                    return Ok(decoded);
+                    continue;
+                }
+                seen_centers.push(center);
+                attempts += 1;
+                if attempts > 12 {
+                    return Err(Error::InvalidFrame);
+                }
+                if let Some(rectification) = AnchorRectification::new(source, width, height) {
+                    let corrected = rectification.rectify(image);
+                    if let Ok(mut decoded) = scan_gray(&corrected) {
+                        if rectification
+                            .restore_geometry(&mut decoded, width, height)
+                            .is_ok()
+                        {
+                            return Ok(decoded);
+                        }
+                    }
                 }
             }
         }
