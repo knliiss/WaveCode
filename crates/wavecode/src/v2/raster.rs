@@ -1193,10 +1193,11 @@ pub fn scan_gray_anchor_guided(image: &GrayImage) -> Result<Located, Error> {
 /// Check the face-on frame once, then try a bounded range of perspective
 /// hypotheses on the same grayscale image. This avoids re-decoding an image
 /// and repeating exposure segmentation for every adjacent camera angle.
-pub fn scan_gray_oblique_batch(
+fn scan_gray_oblique_batch_impl(
     image: &GrayImage,
     start_candidate: usize,
     count: usize,
+    anchor_guided: bool,
 ) -> Result<Located, Error> {
     let (width, height) = image.dimensions();
     if width == 0 || height == 0 || u64::from(width) * u64::from(height) > MAX_PIXELS {
@@ -1205,8 +1206,10 @@ pub fn scan_gray_oblique_batch(
     if let Ok(result) = scan_gray(image) {
         return Ok(result);
     }
-    if let Ok(result) = scan_gray_anchor_guided(image) {
-        return Ok(result);
+    if anchor_guided {
+        if let Ok(result) = scan_gray_anchor_guided(image) {
+            return Ok(result);
+        }
     }
     for offset in 0..count.min(OBLIQUE_VIEWS.len()) {
         let index = (start_candidate % OBLIQUE_VIEWS.len() + offset) % OBLIQUE_VIEWS.len();
@@ -1219,6 +1222,25 @@ pub fn scan_gray_oblique_batch(
         }
     }
     Err(Error::InvalidFrame)
+}
+
+/// Legacy entry point retains W-guided recovery for existing SDK clients.
+pub fn scan_gray_oblique_batch(
+    image: &GrayImage,
+    start_candidate: usize,
+    count: usize,
+) -> Result<Located, Error> {
+    scan_gray_oblique_batch_impl(image, start_candidate, count, true)
+}
+
+/// Fast camera path: scan face-on and selected calibrated perspectives,
+/// without repeatedly performing the expensive W homography search.
+pub fn scan_gray_oblique_batch_fast(
+    image: &GrayImage,
+    start_candidate: usize,
+    count: usize,
+) -> Result<Located, Error> {
+    scan_gray_oblique_batch_impl(image, start_candidate, count, false)
 }
 
 /// The original single-hypothesis entry point remains source-compatible.
@@ -1236,6 +1258,28 @@ pub fn scan_png_or_jpeg_oblique_batch(
     }
     let image = image::load_from_memory(bytes).map_err(|_| Error::InvalidFrame)?;
     scan_gray_oblique_batch(&image.to_luma8(), start_candidate, count)
+}
+
+pub fn scan_png_or_jpeg_oblique_batch_fast(
+    bytes: &[u8],
+    start_candidate: usize,
+    count: usize,
+) -> Result<Located, Error> {
+    if bytes.len() > 16 * 1024 * 1024 {
+        return Err(Error::InvalidFrame);
+    }
+    let image = image::load_from_memory(bytes).map_err(|_| Error::InvalidFrame)?;
+    scan_gray_oblique_batch_fast(&image.to_luma8(), start_candidate, count)
+}
+
+/// Dedicated expensive recovery path, only invoked periodically by the
+/// browser or for a saved photo after the ordinary finder fails.
+pub fn scan_png_or_jpeg_anchor_guided(bytes: &[u8]) -> Result<Located, Error> {
+    if bytes.len() > 16 * 1024 * 1024 {
+        return Err(Error::InvalidFrame);
+    }
+    let image = image::load_from_memory(bytes).map_err(|_| Error::InvalidFrame)?;
+    scan_gray_anchor_guided(&image.to_luma8())
 }
 
 pub fn scan_png_or_jpeg_oblique(bytes: &[u8], candidate: usize) -> Result<Located, Error> {
