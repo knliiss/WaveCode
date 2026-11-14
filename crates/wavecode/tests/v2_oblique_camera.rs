@@ -33,7 +33,7 @@ fn clean_card(content: &Content) -> GrayImage {
 }
 
 /// Perspective projection, using inverse camera mapping and bilinear sampling.
-fn perspective_photo(source: &GrayImage, yaw: f64, tilt: f64) -> GrayImage {
+fn perspective_photo_with_pitch(source: &GrayImage, yaw: f64, tilt: f64, pitch: f64) -> GrayImage {
     let (width, height) = source.dimensions();
     let cx = f64::from(width) / 2.0;
     let cy = f64::from(height) / 2.0;
@@ -41,7 +41,7 @@ fn perspective_photo(source: &GrayImage, yaw: f64, tilt: f64) -> GrayImage {
     GrayImage::from_fn(width, height, |x, y| {
         let dx = f64::from(x) - cx;
         let dy = f64::from(y) - cy;
-        let denominator = 1.0 - yaw * dx / w;
+        let denominator = 1.0 - yaw * dx / w - pitch * dy / f64::from(height);
         let sx = cx + dx / denominator;
         let sy = cy + (dy - tilt * dx) / denominator;
         let px = sx.floor() as i64;
@@ -58,6 +58,10 @@ fn perspective_photo(source: &GrayImage, yaw: f64, tilt: f64) -> GrayImage {
         let bottom = sample(0, 1) * (1.0 - fx) + sample(1, 1) * fx;
         Luma([(top * (1.0 - fy) + bottom * fy).round() as u8])
     })
+}
+
+fn perspective_photo(source: &GrayImage, yaw: f64, tilt: f64) -> GrayImage {
+    perspective_photo_with_pitch(source, yaw, tilt, 0.0)
 }
 
 #[test]
@@ -316,5 +320,33 @@ fn v2_scans_downscaled_and_softened_dual_camera_capture() {
     assert_eq!(
         raster::scan_gray(&blurred).unwrap().decoded.content,
         expected
+    );
+}
+
+#[test]
+fn v2_reconstructs_camera_pitch_and_yaw_without_specific_alignment() {
+    let single = Content::Single(
+        MusicCode::from_url("https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b").unwrap(),
+    );
+    let single_frame = perspective_photo_with_pitch(&clean_card(&single), 0.32, 0.08, 0.42);
+    assert_eq!(
+        raster::scan_gray_anchor_guided(&single_frame)
+            .unwrap()
+            .decoded
+            .content,
+        single
+    );
+
+    let dual = Content::DualLinks {
+        first: MusicCode::from_url("https://www.deezer.com/track/12345").unwrap(),
+        second: MusicCode::from_url("https://tidal.com/browse/track/67890").unwrap(),
+    };
+    let dual_frame = perspective_photo_with_pitch(&clean_card(&dual), -0.32, -0.08, -0.42);
+    assert_eq!(
+        raster::scan_gray_anchor_guided(&dual_frame)
+            .unwrap()
+            .decoded
+            .content,
+        dual
     );
 }
