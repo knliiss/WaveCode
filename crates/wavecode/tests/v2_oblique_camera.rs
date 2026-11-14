@@ -140,7 +140,6 @@ fn w_anchor_recovers_uncalibrated_compact_dual_perspective() {
     assert_eq!(located.version, 2);
 }
 
-
 #[test]
 fn w_anchor_recovers_an_off_center_code_without_angle_presets() {
     let expected = Content::Single(
