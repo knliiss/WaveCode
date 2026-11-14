@@ -163,3 +163,29 @@ fn w_anchor_does_not_accept_a_blank_scene() {
     let photo = GrayImage::from_pixel(1280, 720, Luma([242]));
     assert!(raster::scan_gray_anchor_guided(&photo).is_err());
 }
+
+#[test]
+fn w_anchor_recovers_dual_with_graphic_clutter_outside_the_code() {
+    let expected = Content::DualLinks {
+        first: MusicCode::from_url("https://www.deezer.com/track/12345").unwrap(),
+        second: MusicCode::from_url("https://tidal.com/browse/track/67890").unwrap(),
+    };
+    let mut card = clean_card(&expected);
+    for x in (60..1220).step_by(33) {
+        for dx in 0..6 {
+            for dy in 0..18 {
+                for y in [65 + dy, 625 + dy] {
+                    card.put_pixel(x + dx, y, Luma([48]));
+                }
+            }
+        }
+    }
+    let photo = perspective_photo(&card, -0.48, 0.25);
+    assert_eq!(
+        raster::scan_gray_anchor_guided(&photo)
+            .unwrap()
+            .decoded
+            .content,
+        expected
+    );
+}
