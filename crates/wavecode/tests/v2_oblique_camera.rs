@@ -204,3 +204,71 @@ fn w_anchor_recovers_dual_with_graphic_clutter_outside_the_code() {
         expected
     );
 }
+
+/// Simulate a phone rolled around its camera axis after a keystone projection.
+fn rolled_photo(source: &GrayImage, angle: f64) -> GrayImage {
+    let (width, height) = source.dimensions();
+    let cx = f64::from(width) / 2.0;
+    let cy = f64::from(height) / 2.0;
+    let (sin, cos) = angle.sin_cos();
+    GrayImage::from_fn(width, height, |x, y| {
+        let dx = f64::from(x) - cx;
+        let dy = f64::from(y) - cy;
+        let sx = cx + dx * cos + dy * sin;
+        let sy = cy - dx * sin + dy * cos;
+        let ix = sx.floor() as i64;
+        let iy = sy.floor() as i64;
+        if ix < 0 || iy < 0 || ix + 1 >= i64::from(width) || iy + 1 >= i64::from(height) {
+            return Luma([242]);
+        }
+        let fx = sx - ix as f64;
+        let fy = sy - iy as f64;
+        let at = |x: i64, y: i64| f64::from(source.get_pixel(x as u32, y as u32)[0]);
+        let top = at(ix, iy) * (1.0 - fx) + at(ix + 1, iy) * fx;
+        let bottom = at(ix, iy + 1) * (1.0 - fx) + at(ix + 1, iy + 1) * fx;
+        Luma([(top * (1.0 - fy) + bottom * fy).round() as u8])
+    })
+}
+
+#[test]
+fn v2_single_survives_rolling_the_camera_after_perspective() {
+    let expected = Content::Single(
+        MusicCode::from_url("https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b").unwrap(),
+    );
+    let image = rolled_photo(&perspective_photo(&clean_card(&expected), 0.48, 0.17), 0.39);
+    assert_eq!(
+        raster::scan_gray_anchor_guided(&image).unwrap().decoded.content,
+        expected
+    );
+}
+
+#[test]
+fn v2_dual_survives_opposite_camera_roll_after_perspective() {
+    let expected = Content::DualLinks {
+        first: MusicCode::from_url("https://www.deezer.com/track/12345").unwrap(),
+        second: MusicCode::from_url("https://tidal.com/browse/track/67890").unwrap(),
+    };
+    let image = rolled_photo(&perspective_photo(&clean_card(&expected), -0.48, -0.17), -0.39);
+    assert_eq!(
+        raster::scan_gray_anchor_guided(&image).unwrap().decoded.content,
+        expected
+    );
+}
+
+#[test]
+fn v2_scans_camera_scene_with_hundreds_of_noise_components() {
+    let expected = Content::Single(
+        MusicCode::from_url("https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b").unwrap(),
+    );
+    let mut scene = clean_card(&expected);
+    for index in 0..520_u32 {
+        let x = 25 + index % 65 * 18;
+        let y = 20 + index / 65 * 22;
+        for dx in 0..3 {
+            for dy in 0..3 {
+                scene.put_pixel(x + dx, y + dy, Luma([20]));
+            }
+        }
+    }
+    assert_eq!(raster::scan_gray(&scene).unwrap().decoded.content, expected);
+}
