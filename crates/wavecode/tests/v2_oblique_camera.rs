@@ -112,4 +112,7 @@ fn invalid_empty_frame_remains_invalid_with_perspective_recovery() {
         assert!(raster::scan_gray_oblique(&frame, index).is_err());
         assert!(raster::scan_gray_oblique_batch(&frame, index, 2).is_err());
     }
+    assert!(raster::scan_gray_oblique_batch(&frame, usize::MAX, 2).is_err());
+    for index in 0..0 {
+    }
 }
