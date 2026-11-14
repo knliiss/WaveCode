@@ -1156,39 +1156,58 @@ pub fn scan_gray_anchor_guided(image: &GrayImage) -> Result<Located, Error> {
         let Ok(parts) = connected(image, level, light) else {
             continue;
         };
-        // Crop only the candidate component list, never the image pixels.
-        // Printed decorations above and below the code must not interrupt
-        // the 22 consecutive W components in projected reading order.
-        let mut seen_centers: Vec<Point> = Vec::new();
-        for (top, bottom) in [
-            (0.18, 0.82),
-            (0.30, 0.70),
-            (0.0, 1.0),
-            (0.0, 0.60),
-            (0.40, 1.0),
-        ] {
+        // The W may be visually surrounded by text or repeated decorative
+        // bars that project to the same horizontal positions. First test
+        // broad horizontal bands, then overlapping two-dimensional regions.
+        // All decoded geometry remains in the original full image plane.
+        const REGIONS: [(f64, f64, f64, f64); 14] = [
+            (0.0, 1.0, 0.18, 0.82),
+            (0.0, 1.0, 0.30, 0.70),
+            (0.0, 1.0, 0.0, 1.0),
+            (0.0, 1.0, 0.0, 0.60),
+            (0.0, 1.0, 0.40, 1.0),
+            (0.0, 0.52, 0.18, 0.82),
+            (0.24, 0.76, 0.18, 0.82),
+            (0.48, 1.0, 0.18, 0.82),
+            (0.0, 0.52, 0.35, 0.85),
+            (0.24, 0.76, 0.35, 0.85),
+            (0.48, 1.0, 0.35, 0.85),
+            (0.0, 0.52, 0.0, 0.65),
+            (0.24, 0.76, 0.0, 0.65),
+            (0.48, 1.0, 0.0, 0.65),
+        ];
+        let mut seen_poses: Vec<(Point, f64)> = Vec::new();
+        for (left, right, top, bottom) in REGIONS {
             let subset: Vec<&Component> = parts
                 .iter()
                 .filter(|part| {
-                    part.cy >= top * f64::from(height) && part.cy <= bottom * f64::from(height)
+                    part.cx >= left * f64::from(width)
+                        && part.cx <= right * f64::from(width)
+                        && part.cy >= top * f64::from(height)
+                        && part.cy <= bottom * f64::from(height)
                 })
                 .collect();
             if subset.len() < anchor::VERSION_SITES {
                 continue;
             }
             for source in find_projective_shells(&subset) {
-                let Some(center) = source.project(0.5, 0.5) else {
+                let (Some(center), Some(from), Some(to)) = (
+                    source.project(0.5, 0.5),
+                    source.project(0.0, 0.5),
+                    source.project(1.0, 0.5),
+                ) else {
                     continue;
                 };
-                if seen_centers
-                    .iter()
-                    .any(|known| (known.x - center.x).hypot(known.y - center.y) < 18.0)
-                {
+                let angle = (to.y - from.y).atan2(to.x - from.x);
+                if seen_poses.iter().any(|(known, known_angle)| {
+                    (known.x - center.x).hypot(known.y - center.y) < 15.0
+                        && (angle - known_angle).sin().abs() < 0.07
+                }) {
                     continue;
                 }
-                seen_centers.push(center);
+                seen_poses.push((center, angle));
                 attempts += 1;
-                if attempts > 12 {
+                if attempts > 16 {
                     return Err(Error::InvalidFrame);
                 }
                 if let Some(rectification) = AnchorRectification::new(source, width, height) {
