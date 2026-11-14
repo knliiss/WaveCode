@@ -836,7 +836,6 @@ fn restore_camera_geometry(
     Ok(())
 }
 
-
 /// Fit a projective plane to the known centers of all 22 W capsules.
 /// Only the printed W geometry is used: payload spacing, rail heights, and
 /// visual margins must not influence the recovered camera transform.
@@ -914,9 +913,8 @@ fn projective_shell_pose(parts: &[&Component], angle: f64) -> Option<(AnchorPose
         }
     }
     for col in 0..8 {
-        let pivot = (col..8).max_by(|&a, &b| {
-            matrix[a][col].abs().total_cmp(&matrix[b][col].abs())
-        })?;
+        let pivot =
+            (col..8).max_by(|&a, &b| matrix[a][col].abs().total_cmp(&matrix[b][col].abs()))?;
         if matrix[pivot][col].abs() < 1.0e-9 {
             return None;
         }
@@ -968,10 +966,8 @@ fn projective_shell_pose(parts: &[&Component], angle: f64) -> Option<(AnchorPose
         project(0.0, 1.0)?,
         project(1.0, 1.0)?,
     ];
-    let horizontal = (corners[0].x - corners[1].x)
-        .hypot(corners[0].y - corners[1].y);
-    let vertical = (corners[0].x - corners[2].x)
-        .hypot(corners[0].y - corners[2].y);
+    let horizontal = (corners[0].x - corners[1].x).hypot(corners[0].y - corners[1].y);
+    let vertical = (corners[0].x - corners[2].x).hypot(corners[0].y - corners[2].y);
     if horizontal < 25.0 || vertical < 15.0 || horizontal > 2200.0 || vertical > 1400.0 {
         return None;
     }
@@ -996,9 +992,7 @@ fn find_projective_shells(parts: &[Component]) -> Vec<AnchorPose> {
                 .iter()
                 .filter(|part| part.pixels.len() >= 15)
                 .collect();
-            sorted.sort_by(|a, b| {
-                (a.cx * cos + a.cy * sin).total_cmp(&(b.cx * cos + b.cy * sin))
-            });
+            sorted.sort_by(|a, b| (a.cx * cos + a.cy * sin).total_cmp(&(b.cx * cos + b.cy * sin)));
             for window in sorted.windows(anchor::VERSION_SITES) {
                 if let Some((pose, error)) = projective_shell_pose(window, angle) {
                     candidates.push((error, pose));
@@ -1024,12 +1018,10 @@ impl AnchorRectification {
         let b = source.project(1.0, 0.0)?;
         let c = source.project(0.0, 1.0)?;
         let d = source.project(1.0, 1.0)?;
-        let horizontal = ((b.x - a.x).hypot(b.y - a.y)
-            + (d.x - c.x).hypot(d.y - c.y))
-            / (2.0 * anchor::W_X_MAX);
-        let vertical = ((c.x - a.x).hypot(c.y - a.y)
-            + (d.x - b.x).hypot(d.y - b.y))
-            / (2.0 * anchor::W_Y_MAX);
+        let horizontal =
+            ((b.x - a.x).hypot(b.y - a.y) + (d.x - c.x).hypot(d.y - c.y)) / (2.0 * anchor::W_X_MAX);
+        let vertical =
+            ((c.x - a.x).hypot(c.y - a.y) + (d.x - b.x).hypot(d.y - b.y)) / (2.0 * anchor::W_Y_MAX);
         let pixel_scale = horizontal.max(vertical).min(2.5);
         if !(0.18..=2.5).contains(&pixel_scale) {
             return None;
@@ -1037,8 +1029,7 @@ impl AnchorRectification {
         let middle = source.project(0.5, 0.5)?;
         let center_x = middle.x.clamp(
             pixel_scale * anchor::W_X_MAX * 0.5 + 5.0,
-            (f64::from(width) * 0.32)
-                .max(pixel_scale * anchor::W_X_MAX * 0.5 + 5.0),
+            (f64::from(width) * 0.32).max(pixel_scale * anchor::W_X_MAX * 0.5 + 5.0),
         );
         let center_y = middle.y.clamp(
             pixel_scale * anchor::W_Y_MAX * 0.5 + 5.0,
@@ -1063,7 +1054,8 @@ impl AnchorRectification {
     fn rectify(&self, image: &GrayImage) -> GrayImage {
         let (width, height) = image.dimensions();
         GrayImage::from_fn(width, height, |x, y| {
-            let value = self.to_source(f64::from(x), f64::from(y))
+            let value = self
+                .to_source(f64::from(x), f64::from(y))
                 .map(|point| bilinear(image, point.x, point.y))
                 .unwrap_or(255);
             image::Luma([value])
@@ -1073,27 +1065,52 @@ impl AnchorRectification {
     fn restore_geometry(&self, result: &mut Located, width: u32, height: u32) -> Result<(), Error> {
         let corners = [(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)]
             .map(|(x, y)| result.pose.project(x, y).ok_or(Error::InvalidGeometry))
-            .map(|point| point.and_then(|p| self.to_source(p.x, p.y).ok_or(Error::InvalidGeometry)));
+            .map(|point| {
+                point.and_then(|p| self.to_source(p.x, p.y).ok_or(Error::InvalidGeometry))
+            });
         let [a, b, c, d] = corners;
         result.pose = AnchorPose::from_fiducials([a?, b?, c?, d?])?;
         let bounds = result.bounds;
         let rectangle = [
             (f64::from(bounds.left), f64::from(bounds.top)),
             (f64::from(bounds.left + bounds.width), f64::from(bounds.top)),
-            (f64::from(bounds.left), f64::from(bounds.top + bounds.height)),
-            (f64::from(bounds.left + bounds.width), f64::from(bounds.top + bounds.height)),
+            (
+                f64::from(bounds.left),
+                f64::from(bounds.top + bounds.height),
+            ),
+            (
+                f64::from(bounds.left + bounds.width),
+                f64::from(bounds.top + bounds.height),
+            ),
         ];
-        let mapped: Vec<_> = rectangle.iter()
+        let mapped: Vec<_> = rectangle
+            .iter()
             .map(|&(x, y)| self.to_source(x, y).ok_or(Error::InvalidGeometry))
             .collect::<Result<_, _>>()?;
-        let left = mapped.iter().map(|p| p.x).fold(f64::INFINITY, f64::min)
-            .floor().clamp(0.0, f64::from(width));
-        let top = mapped.iter().map(|p| p.y).fold(f64::INFINITY, f64::min)
-            .floor().clamp(0.0, f64::from(height));
-        let right = mapped.iter().map(|p| p.x).fold(f64::NEG_INFINITY, f64::max)
-            .ceil().clamp(0.0, f64::from(width));
-        let bottom = mapped.iter().map(|p| p.y).fold(f64::NEG_INFINITY, f64::max)
-            .ceil().clamp(0.0, f64::from(height));
+        let left = mapped
+            .iter()
+            .map(|p| p.x)
+            .fold(f64::INFINITY, f64::min)
+            .floor()
+            .clamp(0.0, f64::from(width));
+        let top = mapped
+            .iter()
+            .map(|p| p.y)
+            .fold(f64::INFINITY, f64::min)
+            .floor()
+            .clamp(0.0, f64::from(height));
+        let right = mapped
+            .iter()
+            .map(|p| p.x)
+            .fold(f64::NEG_INFINITY, f64::max)
+            .ceil()
+            .clamp(0.0, f64::from(width));
+        let bottom = mapped
+            .iter()
+            .map(|p| p.y)
+            .fold(f64::NEG_INFINITY, f64::max)
+            .ceil()
+            .clamp(0.0, f64::from(height));
         if right <= left || bottom <= top {
             return Err(Error::InvalidGeometry);
         }
