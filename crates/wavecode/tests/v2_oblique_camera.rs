@@ -237,7 +237,10 @@ fn v2_single_survives_rolling_the_camera_after_perspective() {
     );
     let image = rolled_photo(&perspective_photo(&clean_card(&expected), 0.48, 0.17), 0.39);
     assert_eq!(
-        raster::scan_gray_anchor_guided(&image).unwrap().decoded.content,
+        raster::scan_gray_anchor_guided(&image)
+            .unwrap()
+            .decoded
+            .content,
         expected
     );
 }
@@ -248,9 +251,15 @@ fn v2_dual_survives_opposite_camera_roll_after_perspective() {
         first: MusicCode::from_url("https://www.deezer.com/track/12345").unwrap(),
         second: MusicCode::from_url("https://tidal.com/browse/track/67890").unwrap(),
     };
-    let image = rolled_photo(&perspective_photo(&clean_card(&expected), -0.48, -0.17), -0.39);
+    let image = rolled_photo(
+        &perspective_photo(&clean_card(&expected), -0.48, -0.17),
+        -0.39,
+    );
     assert_eq!(
-        raster::scan_gray_anchor_guided(&image).unwrap().decoded.content,
+        raster::scan_gray_anchor_guided(&image)
+            .unwrap()
+            .decoded
+            .content,
         expected
     );
 }
