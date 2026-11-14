@@ -350,3 +350,26 @@ fn v2_reconstructs_camera_pitch_and_yaw_without_specific_alignment() {
         dual
     );
 }
+
+#[test]
+fn v2_dual_survives_roll_with_visual_clutter_near_the_w() {
+    let expected = Content::DualLinks {
+        first: MusicCode::from_url("https://www.deezer.com/track/12345").unwrap(),
+        second: MusicCode::from_url("https://tidal.com/browse/track/67890").unwrap(),
+    };
+    let mut scene = clean_card(&expected);
+    for x in (60..1220).step_by(33) {
+        for dx in 0..6 {
+            for dy in 0..18 {
+                for y in [65 + dy, 625 + dy] {
+                    scene.put_pixel(x + dx, y, Luma([48]));
+                }
+            }
+        }
+    }
+    let image = rolled_photo(&perspective_photo(&scene, -0.48, -0.17), -0.39);
+    assert_eq!(
+        raster::scan_gray_anchor_guided(&image).unwrap().decoded.content,
+        expected
+    );
+}
