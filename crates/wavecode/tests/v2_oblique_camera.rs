@@ -22,9 +22,8 @@ fn clean_card(content: &Content) -> GrayImage {
     .unwrap();
     let mark = image::load_from_memory(&bytes).unwrap().to_luma8();
     let width = 690_u32;
-    let height = (f64::from(mark.height()) * f64::from(width)
-        / f64::from(mark.width()))
-    .round() as u32;
+    let height =
+        (f64::from(mark.height()) * f64::from(width) / f64::from(mark.width())).round() as u32;
     let mark = imageops::resize(&mark, width, height, imageops::FilterType::Lanczos3);
     let mut card = GrayImage::from_pixel(1280, 720, Luma([242]));
     imageops::overlay(
@@ -71,7 +70,10 @@ fn v2_single_under_right_yaw_and_diagonal_tilt() {
     );
     let photo = perspective_photo(&clean_card(&expected), 0.65, 0.18);
     assert_eq!(
-        raster::scan_gray_oblique(&photo, 0).unwrap().decoded.content,
+        raster::scan_gray_oblique(&photo, 0)
+            .unwrap()
+            .decoded
+            .content,
         expected
     );
 }
@@ -84,7 +86,10 @@ fn v2_compact_dual_under_left_yaw_and_tilt() {
     };
     let photo = perspective_photo(&clean_card(&expected), -0.65, -0.18);
     assert_eq!(
-        raster::scan_gray_oblique(&photo, 1).unwrap().decoded.content,
+        raster::scan_gray_oblique(&photo, 1)
+            .unwrap()
+            .decoded
+            .content,
         expected
     );
 }

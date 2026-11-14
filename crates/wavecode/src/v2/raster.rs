@@ -744,7 +744,13 @@ const OBLIQUE_VIEWS: [(f64, f64); 12] = [
 fn bilinear(image: &GrayImage, x: f64, y: f64) -> u8 {
     let width = f64::from(image.width());
     let height = f64::from(image.height());
-    if !x.is_finite() || !y.is_finite() || x < 0.0 || y < 0.0 || x + 1.0 >= width || y + 1.0 >= height {
+    if !x.is_finite()
+        || !y.is_finite()
+        || x < 0.0
+        || y < 0.0
+        || x + 1.0 >= width
+        || y + 1.0 >= height
+    {
         return 255;
     }
     let ix = x.floor() as u32;
@@ -800,13 +806,24 @@ fn restore_camera_geometry(
             bounds.top.saturating_add(bounds.height),
         ),
     ];
-    let mapped = corners.map(|(x, y)| {
-        camera_projection(f64::from(x), f64::from(y), width, height, yaw, tilt)
-    });
-    let min_x = mapped.iter().fold(f64::INFINITY, |acc, p| acc.min(p.x)).max(0.0);
-    let max_x = mapped.iter().fold(f64::NEG_INFINITY, |acc, p| acc.max(p.x)).min(f64::from(width));
-    let min_y = mapped.iter().fold(f64::INFINITY, |acc, p| acc.min(p.y)).max(0.0);
-    let max_y = mapped.iter().fold(f64::NEG_INFINITY, |acc, p| acc.max(p.y)).min(f64::from(height));
+    let mapped = corners
+        .map(|(x, y)| camera_projection(f64::from(x), f64::from(y), width, height, yaw, tilt));
+    let min_x = mapped
+        .iter()
+        .fold(f64::INFINITY, |acc, p| acc.min(p.x))
+        .max(0.0);
+    let max_x = mapped
+        .iter()
+        .fold(f64::NEG_INFINITY, |acc, p| acc.max(p.x))
+        .min(f64::from(width));
+    let min_y = mapped
+        .iter()
+        .fold(f64::INFINITY, |acc, p| acc.min(p.y))
+        .max(0.0);
+    let max_y = mapped
+        .iter()
+        .fold(f64::NEG_INFINITY, |acc, p| acc.max(p.y))
+        .min(f64::from(height));
     if min_x >= max_x || min_y >= max_y {
         return Err(Error::InvalidGeometry);
     }
