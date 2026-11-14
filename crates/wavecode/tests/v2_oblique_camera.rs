@@ -26,12 +26,9 @@ fn clean_card(content: &Content) -> GrayImage {
         (f64::from(mark.height()) * f64::from(width) / f64::from(mark.width())).round() as u32;
     let mark = imageops::resize(&mark, width, height, imageops::FilterType::Lanczos3);
     let mut card = GrayImage::from_pixel(1280, 720, Luma([242]));
-    imageops::overlay(
-        &mut card,
-        &mark,
-        i64::from((card.width() - mark.width()) / 2),
-        i64::from((card.height() - mark.height()) / 2),
-    );
+    let left = i64::from((card.width() - mark.width()) / 2);
+    let top = i64::from((card.height() - mark.height()) / 2);
+    imageops::overlay(&mut card, &mark, left, top);
     card
 }
 
