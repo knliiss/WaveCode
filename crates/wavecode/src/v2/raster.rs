@@ -77,10 +77,7 @@ fn component_priority(component: &Component) -> f64 {
 }
 
 fn retain_optical_candidates(components: &mut Vec<Component>) {
-    components.sort_unstable_by(|a, b| {
-        component_priority(b)
-            .total_cmp(&component_priority(a))
-    });
+    components.sort_unstable_by(|a, b| component_priority(b).total_cmp(&component_priority(a)));
     components.truncate(MAX_COMPONENTS);
 }
 
