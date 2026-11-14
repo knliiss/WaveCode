@@ -836,31 +836,53 @@ fn restore_camera_geometry(
     Ok(())
 }
 
-/// Recover one perspective hypothesis in addition to the face-on scan.
-/// Distribute the index over successive live-camera frames to keep latency
-/// bounded. Index modulo the candidate count makes the interface forward
-/// compatible with callers that continuously increment a frame counter.
-pub fn scan_gray_oblique(image: &GrayImage, candidate: usize) -> Result<Located, Error> {
-    if let Ok(result) = scan_gray(image) {
-        return Ok(result);
-    }
+/// Check the face-on frame once, then try a bounded range of perspective
+/// hypotheses on the same grayscale image. This avoids re-decoding an image
+/// and repeating exposure segmentation for every adjacent camera angle.
+pub fn scan_gray_oblique_batch(
+    image: &GrayImage,
+    start_candidate: usize,
+    count: usize,
+) -> Result<Located, Error> {
     let (width, height) = image.dimensions();
     if width == 0 || height == 0 || u64::from(width) * u64::from(height) > MAX_PIXELS {
         return Err(Error::InvalidFrame);
     }
-    let (yaw, tilt) = OBLIQUE_VIEWS[candidate % OBLIQUE_VIEWS.len()];
-    let rectified = rectify_camera(image, yaw, tilt);
-    let mut decoded = scan_gray(&rectified)?;
-    restore_camera_geometry(&mut decoded, width, height, yaw, tilt)?;
-    Ok(decoded)
+    if let Ok(result) = scan_gray(image) {
+        return Ok(result);
+    }
+    for offset in 0..count.min(OBLIQUE_VIEWS.len()) {
+        let index = (start_candidate % OBLIQUE_VIEWS.len() + offset) % OBLIQUE_VIEWS.len();
+        let (yaw, tilt) = OBLIQUE_VIEWS[index];
+        let rectified = rectify_camera(image, yaw, tilt);
+        if let Ok(mut decoded) = scan_gray(&rectified) {
+            if restore_camera_geometry(&mut decoded, width, height, yaw, tilt).is_ok() {
+                return Ok(decoded);
+            }
+        }
+    }
+    Err(Error::InvalidFrame)
 }
 
-pub fn scan_png_or_jpeg_oblique(bytes: &[u8], candidate: usize) -> Result<Located, Error> {
+/// The original single-hypothesis entry point remains source-compatible.
+pub fn scan_gray_oblique(image: &GrayImage, candidate: usize) -> Result<Located, Error> {
+    scan_gray_oblique_batch(image, candidate, 1)
+}
+
+pub fn scan_png_or_jpeg_oblique_batch(
+    bytes: &[u8],
+    start_candidate: usize,
+    count: usize,
+) -> Result<Located, Error> {
     if bytes.len() > 16 * 1024 * 1024 {
         return Err(Error::InvalidFrame);
     }
     let image = image::load_from_memory(bytes).map_err(|_| Error::InvalidFrame)?;
-    scan_gray_oblique(&image.to_luma8(), candidate)
+    scan_gray_oblique_batch(&image.to_luma8(), start_candidate, count)
+}
+
+pub fn scan_png_or_jpeg_oblique(bytes: &[u8], candidate: usize) -> Result<Located, Error> {
+    scan_png_or_jpeg_oblique_batch(bytes, candidate, 1)
 }
 
 #[cfg(test)]

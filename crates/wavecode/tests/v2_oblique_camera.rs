@@ -73,6 +73,13 @@ fn v2_single_under_right_yaw_and_diagonal_tilt() {
             .content,
         expected
     );
+    assert_eq!(
+        raster::scan_gray_oblique_batch(&photo, 0, 2)
+            .unwrap()
+            .decoded
+            .content,
+        expected
+    );
 }
 
 #[test]
@@ -89,6 +96,13 @@ fn v2_compact_dual_under_left_yaw_and_tilt() {
             .content,
         expected
     );
+    assert_eq!(
+        raster::scan_gray_oblique_batch(&photo, 0, 2)
+            .unwrap()
+            .decoded
+            .content,
+        expected
+    );
 }
 
 #[test]
@@ -96,5 +110,7 @@ fn invalid_empty_frame_remains_invalid_with_perspective_recovery() {
     let frame = GrayImage::from_pixel(500, 320, Luma([245]));
     for index in 0..8 {
         assert!(raster::scan_gray_oblique(&frame, index).is_err());
+        assert!(raster::scan_gray_oblique_batch(&frame, index, 2).is_err());
     }
+    assert!(raster::scan_gray_oblique_batch(&frame, usize::MAX, 2).is_err());
 }
