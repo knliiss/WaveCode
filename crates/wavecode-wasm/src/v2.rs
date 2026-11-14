@@ -352,6 +352,36 @@ pub fn v2_scan_image_oblique_batch(
     located_json(located)
 }
 
+/// Fast fixed-angle camera scan. W-guided homography recovery is deliberately
+/// omitted and can be requested separately on an occasional camera frame.
+#[wasm_bindgen]
+pub fn v2_scan_image_oblique_fast(
+    image: &[u8],
+    start_candidate: u32,
+    count: u32,
+) -> Result<String, JsValue> {
+    if image.len() > MAX_IMAGE_BYTES {
+        return Err(js_error("image is too large"));
+    }
+    let located = v2::raster::scan_png_or_jpeg_oblique_batch_fast(
+        image,
+        start_candidate as usize,
+        count.min(4) as usize,
+    )
+    .map_err(js_error)?;
+    located_json(located)
+}
+
+/// Deliberately isolated W-guided search for cases outside fixed viewpoints.
+#[wasm_bindgen]
+pub fn v2_scan_image_anchor(image: &[u8]) -> Result<String, JsValue> {
+    if image.len() > MAX_IMAGE_BYTES {
+        return Err(js_error("image is too large"));
+    }
+    let located = v2::raster::scan_png_or_jpeg_anchor_guided(image).map_err(js_error)?;
+    located_json(located)
+}
+
 fn located_json(located: v2::raster::Located) -> Result<String, JsValue> {
     let mut result = decoded_value(&located.decoded).map_err(js_error)?;
     let corners = [(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)]
