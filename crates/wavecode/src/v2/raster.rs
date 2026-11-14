@@ -1176,7 +1176,7 @@ pub fn scan_gray_anchor_guided(image: &GrayImage) -> Result<Located, Error> {
             (0.24, 0.76, 0.0, 0.65),
             (0.48, 1.0, 0.0, 0.65),
         ];
-        let mut seen_poses: Vec<(Point, f64)> = Vec::new();
+        let mut seen_poses: Vec<(Point, f64, f64)> = Vec::new();
         for (left, right, top, bottom) in REGIONS {
             let subset: Vec<&Component> = parts
                 .iter()
@@ -1199,13 +1199,16 @@ pub fn scan_gray_anchor_guided(image: &GrayImage) -> Result<Located, Error> {
                     continue;
                 };
                 let angle = (to.y - from.y).atan2(to.x - from.x);
-                if seen_poses.iter().any(|(known, known_angle)| {
-                    (known.x - center.x).hypot(known.y - center.y) < 15.0
-                        && (angle - known_angle).sin().abs() < 0.07
+                let span = (to.x - from.x).hypot(to.y - from.y);
+                if seen_poses.iter().any(|(known, known_angle, known_span)| {
+                    let delta = angle - known_angle;
+                    (known.x - center.x).hypot(known.y - center.y) < 8.0
+                        && delta.cos() > 0.999
+                        && (span - known_span).abs() < span * 0.04
                 }) {
                     continue;
                 }
-                seen_poses.push((center, angle));
+                seen_poses.push((center, angle, span));
                 attempts += 1;
                 if attempts > 16 {
                     return Err(Error::InvalidFrame);
