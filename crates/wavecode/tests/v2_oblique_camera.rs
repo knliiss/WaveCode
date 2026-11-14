@@ -80,6 +80,13 @@ fn v2_single_under_right_yaw_and_diagonal_tilt() {
             .content,
         expected
     );
+    assert_eq!(
+        raster::scan_gray_oblique_batch_fast(&photo, 0, 2)
+            .unwrap()
+            .decoded
+            .content,
+        expected
+    );
 }
 
 #[test]
@@ -98,6 +105,13 @@ fn v2_compact_dual_under_left_yaw_and_tilt() {
     );
     assert_eq!(
         raster::scan_gray_oblique_batch(&photo, 0, 2)
+            .unwrap()
+            .decoded
+            .content,
+        expected
+    );
+    assert_eq!(
+        raster::scan_gray_oblique_batch_fast(&photo, 0, 2)
             .unwrap()
             .decoded
             .content,
@@ -162,6 +176,7 @@ fn w_anchor_recovers_an_off_center_code_without_angle_presets() {
 fn w_anchor_does_not_accept_a_blank_scene() {
     let photo = GrayImage::from_pixel(1280, 720, Luma([242]));
     assert!(raster::scan_gray_anchor_guided(&photo).is_err());
+    assert!(raster::scan_gray_oblique_batch_fast(&photo, 0, 2).is_err());
 }
 
 #[test]
