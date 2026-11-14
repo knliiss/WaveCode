@@ -332,6 +332,26 @@ pub fn v2_scan_image_oblique(image: &[u8], candidate: u32) -> Result<String, JsV
     located_json(located)
 }
 
+/// Scan the original frame once, then check at most four nearby angle
+/// hypotheses without re-parsing PNG/JPEG or re-running the original finder.
+#[wasm_bindgen]
+pub fn v2_scan_image_oblique_batch(
+    image: &[u8],
+    start_candidate: u32,
+    count: u32,
+) -> Result<String, JsValue> {
+    if image.len() > MAX_IMAGE_BYTES {
+        return Err(js_error("image is too large"));
+    }
+    let located = v2::raster::scan_png_or_jpeg_oblique_batch(
+        image,
+        start_candidate as usize,
+        count.min(4) as usize,
+    )
+    .map_err(js_error)?;
+    located_json(located)
+}
+
 fn located_json(located: v2::raster::Located) -> Result<String, JsValue> {
     let mut result = decoded_value(&located.decoded).map_err(js_error)?;
     let corners = [(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)]
