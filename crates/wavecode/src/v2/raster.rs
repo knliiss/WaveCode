@@ -852,7 +852,8 @@ pub fn scan_gray_oblique_batch(
         return Ok(result);
     }
     for offset in 0..count.min(OBLIQUE_VIEWS.len()) {
-        let (yaw, tilt) = OBLIQUE_VIEWS[(start_candidate + offset) % OBLIQUE_VIEWS.len()];
+        let index = (start_candidate % OBLIQUE_VIEWS.len() + offset) % OBLIQUE_VIEWS.len();
+        let (yaw, tilt) = OBLIQUE_VIEWS[index];
         let rectified = rectify_camera(image, yaw, tilt);
         if let Ok(mut decoded) = scan_gray(&rectified) {
             if restore_camera_geometry(&mut decoded, width, height, yaw, tilt).is_ok() {
