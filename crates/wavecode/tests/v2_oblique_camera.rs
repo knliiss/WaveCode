@@ -369,7 +369,10 @@ fn v2_dual_survives_roll_with_visual_clutter_near_the_w() {
     }
     let image = rolled_photo(&perspective_photo(&scene, -0.48, -0.17), -0.39);
     assert_eq!(
-        raster::scan_gray_anchor_guided(&image).unwrap().decoded.content,
+        raster::scan_gray_anchor_guided(&image)
+            .unwrap()
+            .decoded
+            .content,
         expected
     );
 }
