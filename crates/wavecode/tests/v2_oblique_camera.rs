@@ -115,7 +115,6 @@ fn invalid_empty_frame_remains_invalid_with_perspective_recovery() {
     assert!(raster::scan_gray_oblique_batch(&frame, usize::MAX, 2).is_err());
 }
 
-
 #[test]
 fn w_anchor_recovers_uncalibrated_single_perspective() {
     let expected = Content::Single(
