@@ -1152,8 +1152,7 @@ pub fn scan_gray_anchor_guided(image: &GrayImage) -> Result<Located, Error> {
             let subset: Vec<&Component> = parts
                 .iter()
                 .filter(|part| {
-                    part.cy >= top * f64::from(height)
-                        && part.cy <= bottom * f64::from(height)
+                    part.cy >= top * f64::from(height) && part.cy <= bottom * f64::from(height)
                 })
                 .collect();
             if subset.len() < anchor::VERSION_SITES {
