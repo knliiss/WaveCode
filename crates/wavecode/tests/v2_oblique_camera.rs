@@ -287,9 +287,17 @@ fn v2_scans_downscaled_and_softened_single_camera_capture() {
     let expected = Content::Single(
         MusicCode::from_url("https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b").unwrap(),
     );
-    let resized = imageops::resize(&clean_card(&expected), 640, 360, imageops::FilterType::Lanczos3);
+    let resized = imageops::resize(
+        &clean_card(&expected),
+        640,
+        360,
+        imageops::FilterType::Lanczos3,
+    );
     let blurred = imageops::blur(&resized, 0.65);
-    assert_eq!(raster::scan_gray(&blurred).unwrap().decoded.content, expected);
+    assert_eq!(
+        raster::scan_gray(&blurred).unwrap().decoded.content,
+        expected
+    );
 }
 
 #[test]
@@ -298,7 +306,15 @@ fn v2_scans_downscaled_and_softened_dual_camera_capture() {
         first: MusicCode::from_url("https://www.deezer.com/track/12345").unwrap(),
         second: MusicCode::from_url("https://tidal.com/browse/track/67890").unwrap(),
     };
-    let resized = imageops::resize(&clean_card(&expected), 640, 360, imageops::FilterType::Lanczos3);
+    let resized = imageops::resize(
+        &clean_card(&expected),
+        640,
+        360,
+        imageops::FilterType::Lanczos3,
+    );
     let blurred = imageops::blur(&resized, 0.65);
-    assert_eq!(raster::scan_gray(&blurred).unwrap().decoded.content, expected);
+    assert_eq!(
+        raster::scan_gray(&blurred).unwrap().decoded.content,
+        expected
+    );
 }
