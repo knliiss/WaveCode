@@ -114,3 +114,35 @@ fn invalid_empty_frame_remains_invalid_with_perspective_recovery() {
     }
     assert!(raster::scan_gray_oblique_batch(&frame, usize::MAX, 2).is_err());
 }
+
+
+#[test]
+fn w_anchor_recovers_uncalibrated_single_perspective() {
+    let expected = Content::Single(
+        MusicCode::from_url("https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b").unwrap(),
+    );
+    let photo = perspective_photo(&clean_card(&expected), 0.48, 0.24);
+    let located = raster::scan_gray_anchor_guided(&photo).unwrap();
+    assert_eq!(located.decoded.content, expected);
+    assert_eq!(located.version, 2);
+    assert!(located.bounds.width > 80);
+    assert!(located.bounds.height > 30);
+}
+
+#[test]
+fn w_anchor_recovers_uncalibrated_compact_dual_perspective() {
+    let expected = Content::DualLinks {
+        first: MusicCode::from_url("https://www.deezer.com/track/12345").unwrap(),
+        second: MusicCode::from_url("https://tidal.com/browse/track/67890").unwrap(),
+    };
+    let photo = perspective_photo(&clean_card(&expected), -0.48, 0.25);
+    let located = raster::scan_gray_anchor_guided(&photo).unwrap();
+    assert_eq!(located.decoded.content, expected);
+    assert_eq!(located.version, 2);
+}
+
+#[test]
+fn w_anchor_does_not_accept_a_blank_scene() {
+    let photo = GrayImage::from_pixel(1280, 720, Luma([242]));
+    assert!(raster::scan_gray_anchor_guided(&photo).is_err());
+}
