@@ -67,6 +67,23 @@ impl Component {
     }
 }
 
+/// Prefer the narrow, elongated capsule shapes of both W and payload
+/// when a real photo contains more components than the bounded finder can
+/// evaluate. Keep small marks when they are tall relative to their width.
+fn component_priority(component: &Component) -> f64 {
+    let width = f64::from(component.right - component.left + 1);
+    let height = f64::from(component.bottom - component.top + 1);
+    component.area().sqrt() * (height / width).clamp(0.5, 6.0)
+}
+
+fn retain_optical_candidates(components: &mut Vec<Component>) {
+    components.sort_unstable_by(|a, b| {
+        component_priority(b)
+            .total_cmp(&component_priority(a))
+    });
+    components.truncate(MAX_COMPONENTS);
+}
+
 #[derive(Clone, Copy)]
 struct Projection {
     u: f64,
@@ -107,14 +124,15 @@ fn connected(image: &GrayImage, threshold: u8, light: bool) -> Result<Vec<Compon
             let mut dots = Vec::new();
             let mut bounds = (x, x, y, y);
             while let Some((cx, cy)) = queue.pop() {
-                if dots.len() > 40_000 {
-                    break;
+                // Drain oversized foreground regions completely. Otherwise
+                // one dark background gets split into many fake components.
+                if dots.len() <= 40_000 {
+                    dots.push((cx as u32, cy as u32));
+                    bounds.0 = bounds.0.min(cx);
+                    bounds.1 = bounds.1.max(cx);
+                    bounds.2 = bounds.2.min(cy);
+                    bounds.3 = bounds.3.max(cy);
                 }
-                dots.push((cx as u32, cy as u32));
-                bounds.0 = bounds.0.min(cx);
-                bounds.1 = bounds.1.max(cx);
-                bounds.2 = bounds.2.min(cy);
-                bounds.3 = bounds.3.max(cy);
                 for ny in cy.saturating_sub(1)..=(cy + 1).min(h - 1) {
                     for nx in cx.saturating_sub(1)..=(cx + 1).min(w - 1) {
                         let target = ny * w + nx;
@@ -143,10 +161,13 @@ fn connected(image: &GrayImage, threshold: u8, light: bool) -> Result<Vec<Compon
                 top: bounds.2 as u32,
                 bottom: bounds.3 as u32,
             });
-            if components.len() > MAX_COMPONENTS {
-                return Err(Error::InvalidFrame);
+            if components.len() > MAX_COMPONENTS * 4 {
+                retain_optical_candidates(&mut components);
             }
         }
+    }
+    if components.len() > MAX_COMPONENTS {
+        retain_optical_candidates(&mut components);
     }
     Ok(components)
 }
