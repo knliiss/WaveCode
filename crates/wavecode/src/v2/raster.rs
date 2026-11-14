@@ -721,6 +721,131 @@ pub fn scan_png_or_jpeg(bytes: &[u8]) -> Result<Located, Error> {
     scan_gray(&image.to_luma8())
 }
 
+/// Approximate a perspective view as a projective horizontal foreshortening
+/// plus a sloped optical baseline. This is an image-domain fallback, not a
+/// different optical encoding: the original strict BCH/RS/CRC decoder is run
+/// on the rectified view. A small set of calibrated hypotheses are spread
+/// across camera frames rather than evaluated synchronously on every frame.
+const OBLIQUE_VIEWS: [(f64, f64); 12] = [
+    (0.65, 0.18),
+    (-0.65, -0.18),
+    (0.65, -0.18),
+    (-0.65, 0.18),
+    (0.65, 0.0),
+    (-0.65, 0.0),
+    (0.0, 0.18),
+    (0.0, -0.18),
+    (0.35, 0.10),
+    (-0.35, -0.10),
+    (0.35, -0.10),
+    (-0.35, 0.10),
+];
+
+fn bilinear(image: &GrayImage, x: f64, y: f64) -> u8 {
+    let width = f64::from(image.width());
+    let height = f64::from(image.height());
+    if !x.is_finite() || !y.is_finite() || x < 0.0 || y < 0.0 || x + 1.0 >= width || y + 1.0 >= height {
+        return 255;
+    }
+    let ix = x.floor() as u32;
+    let iy = y.floor() as u32;
+    let fx = x - f64::from(ix);
+    let fy = y - f64::from(iy);
+    let sample = |dx: u32, dy: u32| f64::from(image.get_pixel(ix + dx, iy + dy).0[0]);
+    let upper = sample(0, 0) * (1.0 - fx) + sample(1, 0) * fx;
+    let lower = sample(0, 1) * (1.0 - fx) + sample(1, 1) * fx;
+    (upper * (1.0 - fy) + lower * fy).round() as u8
+}
+
+fn camera_projection(x: f64, y: f64, width: u32, height: u32, yaw: f64, tilt: f64) -> Point {
+    let cx = f64::from(width) / 2.0;
+    let cy = f64::from(height) / 2.0;
+    let dx = x - cx;
+    let dy = y - cy;
+    let denominator = 1.0 + yaw * dx / f64::from(width);
+    Point {
+        x: cx + dx / denominator,
+        y: cy + (dy + tilt * dx) / denominator,
+    }
+}
+
+fn rectify_camera(image: &GrayImage, yaw: f64, tilt: f64) -> GrayImage {
+    let (width, height) = image.dimensions();
+    GrayImage::from_fn(width, height, |x, y| {
+        let p = camera_projection(f64::from(x), f64::from(y), width, height, yaw, tilt);
+        image::Luma([bilinear(image, p.x, p.y)])
+    })
+}
+
+fn restore_camera_geometry(
+    result: &mut Located,
+    width: u32,
+    height: u32,
+    yaw: f64,
+    tilt: f64,
+) -> Result<(), Error> {
+    let points = [(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)]
+        .map(|(x, y)| result.pose.project(x, y).ok_or(Error::InvalidGeometry))
+        .map(|point| point.map(|p| camera_projection(p.x, p.y, width, height, yaw, tilt)));
+    let [a, b, c, d] = points;
+    result.pose = AnchorPose::from_fiducials([a?, b?, c?, d?])?;
+
+    let bounds = result.bounds;
+    let corners = [
+        (bounds.left, bounds.top),
+        (bounds.left.saturating_add(bounds.width), bounds.top),
+        (bounds.left, bounds.top.saturating_add(bounds.height)),
+        (
+            bounds.left.saturating_add(bounds.width),
+            bounds.top.saturating_add(bounds.height),
+        ),
+    ];
+    let mapped = corners.map(|(x, y)| {
+        camera_projection(f64::from(x), f64::from(y), width, height, yaw, tilt)
+    });
+    let min_x = mapped.iter().fold(f64::INFINITY, |acc, p| acc.min(p.x)).max(0.0);
+    let max_x = mapped.iter().fold(f64::NEG_INFINITY, |acc, p| acc.max(p.x)).min(f64::from(width));
+    let min_y = mapped.iter().fold(f64::INFINITY, |acc, p| acc.min(p.y)).max(0.0);
+    let max_y = mapped.iter().fold(f64::NEG_INFINITY, |acc, p| acc.max(p.y)).min(f64::from(height));
+    if min_x >= max_x || min_y >= max_y {
+        return Err(Error::InvalidGeometry);
+    }
+    result.bounds = Bounds {
+        left: min_x.floor() as u32,
+        top: min_y.floor() as u32,
+        width: (max_x.ceil() - min_x.floor()).max(1.0) as u32,
+        height: (max_y.ceil() - min_y.floor()).max(1.0) as u32,
+    };
+    Ok(())
+}
+
+/// Recover one perspective hypothesis in addition to the face-on scan.
+/// Distribute the index over successive live-camera frames to keep latency
+/// bounded. Index modulo the candidate count makes the interface forward
+/// compatible with callers that continuously increment a frame counter.
+pub fn scan_gray_oblique(image: &GrayImage, candidate: usize) -> Result<Located, Error> {
+    if let Ok(result) = scan_gray(image) {
+        return Ok(result);
+    }
+    let (width, height) = image.dimensions();
+    if width == 0 || height == 0 || u64::from(width) * u64::from(height) > MAX_PIXELS {
+        return Err(Error::InvalidFrame);
+    }
+    let (yaw, tilt) = OBLIQUE_VIEWS[candidate % OBLIQUE_VIEWS.len()];
+    let rectified = rectify_camera(image, yaw, tilt);
+    let mut decoded = scan_gray(&rectified)?;
+    restore_camera_geometry(&mut decoded, width, height, yaw, tilt)?;
+    Ok(decoded)
+}
+
+pub fn scan_png_or_jpeg_oblique(bytes: &[u8], candidate: usize) -> Result<Located, Error> {
+    if bytes.len() > 16 * 1024 * 1024 {
+        return Err(Error::InvalidFrame);
+    }
+    let image = image::load_from_memory(bytes).map_err(|_| Error::InvalidFrame)?;
+    scan_gray_oblique(&image.to_luma8(), candidate)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
