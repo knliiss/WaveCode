@@ -1270,7 +1270,8 @@ pub fn scan_gray_anchor_guided(image: &GrayImage) -> Result<Located, Error> {
                         .flatten(),
                 ];
                 for hypothesis in hypotheses.into_iter().flatten() {
-                    if let Some(rectification) = AnchorRectification::new(hypothesis, width, height) {
+                    if let Some(rectification) = AnchorRectification::new(hypothesis, width, height)
+                    {
                         let corrected = rectification.rectify(image);
                         if let Ok(mut decoded) = scan_gray(&corrected) {
                             if rectification
