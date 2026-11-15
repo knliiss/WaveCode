@@ -1221,7 +1221,10 @@ pub fn scan_gray_anchor_guided(image: &GrayImage) -> Result<Located, Error> {
                     return Err(Error::InvalidFrame);
                 }
                 #[cfg(debug_assertions)]
-                eprintln!("W-DIAG candidate center={:.1},{:.1} angle={angle:.3} attempts={attempts}", center.x, center.y);
+                eprintln!(
+                    "W-DIAG candidate center={:.1},{:.1} angle={angle:.3} attempts={attempts}",
+                    center.x, center.y
+                );
                 if let Some(rectification) = AnchorRectification::new(source, width, height) {
                     let corrected = rectification.rectify(image);
                     if let Ok(mut decoded) = scan_gray(&corrected) {
