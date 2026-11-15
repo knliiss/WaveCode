@@ -1190,7 +1190,14 @@ pub fn scan_gray_anchor_guided(image: &GrayImage) -> Result<Located, Error> {
             if subset.len() < anchor::VERSION_SITES {
                 continue;
             }
-            for source in find_projective_shells(&subset) {
+            let pose_candidates = find_projective_shells(&subset);
+            #[cfg(debug_assertions)]
+            eprintln!(
+                "W-DIAG threshold={level} light={light} region=({left:.2},{right:.2},{top:.2},{bottom:.2}) parts={} poses={}",
+                subset.len(),
+                pose_candidates.len()
+            );
+            for source in pose_candidates {
                 let (Some(center), Some(from), Some(to)) = (
                     source.project(0.5, 0.5),
                     source.project(0.0, 0.5),
@@ -1213,6 +1220,8 @@ pub fn scan_gray_anchor_guided(image: &GrayImage) -> Result<Located, Error> {
                 if attempts > 16 {
                     return Err(Error::InvalidFrame);
                 }
+                #[cfg(debug_assertions)]
+                eprintln!("W-DIAG candidate center={:.1},{:.1} angle={angle:.3} attempts={attempts}", center.x, center.y);
                 if let Some(rectification) = AnchorRectification::new(source, width, height) {
                     let corrected = rectification.rectify(image);
                     if let Ok(mut decoded) = scan_gray(&corrected) {
