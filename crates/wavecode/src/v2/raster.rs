@@ -1143,6 +1143,41 @@ impl AnchorRectification {
     }
 }
 
+/// Extrapolating a homography fitted to a short W over the full payload can
+/// magnify subpixel endpoint errors. Blend the measured quadrilateral toward
+/// its least-squares parallelogram only as a CRC-verified fallback.
+fn regularized_anchor_pose(source: AnchorPose, fraction: f64) -> Option<AnchorPose> {
+    let corners = [
+        source.project(0.0, 0.0)?,
+        source.project(1.0, 0.0)?,
+        source.project(0.0, 1.0)?,
+        source.project(1.0, 1.0)?,
+    ];
+    let center = Point {
+        x: corners.iter().map(|p| p.x).sum::<f64>() / 4.0,
+        y: corners.iter().map(|p| p.y).sum::<f64>() / 4.0,
+    };
+    let axis_x = Point {
+        x: (corners[1].x - corners[0].x + corners[3].x - corners[2].x) / 2.0,
+        y: (corners[1].y - corners[0].y + corners[3].y - corners[2].y) / 2.0,
+    };
+    let axis_y = Point {
+        x: (corners[2].x - corners[0].x + corners[3].x - corners[1].x) / 2.0,
+        y: (corners[2].y - corners[0].y + corners[3].y - corners[1].y) / 2.0,
+    };
+    let signs = [(-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)];
+    let blended = std::array::from_fn(|index| {
+        let (sx, sy) = signs[index];
+        let ax = center.x + (sx * axis_x.x + sy * axis_y.x) / 2.0;
+        let ay = center.y + (sx * axis_x.y + sy * axis_y.y) / 2.0;
+        Point {
+            x: corners[index].x + fraction * (ax - corners[index].x),
+            y: corners[index].y + fraction * (ay - corners[index].y),
+        }
+    });
+    AnchorPose::from_fiducials(blended).ok()
+}
+
 /// Derive candidate camera homographies from the W itself and verify every
 /// rectification with the unchanged optical decoder. No fixed yaw/tilt guess.
 pub fn scan_gray_anchor_guided(image: &GrayImage) -> Result<Located, Error> {
@@ -1225,14 +1260,25 @@ pub fn scan_gray_anchor_guided(image: &GrayImage) -> Result<Located, Error> {
                     "W-DIAG candidate center={:.1},{:.1} angle={angle:.3} attempts={attempts}",
                     center.x, center.y
                 );
-                if let Some(rectification) = AnchorRectification::new(source, width, height) {
-                    let corrected = rectification.rectify(image);
-                    if let Ok(mut decoded) = scan_gray(&corrected) {
-                        if rectification
-                            .restore_geometry(&mut decoded, width, height)
-                            .is_ok()
-                        {
-                            return Ok(decoded);
+                let hypotheses = [
+                    Some(source),
+                    (attempts <= 4)
+                        .then(|| regularized_anchor_pose(source, 0.55))
+                        .flatten(),
+                    (attempts <= 4)
+                        .then(|| regularized_anchor_pose(source, 1.0))
+                        .flatten(),
+                ];
+                for hypothesis in hypotheses.into_iter().flatten() {
+                    if let Some(rectification) = AnchorRectification::new(hypothesis, width, height) {
+                        let corrected = rectification.rectify(image);
+                        if let Ok(mut decoded) = scan_gray(&corrected) {
+                            if rectification
+                                .restore_geometry(&mut decoded, width, height)
+                                .is_ok()
+                            {
+                                return Ok(decoded);
+                            }
                         }
                     }
                 }
