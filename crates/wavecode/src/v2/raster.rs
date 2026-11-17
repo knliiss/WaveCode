@@ -406,11 +406,11 @@ fn soft_version_from_known_w(fit: &ShellFit<'_>) -> Result<(u16, u8), Error> {
             continue;
         }
         let scale = (n * sum_xy - sum_x * sum_y) / determinant;
-        if scale < fit.scale * 0.58 || scale > fit.scale * 1.55 {
+        if !scale.is_finite() || scale <= 0.05 || scale > fit.scale * 3.0 {
             continue;
         }
         let offset = (sum_y - scale * sum_x) / n;
-        if offset.abs() > 6.0 {
+        if !offset.is_finite() || offset.abs() > 50.0 {
             continue;
         }
         let residual: f64 = reference
