@@ -1223,6 +1223,12 @@ fn scan_rectified_with_known_w(
             capsules,
             score: total_error,
         };
+        #[cfg(debug_assertions)]
+        eprintln!(
+            "W-GUIDED version={:?} decoded={:?}",
+            anchor::decode_version(classify_version(&fit)),
+            read_shell_frame(&parts, &fit).as_ref().map(|_| "decoded")
+        );
         if let Ok(located) = read_shell_frame(&parts, &fit) {
             return Ok(located);
         }
