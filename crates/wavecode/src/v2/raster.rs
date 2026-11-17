@@ -1171,10 +1171,8 @@ fn scan_rectified_with_known_w(
         for col in 0..11 {
             for row in 0..2 {
                 let capsule = reference[col + row * 11];
-                let center_x =
-                    rectification.origin_x + (capsule.x + capsule.width / 2.0) * scale;
-                let center_y =
-                    rectification.origin_y + (capsule.y + capsule.height / 2.0) * scale;
+                let center_x = rectification.origin_x + (capsule.x + capsule.width / 2.0) * scale;
+                let center_y = rectification.origin_y + (capsule.y + capsule.height / 2.0) * scale;
                 let expected_height = capsule.height * scale;
                 let best = parts
                     .iter()
@@ -1186,12 +1184,10 @@ fn scan_rectified_with_known_w(
                                 >= 0.5
                             && f64::from(part.right - part.left + 1) <= expected_width * 1.8 + 2.0
                             && f64::from(part.bottom - part.top + 1) >= expected_height * 0.47
-                            && f64::from(part.bottom - part.top + 1)
-                                <= expected_height * 1.85 + 3.0
+                            && f64::from(part.bottom - part.top + 1) <= expected_height * 1.85 + 3.0
                     })
                     .map(|(index, part)| {
-                        let distance =
-                            (part.cx - center_x).hypot(part.cy - center_y);
+                        let distance = (part.cx - center_x).hypot(part.cy - center_y);
                         (distance, index, part)
                     })
                     .filter(|(distance, _, _)| *distance <= max_distance)
@@ -1212,7 +1208,8 @@ fn scan_rectified_with_known_w(
         #[cfg(debug_assertions)]
         eprintln!(
             "W-GUIDED level={level} light={light} components={} matched={} rms={:.2}",
-            parts.len(), capsules.len(),
+            parts.len(),
+            capsules.len(),
             (total_error / capsules.len().max(1) as f64).sqrt()
         );
         if !matched || capsules.len() != anchor::VERSION_SITES {
