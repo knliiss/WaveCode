@@ -1285,7 +1285,12 @@ pub fn scan_gray_anchor_guided(image: &GrayImage) -> Result<Located, Error> {
                             );
                             for fit in shells.iter().take(2) {
                                 let bits = classify_version(fit);
-                                eprintln!("W-RECT version={:?} shellScore={:.2} payload={:?}", anchor::decode_version(bits), fit.score, read_shell_frame(&parts, fit).map(|_| "ok"));
+                                eprintln!(
+                                    "W-RECT version={:?} shellScore={:.2} payload={:?}",
+                                    anchor::decode_version(bits),
+                                    fit.score,
+                                    read_shell_frame(&parts, fit).map(|_| "ok")
+                                );
                             }
                         }
                         if let Ok(mut decoded) = scan_gray(&corrected) {
