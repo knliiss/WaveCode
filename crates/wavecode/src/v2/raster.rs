@@ -1143,6 +1143,96 @@ impl AnchorRectification {
     }
 }
 
+/// When a homography was already recovered from the 22 original W capsules,
+/// a second global W search on the corrected frame is unnecessary and can
+/// fail if decorations share the same projected X coordinates.
+/// Match the actual V2 capsule components to the recovered W positions,
+/// then run the original version BCH + payload RS/CRC decoder unchanged.
+fn scan_rectified_with_known_w(
+    image: &GrayImage,
+    rectification: &AnchorRectification,
+) -> Result<Located, Error> {
+    let reference = anchor::capsules_for_version(anchor::VERSION)?;
+    let scale = rectification.pixel_scale;
+    let max_distance = (12.0 * scale).clamp(3.5, 14.0);
+    let expected_width = anchor::CAPSULE_WIDTH * scale;
+    let threshold = otsu_threshold(image);
+    for (level, light) in [(128, false), (threshold, false), (threshold, true)] {
+        let Ok(parts) = connected(image, level, light) else {
+            continue;
+        };
+        if parts.len() < anchor::VERSION_SITES {
+            continue;
+        }
+        let mut used = vec![false; parts.len()];
+        let mut capsules = Vec::with_capacity(anchor::VERSION_SITES);
+        let mut total_error = 0.0;
+        let mut matched = true;
+        for col in 0..11 {
+            for row in 0..2 {
+                let capsule = reference[col + row * 11];
+                let center_x =
+                    rectification.origin_x + (capsule.x + capsule.width / 2.0) * scale;
+                let center_y =
+                    rectification.origin_y + (capsule.y + capsule.height / 2.0) * scale;
+                let expected_height = capsule.height * scale;
+                let best = parts
+                    .iter()
+                    .enumerate()
+                    .filter(|(index, part)| {
+                        !used[*index]
+                            && (f64::from(part.right - part.left + 1) / expected_width)
+                                .clamp(0.0, 100.0)
+                                >= 0.5
+                            && f64::from(part.right - part.left + 1) <= expected_width * 1.8 + 2.0
+                            && f64::from(part.bottom - part.top + 1) >= expected_height * 0.47
+                            && f64::from(part.bottom - part.top + 1)
+                                <= expected_height * 1.85 + 3.0
+                    })
+                    .map(|(index, part)| {
+                        let distance =
+                            (part.cx - center_x).hypot(part.cy - center_y);
+                        (distance, index, part)
+                    })
+                    .filter(|(distance, _, _)| *distance <= max_distance)
+                    .min_by(|a, b| a.0.total_cmp(&b.0));
+                if let Some((distance, index, part)) = best {
+                    used[index] = true;
+                    total_error += distance * distance;
+                    capsules.push(part);
+                } else {
+                    matched = false;
+                    break;
+                }
+            }
+            if !matched {
+                break;
+            }
+        }
+        #[cfg(debug_assertions)]
+        eprintln!(
+            "W-GUIDED level={level} light={light} components={} matched={} rms={:.2}",
+            parts.len(), capsules.len(),
+            (total_error / capsules.len().max(1) as f64).sqrt()
+        );
+        if !matched || capsules.len() != anchor::VERSION_SITES {
+            continue;
+        }
+        let fit = ShellFit {
+            angle: 0.0,
+            scale,
+            origin_u: rectification.origin_x,
+            origin_v: rectification.origin_y,
+            capsules,
+            score: total_error,
+        };
+        if let Ok(located) = read_shell_frame(&parts, &fit) {
+            return Ok(located);
+        }
+    }
+    Err(Error::InvalidFrame)
+}
+
 /// Extrapolating a homography fitted to a short W over the full payload can
 /// magnify subpixel endpoint errors. Blend the measured quadrilateral toward
 /// its least-squares parallelogram only as a CRC-verified fallback.
@@ -1293,7 +1383,9 @@ pub fn scan_gray_anchor_guided(image: &GrayImage) -> Result<Located, Error> {
                                 );
                             }
                         }
-                        if let Ok(mut decoded) = scan_gray(&corrected) {
+                        if let Ok(mut decoded) = scan_gray(&corrected)
+                            .or_else(|_| scan_rectified_with_known_w(&corrected, &rectification))
+                        {
                             if rectification
                                 .restore_geometry(&mut decoded, width, height)
                                 .is_ok()
