@@ -417,7 +417,7 @@ fn soft_version_from_known_w(fit: &ShellFit<'_>) -> Result<(u16, u8), Error> {
         if !offset.is_finite() || offset.abs() > 50.0 {
             continue;
         }
-        let residual: f64 = reference
+        let residual: f64 = measured
             .iter()
             .enumerate()
             .map(|(index, &sample)| {
