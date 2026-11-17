@@ -1273,6 +1273,21 @@ pub fn scan_gray_anchor_guided(image: &GrayImage) -> Result<Located, Error> {
                     if let Some(rectification) = AnchorRectification::new(hypothesis, width, height)
                     {
                         let corrected = rectification.rectify(image);
+                        #[cfg(debug_assertions)]
+                        {
+                            let parts = connected(&corrected, 128, false).unwrap_or_default();
+                            let shells = locate_shell(&parts);
+                            eprintln!(
+                                "W-RECT candidate={attempts} center=({:.1},{:.1}) parts={} shells={} scale={:.3} origin=({:.1},{:.1})",
+                                center.x, center.y, parts.len(), shells.len(),
+                                rectification.pixel_scale, rectification.origin_x,
+                                rectification.origin_y
+                            );
+                            for fit in shells.iter().take(2) {
+                                let bits = classify_version(fit);
+                                eprintln!("W-RECT version={:?} shellScore={:.2} payload={:?}", anchor::decode_version(bits), fit.score, read_shell_frame(&parts, fit).map(|_| "ok"));
+                            }
+                        }
                         if let Ok(mut decoded) = scan_gray(&corrected) {
                             if rectification
                                 .restore_geometry(&mut decoded, width, height)
