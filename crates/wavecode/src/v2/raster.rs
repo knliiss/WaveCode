@@ -365,6 +365,96 @@ fn classify_version(fit: &ShellFit<'_>) -> [bool; anchor::VERSION_SITES] {
     bits
 }
 
+/// Use measured capsule lengths to rank *valid* BCH version codewords.
+/// This bounded maximum-likelihood fallback is reserved for camera frames
+/// whose W geometry was already independently established and only when
+/// hard-decision BCH fails. The profile/payload still must pass RS + CRC.
+fn soft_version_from_known_w(fit: &ShellFit<'_>) -> Result<(u16, u8), Error> {
+    let (sin, cos) = fit.angle.sin_cos();
+    let reference = anchor::capsules();
+    let measured: Vec<f64> = fit
+        .capsules
+        .iter()
+        .map(|part| part.projected(sin, cos).transverse)
+        .collect();
+    if measured.len() != anchor::VERSION_SITES {
+        return Err(Error::InvalidFrame);
+    }
+
+    let mut best = (f64::INFINITY, 0_u16);
+    let mut runner_up = f64::INFINITY;
+    let sum_y: f64 = measured.iter().sum();
+    let n = anchor::VERSION_SITES as f64;
+    for value in 0_u16..(1 << anchor::VERSION_BITS) {
+        let bits = anchor::encode_version(value)?;
+        let mut sum_x = 0.0;
+        let mut sum_xx = 0.0;
+        let mut sum_xy = 0.0;
+        for (index, &sample) in measured.iter().enumerate() {
+            // ShellFit stores upper/lower pairs, while BCH stores all
+            // eleven upper sites followed by all eleven lower sites.
+            let site = index / 2 + index % 2 * 11;
+            let capsule = reference[site];
+            let predicted = capsule.height
+                + if bits[site] {
+                    anchor::VERSION_EXTENSION
+                } else {
+                    0.0
+                };
+            sum_x += predicted;
+            sum_xx += predicted * predicted;
+            sum_xy += predicted * sample;
+        }
+        let determinant = n * sum_xx - sum_x * sum_x;
+        if determinant < 1.0 {
+            continue;
+        }
+        let scale = (n * sum_xy - sum_x * sum_y) / determinant;
+        if !scale.is_finite() || scale <= 0.05 || scale > fit.scale * 3.0 {
+            continue;
+        }
+        let offset = (sum_y - scale * sum_x) / n;
+        if !offset.is_finite() || offset.abs() > 50.0 {
+            continue;
+        }
+        let residual: f64 = measured
+            .iter()
+            .enumerate()
+            .map(|(index, &sample)| {
+                let site = index / 2 + index % 2 * 11;
+                let capsule = reference[site];
+                let expected = capsule.height
+                    + if bits[site] {
+                        anchor::VERSION_EXTENSION
+                    } else {
+                        0.0
+                    };
+                let difference = sample - (scale * expected + offset);
+                difference * difference
+            })
+            .sum();
+        if residual < best.0 {
+            runner_up = best.0;
+            best = (residual, value);
+        } else if residual < runner_up {
+            runner_up = residual;
+        }
+    }
+    // The best hypothesis must be V2, sufficiently accurate, and distinctly
+    // better than any other valid optical version (including future ones).
+    if best.1 != anchor::VERSION
+        || best.0 / n > 10.0
+        || !runner_up.is_finite()
+        || runner_up - best.0 < 2.0
+    {
+        return Err(Error::Uncorrectable);
+    }
+    let expected = anchor::encode_version(best.1)?;
+    let hard = classify_version(fit);
+    let mismatches = hard.iter().zip(expected).filter(|(a, b)| **a != *b).count();
+    Ok((best.1, mismatches as u8))
+}
+
 /// A self-delimiting Dual class may occupy the same number of columns as an
 /// explicit profile (notably generic V2 Dual profile 36). RS and CRC verify
 /// both candidate framings rather than trusting the first source byte.
@@ -480,11 +570,32 @@ fn decode_payload_heights(rails: &[(f64, f64)]) -> Result<(u8, Decoded), Error> 
 
 fn read_shell_frame(parts: &[Component], fit: &ShellFit<'_>) -> Result<Located, Error> {
     let (version, corrected_bits) = anchor::decode_version(classify_version(fit))?;
+    read_shell_frame_with_version(parts, fit, version, corrected_bits)
+}
+
+fn read_shell_frame_with_version(
+    parts: &[Component],
+    fit: &ShellFit<'_>,
+    version: u16,
+    corrected_bits: u8,
+) -> Result<Located, Error> {
+    read_shell_frame_in_band(parts, fit, version, corrected_bits, None)
+}
+
+fn read_shell_frame_in_band(
+    parts: &[Component],
+    fit: &ShellFit<'_>,
+    version: u16,
+    corrected_bits: u8,
+    vertical_extent: Option<f64>,
+) -> Result<Located, Error> {
     if version != anchor::VERSION {
         return Err(Error::UnsupportedVersion);
     }
     let (sin, cos) = fit.angle.sin_cos();
     let end_u = fit.origin_u + anchor::SHELL_WIDTH * fit.scale;
+    let optical_center_v =
+        fit.origin_v + (anchor::SLIT_CENTER_Y - anchor::BRAND_ORIGIN_Y) * fit.scale;
     // A payload may be much smaller than the W; never filter it by W area.
     let lower_area = 15.0;
     // The W-to-data whitespace is NOT a delimiter with a fixed pitch.
@@ -496,7 +607,10 @@ fn read_shell_frame(parts: &[Component], fit: &ShellFit<'_>) -> Result<Located, 
         .filter(|part| part.area() > lower_area)
         .filter_map(|part| {
             let projection = part.projected(sin, cos);
-            (projection.u > end_u - fit.scale * 4.0).then_some((part, projection))
+            (projection.u > end_u - fit.scale * 4.0
+                && vertical_extent
+                    .is_none_or(|extent| (projection.v - optical_center_v).abs() <= extent))
+            .then_some((part, projection))
         })
         .collect();
     bars.sort_by(|a, b| a.1.u.total_cmp(&b.1.u));
@@ -1143,6 +1257,140 @@ impl AnchorRectification {
     }
 }
 
+/// When a homography was already recovered from the 22 original W capsules,
+/// a second global W search on the corrected frame is unnecessary and can
+/// fail if decorations share the same projected X coordinates.
+/// Match the actual V2 capsule components to the recovered W positions,
+/// then run the original version BCH + payload RS/CRC decoder unchanged.
+fn scan_rectified_with_known_w(
+    image: &GrayImage,
+    rectification: &AnchorRectification,
+) -> Result<Located, Error> {
+    let reference = anchor::capsules_for_version(anchor::VERSION)?;
+    let scale = rectification.pixel_scale;
+    let max_distance = (12.0 * scale).clamp(3.5, 14.0);
+    let expected_width = anchor::CAPSULE_WIDTH * scale;
+    let threshold = otsu_threshold(image);
+    for (level, light) in [(128, false), (threshold, false), (threshold, true)] {
+        let Ok(parts) = connected(image, level, light) else {
+            continue;
+        };
+        if parts.len() < anchor::VERSION_SITES {
+            continue;
+        }
+        let mut used = vec![false; parts.len()];
+        let mut capsules = Vec::with_capacity(anchor::VERSION_SITES);
+        let mut total_error = 0.0;
+        let mut matched = true;
+        for col in 0..11 {
+            for row in 0..2 {
+                let capsule = reference[col + row * 11];
+                let center_x = rectification.origin_x + (capsule.x + capsule.width / 2.0) * scale;
+                let center_y = rectification.origin_y + (capsule.y + capsule.height / 2.0) * scale;
+                let expected_height = capsule.height * scale;
+                let best = parts
+                    .iter()
+                    .enumerate()
+                    .filter(|(index, part)| {
+                        !used[*index]
+                            && (f64::from(part.right - part.left + 1) / expected_width)
+                                .clamp(0.0, 100.0)
+                                >= 0.5
+                            && f64::from(part.right - part.left + 1) <= expected_width * 1.8 + 2.0
+                            && f64::from(part.bottom - part.top + 1) >= expected_height * 0.47
+                            && f64::from(part.bottom - part.top + 1) <= expected_height * 1.85 + 3.0
+                    })
+                    .map(|(index, part)| {
+                        let distance = (part.cx - center_x).hypot(part.cy - center_y);
+                        (distance, index, part)
+                    })
+                    .filter(|(distance, _, _)| *distance <= max_distance)
+                    .min_by(|a, b| a.0.total_cmp(&b.0));
+                if let Some((distance, index, part)) = best {
+                    used[index] = true;
+                    total_error += distance * distance;
+                    capsules.push(part);
+                } else {
+                    matched = false;
+                    break;
+                }
+            }
+            if !matched {
+                break;
+            }
+        }
+        if !matched || capsules.len() != anchor::VERSION_SITES {
+            continue;
+        }
+        let fit = ShellFit {
+            angle: 0.0,
+            scale,
+            origin_u: rectification.origin_x,
+            origin_v: rectification.origin_y,
+            capsules,
+            score: total_error,
+        };
+        let decoded = read_shell_frame(&parts, &fit).or_else(|_| {
+            let (version, corrected_bits) = soft_version_from_known_w(&fit)?;
+            if let Ok(frame) = read_shell_frame_with_version(&parts, &fit, version, corrected_bits)
+            {
+                return Ok(frame);
+            }
+            // Only a successfully localized W can trigger spatial filtering.
+            // Payload X and its spacing stay unconstrained; the vertical
+            // optical center suppresses unrelated marks in camera scenes.
+            for multiplier in [0.40, 0.58, 0.80, 1.10, 1.60] {
+                let extent = anchor::W_Y_MAX * fit.scale * multiplier;
+                if let Ok(frame) =
+                    read_shell_frame_in_band(&parts, &fit, version, corrected_bits, Some(extent))
+                {
+                    return Ok(frame);
+                }
+            }
+            Err(Error::InvalidFrame)
+        });
+        if let Ok(located) = decoded {
+            return Ok(located);
+        }
+    }
+    Err(Error::InvalidFrame)
+}
+
+/// Extrapolating a homography fitted to a short W over the full payload can
+/// magnify subpixel endpoint errors. Blend the measured quadrilateral toward
+/// its least-squares parallelogram only as a CRC-verified fallback.
+fn regularized_anchor_pose(source: AnchorPose, fraction: f64) -> Option<AnchorPose> {
+    let corners = [
+        source.project(0.0, 0.0)?,
+        source.project(1.0, 0.0)?,
+        source.project(0.0, 1.0)?,
+        source.project(1.0, 1.0)?,
+    ];
+    let center = Point {
+        x: corners.iter().map(|p| p.x).sum::<f64>() / 4.0,
+        y: corners.iter().map(|p| p.y).sum::<f64>() / 4.0,
+    };
+    let axis_x = Point {
+        x: (corners[1].x - corners[0].x + corners[3].x - corners[2].x) / 2.0,
+        y: (corners[1].y - corners[0].y + corners[3].y - corners[2].y) / 2.0,
+    };
+    let axis_y = Point {
+        x: (corners[2].x - corners[0].x + corners[3].x - corners[1].x) / 2.0,
+        y: (corners[2].y - corners[0].y + corners[3].y - corners[1].y) / 2.0,
+    };
+    let signs = [(-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)];
+    let blended = std::array::from_fn(|index| {
+        let (sx, sy) = signs[index];
+        let ax = center.x + (sx * axis_x.x + sy * axis_y.x) / 2.0;
+        let ay = center.y + (sx * axis_x.y + sy * axis_y.y) / 2.0;
+        Point {
+            x: corners[index].x + fraction * (ax - corners[index].x),
+            y: corners[index].y + fraction * (ay - corners[index].y),
+        }
+    });
+    AnchorPose::from_fiducials(blended).ok()
+}
+
 /// Derive candidate camera homographies from the W itself and verify every
 /// rectification with the unchanged optical decoder. No fixed yaw/tilt guess.
 pub fn scan_gray_anchor_guided(image: &GrayImage) -> Result<Located, Error> {
@@ -1156,49 +1404,86 @@ pub fn scan_gray_anchor_guided(image: &GrayImage) -> Result<Located, Error> {
         let Ok(parts) = connected(image, level, light) else {
             continue;
         };
-        // Crop only the candidate component list, never the image pixels.
-        // Printed decorations above and below the code must not interrupt
-        // the 22 consecutive W components in projected reading order.
-        let mut seen_centers: Vec<Point> = Vec::new();
-        for (top, bottom) in [
-            (0.18, 0.82),
-            (0.30, 0.70),
-            (0.0, 1.0),
-            (0.0, 0.60),
-            (0.40, 1.0),
-        ] {
+        // The W may be visually surrounded by text or repeated decorative
+        // bars that project to the same horizontal positions. First test
+        // broad horizontal bands, then overlapping two-dimensional regions.
+        // All decoded geometry remains in the original full image plane.
+        const REGIONS: [(f64, f64, f64, f64); 14] = [
+            (0.0, 1.0, 0.18, 0.82),
+            (0.0, 1.0, 0.30, 0.70),
+            (0.0, 1.0, 0.0, 1.0),
+            (0.0, 1.0, 0.0, 0.60),
+            (0.0, 1.0, 0.40, 1.0),
+            (0.0, 0.52, 0.18, 0.82),
+            (0.24, 0.76, 0.18, 0.82),
+            (0.48, 1.0, 0.18, 0.82),
+            (0.0, 0.52, 0.35, 0.85),
+            (0.24, 0.76, 0.35, 0.85),
+            (0.48, 1.0, 0.35, 0.85),
+            (0.0, 0.52, 0.0, 0.65),
+            (0.24, 0.76, 0.0, 0.65),
+            (0.48, 1.0, 0.0, 0.65),
+        ];
+        let mut seen_poses: Vec<(Point, f64, f64)> = Vec::new();
+        for (left, right, top, bottom) in REGIONS {
             let subset: Vec<&Component> = parts
                 .iter()
                 .filter(|part| {
-                    part.cy >= top * f64::from(height) && part.cy <= bottom * f64::from(height)
+                    part.cx >= left * f64::from(width)
+                        && part.cx <= right * f64::from(width)
+                        && part.cy >= top * f64::from(height)
+                        && part.cy <= bottom * f64::from(height)
                 })
                 .collect();
             if subset.len() < anchor::VERSION_SITES {
                 continue;
             }
-            for source in find_projective_shells(&subset) {
-                let Some(center) = source.project(0.5, 0.5) else {
+            let pose_candidates = find_projective_shells(&subset);
+            for source in pose_candidates {
+                let (Some(center), Some(from), Some(to)) = (
+                    source.project(0.5, 0.5),
+                    source.project(0.0, 0.5),
+                    source.project(1.0, 0.5),
+                ) else {
                     continue;
                 };
-                if seen_centers
-                    .iter()
-                    .any(|known| (known.x - center.x).hypot(known.y - center.y) < 18.0)
-                {
+                let angle = (to.y - from.y).atan2(to.x - from.x);
+                let span = (to.x - from.x).hypot(to.y - from.y);
+                if seen_poses.iter().any(|(known, known_angle, known_span)| {
+                    let delta = angle - known_angle;
+                    (known.x - center.x).hypot(known.y - center.y) < 8.0
+                        && delta.cos() > 0.999
+                        && (span - known_span).abs() < span * 0.04
+                }) {
                     continue;
                 }
-                seen_centers.push(center);
+                seen_poses.push((center, angle, span));
                 attempts += 1;
-                if attempts > 12 {
+                if attempts > 16 {
                     return Err(Error::InvalidFrame);
                 }
-                if let Some(rectification) = AnchorRectification::new(source, width, height) {
-                    let corrected = rectification.rectify(image);
-                    if let Ok(mut decoded) = scan_gray(&corrected) {
-                        if rectification
-                            .restore_geometry(&mut decoded, width, height)
-                            .is_ok()
+                let hypotheses = [
+                    Some(source),
+                    (attempts <= 4)
+                        .then(|| regularized_anchor_pose(source, 0.55))
+                        .flatten(),
+                    (attempts <= 4)
+                        .then(|| regularized_anchor_pose(source, 1.0))
+                        .flatten(),
+                ];
+                for hypothesis in hypotheses.into_iter().flatten() {
+                    if let Some(rectification) = AnchorRectification::new(hypothesis, width, height)
+                    {
+                        let corrected = rectification.rectify(image);
+                        if let Ok(mut decoded) = scan_gray(&corrected)
+                            .or_else(|_| scan_rectified_with_known_w(&corrected, &rectification))
                         {
-                            return Ok(decoded);
+                            if rectification
+                                .restore_geometry(&mut decoded, width, height)
+                                .is_ok()
+                            {
+                                return Ok(decoded);
+                            }
                         }
                     }
                 }
