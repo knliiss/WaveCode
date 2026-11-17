@@ -1342,7 +1342,8 @@ fn scan_rectified_with_known_w(
         };
         let decoded = read_shell_frame(&parts, &fit).or_else(|_| {
             let (version, corrected_bits) = soft_version_from_known_w(&fit)?;
-            if let Ok(frame) = read_shell_frame_with_version(&parts, &fit, version, corrected_bits) {
+            if let Ok(frame) = read_shell_frame_with_version(&parts, &fit, version, corrected_bits)
+            {
                 return Ok(frame);
             }
             // Only a successfully localized W can trigger spatial filtering.
