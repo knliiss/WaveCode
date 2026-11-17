@@ -610,7 +610,7 @@ fn read_shell_frame_in_band(
         .filter_map(|part| {
             let projection = part.projected(sin, cos);
             (projection.u > end_u - fit.scale * 4.0
-                && vertical_extent.map_or(true, |extent| {
+                && vertical_extent.is_none_or(|extent| {
                     (projection.v - optical_center_v).abs() <= extent
                 }))
             .then_some((part, projection))
