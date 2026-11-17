@@ -365,6 +365,78 @@ fn classify_version(fit: &ShellFit<'_>) -> [bool; anchor::VERSION_SITES] {
     bits
 }
 
+/// Use measured capsule lengths to rank *valid* BCH version codewords.
+/// This bounded maximum-likelihood fallback is reserved for camera frames
+/// whose W geometry was already independently established and only when
+/// hard-decision BCH fails. The profile/payload still must pass RS + CRC.
+fn soft_version_from_known_w(fit: &ShellFit<'_>) -> Result<(u16, u8), Error> {
+    let (sin, cos) = fit.angle.sin_cos();
+    let reference = anchor::capsules();
+    let measured: Vec<f64> = fit
+        .capsules
+        .iter()
+        .map(|part| part.projected(sin, cos).transverse)
+        .collect();
+    if measured.len() != anchor::VERSION_SITES {
+        return Err(Error::InvalidFrame);
+    }
+
+    let mut best = (f64::INFINITY, 0_u16);
+    let mut runner_up = f64::INFINITY;
+    let sum_y: f64 = measured.iter().sum();
+    let n = anchor::VERSION_SITES as f64;
+    for value in 0_u16..(1 << anchor::VERSION_BITS) {
+        let bits = anchor::encode_version(value)?;
+        let mut sum_x = 0.0;
+        let mut sum_xx = 0.0;
+        let mut sum_xy = 0.0;
+        for (index, capsule) in reference.iter().enumerate() {
+            let predicted = capsule.height + if bits[index] { anchor::VERSION_EXTENSION } else { 0.0 };
+            sum_x += predicted;
+            sum_xx += predicted * predicted;
+            sum_xy += predicted * measured[index];
+        }
+        let determinant = n * sum_xx - sum_x * sum_x;
+        if determinant < 1.0 {
+            continue;
+        }
+        let scale = (n * sum_xy - sum_x * sum_y) / determinant;
+        if scale < fit.scale * 0.58 || scale > fit.scale * 1.55 {
+            continue;
+        }
+        let offset = (sum_y - scale * sum_x) / n;
+        if offset.abs() > 6.0 {
+            continue;
+        }
+        let residual: f64 = reference.iter().enumerate().map(|(index, capsule)| {
+            let expected = capsule.height + if bits[index] { anchor::VERSION_EXTENSION } else { 0.0 };
+            let difference = measured[index] - (scale * expected + offset);
+            difference * difference
+        }).sum();
+        if residual < best.0 {
+            runner_up = best.0;
+            best = (residual, value);
+        } else if residual < runner_up {
+            runner_up = residual;
+        }
+    }
+    #[cfg(debug_assertions)]
+    eprintln!("W-SOFT best={:?} second={runner_up:.2}", best);
+    // The best hypothesis must be V2, sufficiently accurate, and distinctly
+    // better than any other valid optical version (including future ones).
+    if best.1 != anchor::VERSION
+        || best.0 / n > 10.0
+        || !runner_up.is_finite()
+        || runner_up - best.0 < 2.0
+    {
+        return Err(Error::Uncorrectable);
+    }
+    let expected = anchor::encode_version(best.1)?;
+    let hard = classify_version(fit);
+    let mismatches = hard.iter().zip(expected).filter(|(a, b)| **a != *b).count();
+    Ok((best.1, mismatches as u8))
+}
+
 /// A self-delimiting Dual class may occupy the same number of columns as an
 /// explicit profile (notably generic V2 Dual profile 36). RS and CRC verify
 /// both candidate framings rather than trusting the first source byte.
@@ -480,6 +552,15 @@ fn decode_payload_heights(rails: &[(f64, f64)]) -> Result<(u8, Decoded), Error> 
 
 fn read_shell_frame(parts: &[Component], fit: &ShellFit<'_>) -> Result<Located, Error> {
     let (version, corrected_bits) = anchor::decode_version(classify_version(fit))?;
+    read_shell_frame_with_version(parts, fit, version, corrected_bits)
+}
+
+fn read_shell_frame_with_version(
+    parts: &[Component],
+    fit: &ShellFit<'_>,
+    version: u16,
+    corrected_bits: u8,
+) -> Result<Located, Error> {
     if version != anchor::VERSION {
         return Err(Error::UnsupportedVersion);
     }
@@ -1223,13 +1304,13 @@ fn scan_rectified_with_known_w(
             capsules,
             score: total_error,
         };
+        let decoded = read_shell_frame(&parts, &fit).or_else(|_| {
+            let (version, corrected_bits) = soft_version_from_known_w(&fit)?;
+            read_shell_frame_with_version(&parts, &fit, version, corrected_bits)
+        });
         #[cfg(debug_assertions)]
-        eprintln!(
-            "W-GUIDED version={:?} decoded={:?}",
-            anchor::decode_version(classify_version(&fit)),
-            read_shell_frame(&parts, &fit).as_ref().map(|_| "decoded")
-        );
-        if let Ok(located) = read_shell_frame(&parts, &fit) {
+        eprintln!("W-GUIDED version={:?} decoded={:?}", anchor::decode_version(classify_version(&fit)), decoded.as_ref().map(|_| "decoded"));
+        if let Ok(located) = decoded {
             return Ok(located);
         }
     }
