@@ -581,11 +581,23 @@ fn read_shell_frame_with_version(
     version: u16,
     corrected_bits: u8,
 ) -> Result<Located, Error> {
+    read_shell_frame_in_band(parts, fit, version, corrected_bits, None)
+}
+
+fn read_shell_frame_in_band(
+    parts: &[Component],
+    fit: &ShellFit<'_>,
+    version: u16,
+    corrected_bits: u8,
+    vertical_extent: Option<f64>,
+) -> Result<Located, Error> {
     if version != anchor::VERSION {
         return Err(Error::UnsupportedVersion);
     }
     let (sin, cos) = fit.angle.sin_cos();
     let end_u = fit.origin_u + anchor::SHELL_WIDTH * fit.scale;
+    let optical_center_v =
+        fit.origin_v + (anchor::SLIT_CENTER_Y - anchor::BRAND_ORIGIN_Y) * fit.scale;
     // A payload may be much smaller than the W; never filter it by W area.
     let lower_area = 15.0;
     // The W-to-data whitespace is NOT a delimiter with a fixed pitch.
@@ -597,7 +609,11 @@ fn read_shell_frame_with_version(
         .filter(|part| part.area() > lower_area)
         .filter_map(|part| {
             let projection = part.projected(sin, cos);
-            (projection.u > end_u - fit.scale * 4.0).then_some((part, projection))
+            (projection.u > end_u - fit.scale * 4.0
+                && vertical_extent.map_or(true, |extent| {
+                    (projection.v - optical_center_v).abs() <= extent
+                }))
+            .then_some((part, projection))
         })
         .collect();
     bars.sort_by(|a, b| a.1.u.total_cmp(&b.1.u));
@@ -1326,7 +1342,21 @@ fn scan_rectified_with_known_w(
         };
         let decoded = read_shell_frame(&parts, &fit).or_else(|_| {
             let (version, corrected_bits) = soft_version_from_known_w(&fit)?;
-            read_shell_frame_with_version(&parts, &fit, version, corrected_bits)
+            if let Ok(frame) = read_shell_frame_with_version(&parts, &fit, version, corrected_bits) {
+                return Ok(frame);
+            }
+            // Only a successfully localized W can trigger spatial filtering.
+            // Payload X and its spacing stay unconstrained; the vertical
+            // optical center suppresses unrelated marks in camera scenes.
+            for multiplier in [0.40, 0.58, 0.80, 1.10, 1.60] {
+                let extent = anchor::W_Y_MAX * fit.scale * multiplier;
+                if let Ok(frame) =
+                    read_shell_frame_in_band(&parts, &fit, version, corrected_bits, Some(extent))
+                {
+                    return Ok(frame);
+                }
+            }
+            Err(Error::InvalidFrame)
         });
         #[cfg(debug_assertions)]
         eprintln!(
