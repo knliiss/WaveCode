@@ -390,16 +390,20 @@ fn soft_version_from_known_w(fit: &ShellFit<'_>) -> Result<(u16, u8), Error> {
         let mut sum_x = 0.0;
         let mut sum_xx = 0.0;
         let mut sum_xy = 0.0;
-        for (index, capsule) in reference.iter().enumerate() {
+        for (index, &sample) in measured.iter().enumerate() {
+            // ShellFit stores upper/lower pairs, while BCH stores all
+            // eleven upper sites followed by all eleven lower sites.
+            let site = index / 2 + index % 2 * 11;
+            let capsule = reference[site];
             let predicted = capsule.height
-                + if bits[index] {
+                + if bits[site] {
                     anchor::VERSION_EXTENSION
                 } else {
                     0.0
                 };
             sum_x += predicted;
             sum_xx += predicted * predicted;
-            sum_xy += predicted * measured[index];
+            sum_xy += predicted * sample;
         }
         let determinant = n * sum_xx - sum_x * sum_x;
         if determinant < 1.0 {
@@ -416,14 +420,16 @@ fn soft_version_from_known_w(fit: &ShellFit<'_>) -> Result<(u16, u8), Error> {
         let residual: f64 = reference
             .iter()
             .enumerate()
-            .map(|(index, capsule)| {
+            .map(|(index, &sample)| {
+                let site = index / 2 + index % 2 * 11;
+                let capsule = reference[site];
                 let expected = capsule.height
-                    + if bits[index] {
+                    + if bits[site] {
                         anchor::VERSION_EXTENSION
                     } else {
                         0.0
                     };
-                let difference = measured[index] - (scale * expected + offset);
+                let difference = sample - (scale * expected + offset);
                 difference * difference
             })
             .sum();
