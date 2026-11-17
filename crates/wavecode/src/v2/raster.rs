@@ -391,7 +391,12 @@ fn soft_version_from_known_w(fit: &ShellFit<'_>) -> Result<(u16, u8), Error> {
         let mut sum_xx = 0.0;
         let mut sum_xy = 0.0;
         for (index, capsule) in reference.iter().enumerate() {
-            let predicted = capsule.height + if bits[index] { anchor::VERSION_EXTENSION } else { 0.0 };
+            let predicted = capsule.height
+                + if bits[index] {
+                    anchor::VERSION_EXTENSION
+                } else {
+                    0.0
+                };
             sum_x += predicted;
             sum_xx += predicted * predicted;
             sum_xy += predicted * measured[index];
@@ -408,11 +413,20 @@ fn soft_version_from_known_w(fit: &ShellFit<'_>) -> Result<(u16, u8), Error> {
         if offset.abs() > 6.0 {
             continue;
         }
-        let residual: f64 = reference.iter().enumerate().map(|(index, capsule)| {
-            let expected = capsule.height + if bits[index] { anchor::VERSION_EXTENSION } else { 0.0 };
-            let difference = measured[index] - (scale * expected + offset);
-            difference * difference
-        }).sum();
+        let residual: f64 = reference
+            .iter()
+            .enumerate()
+            .map(|(index, capsule)| {
+                let expected = capsule.height
+                    + if bits[index] {
+                        anchor::VERSION_EXTENSION
+                    } else {
+                        0.0
+                    };
+                let difference = measured[index] - (scale * expected + offset);
+                difference * difference
+            })
+            .sum();
         if residual < best.0 {
             runner_up = best.0;
             best = (residual, value);
@@ -1309,7 +1323,11 @@ fn scan_rectified_with_known_w(
             read_shell_frame_with_version(&parts, &fit, version, corrected_bits)
         });
         #[cfg(debug_assertions)]
-        eprintln!("W-GUIDED version={:?} decoded={:?}", anchor::decode_version(classify_version(&fit)), decoded.as_ref().map(|_| "decoded"));
+        eprintln!(
+            "W-GUIDED version={:?} decoded={:?}",
+            anchor::decode_version(classify_version(&fit)),
+            decoded.as_ref().map(|_| "decoded")
+        );
         if let Ok(located) = decoded {
             return Ok(located);
         }
