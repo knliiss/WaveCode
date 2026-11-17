@@ -440,8 +440,6 @@ fn soft_version_from_known_w(fit: &ShellFit<'_>) -> Result<(u16, u8), Error> {
             runner_up = residual;
         }
     }
-    #[cfg(debug_assertions)]
-    eprintln!("W-SOFT best={:?} second={runner_up:.2}", best);
     // The best hypothesis must be V2, sufficiently accurate, and distinctly
     // better than any other valid optical version (including future ones).
     if best.1 != anchor::VERSION
@@ -1321,13 +1319,6 @@ fn scan_rectified_with_known_w(
                 break;
             }
         }
-        #[cfg(debug_assertions)]
-        eprintln!(
-            "W-GUIDED level={level} light={light} components={} matched={} rms={:.2}",
-            parts.len(),
-            capsules.len(),
-            (total_error / capsules.len().max(1) as f64).sqrt()
-        );
         if !matched || capsules.len() != anchor::VERSION_SITES {
             continue;
         }
@@ -1358,12 +1349,6 @@ fn scan_rectified_with_known_w(
             }
             Err(Error::InvalidFrame)
         });
-        #[cfg(debug_assertions)]
-        eprintln!(
-            "W-GUIDED version={:?} decoded={:?}",
-            anchor::decode_version(classify_version(&fit)),
-            decoded.as_ref().map(|_| "decoded")
-        );
         if let Ok(located) = decoded {
             return Ok(located);
         }
@@ -1454,12 +1439,6 @@ pub fn scan_gray_anchor_guided(image: &GrayImage) -> Result<Located, Error> {
                 continue;
             }
             let pose_candidates = find_projective_shells(&subset);
-            #[cfg(debug_assertions)]
-            eprintln!(
-                "W-DIAG threshold={level} light={light} region=({left:.2},{right:.2},{top:.2},{bottom:.2}) parts={} poses={}",
-                subset.len(),
-                pose_candidates.len()
-            );
             for source in pose_candidates {
                 let (Some(center), Some(from), Some(to)) = (
                     source.project(0.5, 0.5),
@@ -1483,11 +1462,6 @@ pub fn scan_gray_anchor_guided(image: &GrayImage) -> Result<Located, Error> {
                 if attempts > 16 {
                     return Err(Error::InvalidFrame);
                 }
-                #[cfg(debug_assertions)]
-                eprintln!(
-                    "W-DIAG candidate center={:.1},{:.1} angle={angle:.3} attempts={attempts}",
-                    center.x, center.y
-                );
                 let hypotheses = [
                     Some(source),
                     (attempts <= 4)
@@ -1501,26 +1475,6 @@ pub fn scan_gray_anchor_guided(image: &GrayImage) -> Result<Located, Error> {
                     if let Some(rectification) = AnchorRectification::new(hypothesis, width, height)
                     {
                         let corrected = rectification.rectify(image);
-                        #[cfg(debug_assertions)]
-                        {
-                            let parts = connected(&corrected, 128, false).unwrap_or_default();
-                            let shells = locate_shell(&parts);
-                            eprintln!(
-                                "W-RECT candidate={attempts} center=({:.1},{:.1}) parts={} shells={} scale={:.3} origin=({:.1},{:.1})",
-                                center.x, center.y, parts.len(), shells.len(),
-                                rectification.pixel_scale, rectification.origin_x,
-                                rectification.origin_y
-                            );
-                            for fit in shells.iter().take(2) {
-                                let bits = classify_version(fit);
-                                eprintln!(
-                                    "W-RECT version={:?} shellScore={:.2} payload={:?}",
-                                    anchor::decode_version(bits),
-                                    fit.score,
-                                    read_shell_frame(&parts, fit).map(|_| "ok")
-                                );
-                            }
-                        }
                         if let Ok(mut decoded) = scan_gray(&corrected)
                             .or_else(|_| scan_rectified_with_known_w(&corrected, &rectification))
                         {
